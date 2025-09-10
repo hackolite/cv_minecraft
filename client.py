@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Minecraft-like Client using Panda3D - Version corrigée
-Handles rendering, input, and server communication
+Client de débogage - Version avec logs détaillés
 """
 
 import asyncio
@@ -14,21 +13,14 @@ from queue import Queue
 
 # Panda3D imports
 from panda3d.core import (
-    CardMaker, PerspectiveLens, Vec3, Point3, BitMask32,
-    CollisionNode, CollisionSphere, CollisionTraverser, CollisionHandlerQueue,
-    CollisionRay, NodePath, TransformState, RenderState, Texture,
-    TextureStage, Material, VBase4, DirectionalLight, AmbientLight,
-    AntialiasAttrib, DepthTestAttrib, CullFaceAttrib, LightAttrib
+    CardMaker, PerspectiveLens, Vec3, Point3,
+    DirectionalLight, AmbientLight
 )
-from panda3d.physics import BaseIntegrator, LinearVectorForce, ForceNode
 from direct.showbase.ShowBase import ShowBase
-from direct.showbase import DirectObject
 from direct.task import Task
 from direct.gui.OnscreenText import OnscreenText
-from direct.gui.DirectGui import DirectFrame
-from direct.actor.Actor import Actor
 
-# Block types (doit correspondre au serveur - utilisation de chaînes maintenant)
+# Block types
 GRASS = "grass"
 SAND = "sand"
 BRICK = "brick"
@@ -38,648 +30,385 @@ LEAF = "leaf"
 WATER = "water"
 FROG = "frog"
 
-# Constants
-WALKING_SPEED = 5
-FLYING_SPEED = 15
-GRAVITY = 20.0
-MAX_JUMP_HEIGHT = 1.0
-JUMP_SPEED = math.sqrt(2 * GRAVITY * MAX_JUMP_HEIGHT)
-PLAYER_HEIGHT = 2
-
 def normalize(position):
     """Convert float position to integer block position."""
     x, y, z = position
     return (int(round(x)), int(round(y)), int(round(z)))
 
-class MinecraftClient(ShowBase):
-    """Main client class using Panda3D for rendering."""
+class DebugClient(ShowBase):
+    """Client de débogage avec logs détaillés."""
     
     def __init__(self):
         ShowBase.__init__(self)
+        print("=== DEBUT INITIALISATION CLIENT ===")
         
         # Network
-        self.websocket = None
-        self.outgoing_messages = Queue()  # Messages à envoyer au serveur
-        self.incoming_messages = Queue()  # Messages reçus du serveur
+        self.outgoing_messages = Queue()
+        self.incoming_messages = Queue()
         self.connected = False
         
-        # Player state
-        self.position = Vec3(30, 50, 80)
-        self.velocity = Vec3(0, 0, 0)
-        self.flying = False
-        self.jumping = False
-        self.on_ground = False
-        
-        # Input state
-        self.key_map = {
-            'forward': False,
-            'backward': False, 
-            'left': False,
-            'right': False,
-            'jump': False
-        }
-        
         # World
-        self.blocks = {}  # position -> NodePath
-        self.block_types = {}  # position -> block_type
+        self.blocks = {}
+        self.block_types = {}
         
-        # Inventory - utilisation des nouveaux types
-        self.inventory = [BRICK, GRASS, SAND, WOOD, LEAF, STONE, WATER, FROG]
-        self.current_block = 0
+        # Player
+        self.position = Vec3(32, 32, 25)  # Position initiale plus appropriée
         
-        # Setup
+        # Setup basique
         self.setup_camera()
         self.setup_lighting()
-        self.setup_controls()
         self.setup_ui()
-        self.setup_collision()
-        self.setup_physics()
+        self.setup_controls()
         
-        # Start network connection
+        # Start network
         self.start_network_thread()
         
-        # Start update task
+        # Update task
         self.taskMgr.add(self.update, "update")
         
-        print("Minecraft client started")
+        print("=== FIN INITIALISATION CLIENT ===")
     
     def setup_camera(self):
-        """Setup camera and disable default mouse controls."""
+        """Setup camera."""
+        print("Setting up camera...")
         self.disableMouse()
-        
-        # Set camera position and orientation
         self.camera.setPos(self.position)
         self.camera.setHpr(0, 0, 0)
-        
-        # Setup perspective camera
-        lens = PerspectiveLens()
-        lens.setFov(80)
-        lens.setNear(0.1)
-        lens.setFar(1000)
-        self.cam.node().setLens(lens)
+        print(f"Camera position: {self.camera.getPos()}")
     
     def setup_lighting(self):
-        """Setup basic lighting and render states."""
+        """Setup lighting."""
+        print("Setting up lighting...")
+        
         # Ambient light
         ambient_light = AmbientLight('ambient')
-        ambient_light.setColor((0.3, 0.3, 0.3, 1))
+        ambient_light.setColor((0.5, 0.5, 0.5, 1))
         ambient_np = self.render.attachNewNode(ambient_light)
         self.render.setLight(ambient_np)
         
-        # Directional light (sun)
+        # Directional light
         sun_light = DirectionalLight('sun')
-        sun_light.setColor((0.8, 0.8, 0.6, 1))
+        sun_light.setColor((1, 1, 1, 1))
         sun_light.setDirection(Vec3(-1, -1, -1))
         sun_np = self.render.attachNewNode(sun_light)
         self.render.setLight(sun_np)
         
-        # Enable depth testing for proper block rendering
-        self.render.setDepthTest(True)
-        self.render.setDepthWrite(True)
-    
-    def setup_controls(self):
-        """Setup keyboard controls."""
-        # Accept key events
-        self.accept("z", self.set_key, ["forward", True])
-        self.accept("z-up", self.set_key, ["forward", False])
-        self.accept("s", self.set_key, ["backward", True])
-        self.accept("s-up", self.set_key, ["backward", False])
-        self.accept("q", self.set_key, ["left", True])
-        self.accept("q-up", self.set_key, ["left", False])
-        self.accept("d", self.set_key, ["right", True])
-        self.accept("d-up", self.set_key, ["right", False])
-        self.accept("space", self.set_key, ["jump", True])
-        self.accept("space-up", self.set_key, ["jump", False])
-        
-        # Block selection
-        for i in range(1, 9):  # 1-8 pour 8 types de blocs
-            if i <= len(self.inventory):
-                self.accept(str(i), self.select_block, [i-1])
-        
-        # Mouse events
-        self.accept("mouse1", self.on_left_click)  # Remove block
-        self.accept("mouse3", self.on_right_click)  # Place block
-        
-        # Toggle flying
-        self.accept("tab", self.toggle_flying)
-        
-        # Mouse look
-        self.mouse_sensitivity = 0.1
-        self.last_mouse_x = 0
-        self.last_mouse_y = 0
-        
-        # Enable mouse look task
-        self.taskMgr.add(self.mouse_look_task, "mouse_look")
+        print("Lighting setup complete")
     
     def setup_ui(self):
-        """Setup UI elements."""
-        # Status text
+        """Setup UI."""
+        print("Setting up UI...")
+        
         self.status_text = OnscreenText(
-            text="Connecting to server...",
+            text="Initializing...",
             pos=(0, 0.9),
             scale=0.05,
-            fg=(1, 1, 1, 1),
-            align=0  # center
+            fg=(1, 1, 1, 1)
         )
         
-        # Block info
-        block_names = {
-            BRICK: "Brick", GRASS: "Grass", SAND: "Sand", WOOD: "Wood",
-            LEAF: "Leaf", STONE: "Stone", WATER: "Water", FROG: "Frog"
-        }
-        current_block_name = block_names.get(self.inventory[self.current_block], "Unknown")
-        
-        self.block_text = OnscreenText(
-            text=f"Block: {current_block_name} (Press 1-8)",
-            pos=(-0.95, -0.95),
-            scale=0.04,
-            fg=(1, 1, 1, 1),
-            align=1  # left
-        )
-        
-        # Position info
-        self.pos_text = OnscreenText(
-            text="Position: (0, 0, 0)",
-            pos=(0.95, -0.95),
-            scale=0.04,
-            fg=(1, 1, 1, 1),
-            align=3  # right
-        )
-        
-        # Block count
-        self.block_count_text = OnscreenText(
-            text="Blocks loaded: 0",
-            pos=(0, 0.8),
+        self.debug_text = OnscreenText(
+            text="Debug info",
+            pos=(-0.95, 0.8),
             scale=0.04,
             fg=(1, 1, 0, 1),
-            align=0
-        )
-    
-    def setup_collision(self):
-        """Setup collision detection."""
-        self.cTrav = CollisionTraverser()
-        self.collision_queue = CollisionHandlerQueue()
-        
-        # Player collision sphere
-        self.player_collision = CollisionNode('player')
-        self.player_collision.addSolid(CollisionSphere(0, 0, 0, PLAYER_HEIGHT/2))
-        self.player_collision_np = self.camera.attachNewNode(self.player_collision)
-        self.cTrav.addCollider(self.player_collision_np, self.collision_queue)
-    
-    def setup_physics(self):
-        """Setup physics (gravity)."""
-        self.dt = 0
-    
-    def set_key(self, key, value):
-        """Set key state."""
-        self.key_map[key] = value
-    
-    def select_block(self, index):
-        """Select block type."""
-        if 0 <= index < len(self.inventory):
-            self.current_block = index
-            block_names = {
-                BRICK: "Brick", GRASS: "Grass", SAND: "Sand", WOOD: "Wood",
-                LEAF: "Leaf", STONE: "Stone", WATER: "Water", FROG: "Frog"
-            }
-            current_block_name = block_names.get(self.inventory[index], "Unknown")
-            self.block_text.setText(f"Block: {current_block_name} (Press 1-8)")
-    
-    def toggle_flying(self):
-        """Toggle flying mode."""
-        self.flying = not self.flying
-        if self.flying:
-            self.velocity.z = 0  # Stop falling
-            self.status_text.setText("Flying mode: ON")
-        else:
-            self.status_text.setText("Flying mode: OFF")
-    
-    def mouse_look_task(self, task):
-        """Handle mouse look."""
-        if self.mouseWatcherNode.hasMouse():
-            x = self.mouseWatcherNode.getMouseX()
-            y = self.mouseWatcherNode.getMouseY()
-            
-            # Calculate mouse movement
-            if hasattr(self, 'last_mouse_x'):
-                dx = x - self.last_mouse_x
-                dy = y - self.last_mouse_y
-                
-                # Apply mouse sensitivity
-                dx *= self.mouse_sensitivity * 100
-                dy *= self.mouse_sensitivity * 100
-                
-                # Update camera rotation
-                h, p, r = self.camera.getHpr()
-                h -= dx
-                p = max(-90, min(90, p - dy))
-                self.camera.setHpr(h, p, r)
-            
-            self.last_mouse_x = x
-            self.last_mouse_y = y
-        
-        return task.cont
-    
-    def get_look_vector(self):
-        """Get the direction the camera is looking."""
-        h, p, r = self.camera.getHpr()
-        # Convert to radians
-        h_rad = math.radians(h)
-        p_rad = math.radians(p)
-        
-        # Calculate direction vector
-        dx = math.sin(h_rad) * math.cos(p_rad)
-        dy = -math.cos(h_rad) * math.cos(p_rad)
-        dz = -math.sin(p_rad)
-        
-        return Vec3(dx, dy, dz)
-    
-    def ray_cast(self, origin, direction, max_distance=8):
-        """Cast a ray and find the first block hit."""
-        step = 0.1
-        current_pos = Vec3(origin)
-        
-        for i in range(int(max_distance / step)):
-            current_pos += direction * step
-            block_pos = normalize((current_pos.x, current_pos.y, current_pos.z))
-            
-            if block_pos in self.blocks:
-                # Find the position just before hitting the block
-                prev_pos = current_pos - direction * step
-                prev_block_pos = normalize((prev_pos.x, prev_pos.y, prev_pos.z))
-                return block_pos, prev_block_pos
-        
-        return None, None
-    
-    def on_left_click(self):
-        """Handle left mouse click (remove block)."""
-        if not self.connected:
-            return
-            
-        look_vector = self.get_look_vector()
-        hit_pos, _ = self.ray_cast(self.camera.getPos(), look_vector)
-        
-        if hit_pos:
-            print(f"Removing block at {hit_pos}")
-            # Send remove block message to server
-            message = {
-                'type': 'remove_block',
-                'position': list(hit_pos)  # Convertir en liste
-            }
-            self.outgoing_messages.put(json.dumps(message))
-    
-    def on_right_click(self):
-        """Handle right mouse click (place block)."""
-        if not self.connected:
-            return
-            
-        look_vector = self.get_look_vector()
-        hit_pos, place_pos = self.ray_cast(self.camera.getPos(), look_vector)
-        
-        if hit_pos and place_pos and place_pos not in self.blocks:
-            selected_block = self.inventory[self.current_block]
-            print(f"Placing {selected_block} block at {place_pos}")
-            # Send add block message to server
-            message = {
-                'type': 'add_block',
-                'position': list(place_pos),  # Convertir en liste
-                'block_type': selected_block
-            }
-            self.outgoing_messages.put(json.dumps(message))
-    
-    def update(self, task):
-        """Main update loop."""
-        dt = globalClock.getDt()
-        self.dt = dt
-        
-        # Update movement
-        self.update_movement(dt)
-        
-        # Update position text
-        pos = self.camera.getPos()
-        self.pos_text.setText(f"Position: ({pos.x:.1f}, {pos.y:.1f}, {pos.z:.1f})")
-        
-        # Update block count
-        self.block_count_text.setText(f"Blocks loaded: {len(self.blocks)}")
-        
-        # Process network messages
-        self.process_network_messages()
-        
-        return task.cont
-    
-    def update_movement(self, dt):
-        """Update player movement and physics."""
-        # Calculate movement direction
-        move_vector = Vec3(0, 0, 0)
-        
-        if self.key_map['forward']:
-            move_vector.y -= 1
-        if self.key_map['backward']:
-            move_vector.y += 1
-        if self.key_map['left']:
-            move_vector.x -= 1
-        if self.key_map['right']:
-            move_vector.x += 1
-        
-        # Normalize movement vector
-        if move_vector.length() > 0:
-            move_vector.normalize()
-        
-        # Apply camera rotation to movement
-        h, p, r = self.camera.getHpr()
-        h_rad = math.radians(h)
-        
-        # Rotate movement vector by camera heading
-        cos_h = math.cos(h_rad)
-        sin_h = math.sin(h_rad)
-        
-        world_move = Vec3(
-            move_vector.x * cos_h - move_vector.y * sin_h,
-            move_vector.x * sin_h + move_vector.y * cos_h,
-            0
+            align=1
         )
         
-        # Apply speed
-        if self.flying:
-            speed = FLYING_SPEED
-            if self.key_map['jump']:
-                world_move.z += 1
-        else:
-            speed = WALKING_SPEED
-            
-            # Apply gravity
-            self.velocity.z -= GRAVITY * dt
-            
-            # Handle jumping
-            if self.key_map['jump'] and self.on_ground:
-                self.velocity.z = JUMP_SPEED
-                self.jumping = True
-                self.on_ground = False
-        
-        # Apply movement
-        world_move *= speed
-        if not self.flying:
-            world_move.z = self.velocity.z
-        
-        # Update position
-        new_pos = self.camera.getPos() + world_move * dt
-        self.camera.setPos(new_pos)
-        
-        # Simple ground check
-        if not self.flying:
-            if new_pos.z <= 1:  # Ground level
-                new_pos.z = 1
-                self.camera.setPos(new_pos)
-                self.velocity.z = 0
-                self.on_ground = True
-                self.jumping = False
-        
-        # Send position update to server (throttle to avoid spam)
-        if hasattr(self, 'last_pos_update'):
-            if (new_pos - self.last_pos_update).length() > 0.5:
-                self.send_position_update()
-                self.last_pos_update = new_pos
-        else:
-            self.last_pos_update = new_pos
-            self.send_position_update()
+        print("UI setup complete")
     
-    def send_position_update(self):
-        """Send position update to server."""
+    def setup_controls(self):
+        """Setup basic controls."""
+        print("Setting up controls...")
+        
+        # Juste les controles de base pour le debug
+        self.accept("escape", sys.exit)
+        self.accept("r", self.request_world_data)
+        self.accept("t", self.test_add_block)
+        
+        print("Controls setup complete")
+    
+    def request_world_data(self):
+        """Demander les données du monde manuellement."""
+        print("=== DEMANDE MANUELLE WORLD DATA ===")
         if self.connected:
-            pos = self.camera.getPos()
-            message = {
-                'type': 'move',
-                'position': [pos.x, pos.y, pos.z]  # Liste au lieu de tuple
-            }
-            self.outgoing_messages.put(json.dumps(message))
+            request = {'type': 'get_world'}
+            self.outgoing_messages.put(json.dumps(request))
+            print("World data request sent")
+        else:
+            print("Not connected!")
+    
+    def test_add_block(self):
+        """Test d'ajout d'un bloc manuel."""
+        print("=== TEST AJOUT BLOC MANUEL ===")
+        test_pos = (32, 32, 26)  # Juste au-dessus de la position du joueur
+        self.add_block_visual(test_pos, BRICK)
+        print(f"Test block added at {test_pos}")
     
     def create_block_node(self, position, block_type):
-        """Create a visual block at the given position."""
-        # Create cube geometry
-        cm = CardMaker("block")
-        cm.setFrame(-0.5, 0.5, -0.5, 0.5)
+        """Create a visual block - VERSION DEBUG."""
+        print(f"=== CREATION BLOC VISUEL ===")
+        print(f"Position: {position}, Type: {block_type}")
         
-        # Create a simple cube by combining 6 cards
-        block_node = self.render.attachNewNode("block")
-        
-        # Couleurs pour chaque type de bloc
-        colors = {
-            GRASS: (0.2, 0.8, 0.2, 1),     # Vert
-            SAND: (0.9, 0.8, 0.4, 1),      # Sable
-            BRICK: (0.8, 0.3, 0.2, 1),     # Rouge brique
-            STONE: (0.5, 0.5, 0.5, 1),     # Gris pierre
-            WOOD: (0.6, 0.4, 0.2, 1),      # Marron bois
-            LEAF: (0.1, 0.6, 0.1, 1),      # Vert foncé feuilles
-            WATER: (0.2, 0.4, 0.8, 0.7),   # Bleu eau (transparent)
-            FROG: (0.8, 0.8, 0.2, 1)       # Jaune grenouille
-        }
-        
-        color = colors.get(block_type, (0.5, 0.5, 0.5, 1))  # Gris par défaut
-        
-        # Create 6 faces for a proper 1x1x1 cube
-        faces = [
-            ((0, 0, 0.5), (0, 0, 0)),    # front
-            ((0, 0, -0.5), (0, 180, 0)), # back
-            ((-0.5, 0, 0), (0, 90, 0)),  # left
-            ((0.5, 0, 0), (0, -90, 0)),  # right
-            ((0, 0.5, 0), (-90, 0, 0)),  # top
-            ((0, -0.5, 0), (90, 0, 0))   # bottom
-        ]
-        
-        for i, (offset, rotation) in enumerate(faces):
-            face = block_node.attachNewNode(cm.generate())
-            face.setPos(*offset)
-            face.setHpr(*rotation)
-            face.setColor(*color)
-        
-        # Position the block
-        x, y, z = position
-        block_node.setPos(x, y, z)
-        
-        return block_node
+        try:
+            # Create simple cube
+            cm = CardMaker("block")
+            cm.setFrame(-0.5, 0.5, -0.5, 0.5)
+            print("CardMaker created")
+            
+            # Create node
+            block_node = self.render.attachNewNode(f"block_{position}")
+            print(f"Block node created: {block_node}")
+            
+            # Colors
+            colors = {
+                GRASS: (0.2, 0.8, 0.2, 1),
+                SAND: (0.9, 0.8, 0.4, 1),
+                BRICK: (0.8, 0.3, 0.2, 1),
+                STONE: (0.5, 0.5, 0.5, 1),
+                WOOD: (0.6, 0.4, 0.2, 1),
+                LEAF: (0.1, 0.6, 0.1, 1),
+                WATER: (0.2, 0.4, 0.8, 0.7),
+                FROG: (0.8, 0.8, 0.2, 1)
+            }
+            
+            color = colors.get(block_type, (1, 0, 1, 1))  # Magenta si type inconnu
+            print(f"Using color: {color} for type: {block_type}")
+            
+            # Create faces
+            faces = [
+                ((0, 0, 0.5), (0, 0, 0)),    # front
+                ((0, 0, -0.5), (0, 180, 0)), # back
+                ((-0.5, 0, 0), (0, 90, 0)),  # left
+                ((0.5, 0, 0), (0, -90, 0)),  # right
+                ((0, 0.5, 0), (-90, 0, 0)),  # top
+                ((0, -0.5, 0), (90, 0, 0))   # bottom
+            ]
+            
+            for i, (offset, rotation) in enumerate(faces):
+                face = block_node.attachNewNode(cm.generate())
+                face.setPos(*offset)
+                face.setHpr(*rotation)
+                face.setColor(*color)
+            
+            print(f"Created {len(faces)} faces")
+            
+            # Position the block
+            x, y, z = position
+            block_node.setPos(x, y, z)
+            print(f"Block positioned at: {block_node.getPos()}")
+            
+            # Verify visibility
+            block_node.show()
+            print(f"Block visibility: {not block_node.isHidden()}")
+            print(f"Block parent: {block_node.getParent()}")
+            
+            return block_node
+            
+        except Exception as e:
+            print(f"ERREUR CREATION BLOC: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
     
     def add_block_visual(self, position, block_type):
-        """Add a visual block to the world."""
-        if position not in self.blocks:
-            print(f"Adding visual block: {block_type} at {position}")
-            block_node = self.create_block_node(position, block_type)
-            self.blocks[position] = block_node
-            self.block_types[position] = block_type
-    
-    def remove_block_visual(self, position):
-        """Remove a visual block from the world."""
+        """Add visual block - VERSION DEBUG."""
+        print(f"\n=== ADD_BLOCK_VISUAL ===")
+        print(f"Position: {position} (type: {type(position)})")
+        print(f"Block type: {block_type} (type: {type(block_type)})")
+        
         if position in self.blocks:
-            print(f"Removing visual block at {position}")
-            self.blocks[position].removeNode()
-            del self.blocks[position]
-            if position in self.block_types:
-                del self.block_types[position]
+            print(f"Block already exists at {position}")
+            return
+        
+        try:
+            block_node = self.create_block_node(position, block_type)
+            if block_node:
+                self.blocks[position] = block_node
+                self.block_types[position] = block_type
+                print(f"Block successfully added. Total blocks: {len(self.blocks)}")
+                
+                # Verify render tree
+                print(f"Block in render tree: {block_node.getParent() == self.render}")
+                print(f"Render children count: {self.render.getNumChildren()}")
+                
+                # Test visibility from camera
+                cam_pos = self.camera.getPos()
+                block_pos = block_node.getPos()
+                distance = (cam_pos - block_pos).length()
+                print(f"Distance from camera: {distance}")
+                
+                return True
+            else:
+                print("FAILED TO CREATE BLOCK NODE")
+                return False
+                
+        except Exception as e:
+            print(f"ERREUR ADD_BLOCK_VISUAL: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def handle_server_message(self, data):
+        """Handle server message - VERSION DEBUG."""
+        message_type = data.get('type')
+        print(f"\n=== MESSAGE SERVEUR: {message_type} ===")
+        
+        if message_type == 'welcome':
+            print("Received welcome message")
+            self.status_text.setText("Connected - Press R for world data")
+            self.connected = True
+            
+            # Auto-request world data
+            print("Auto-requesting world data...")
+            self.request_world_data()
+            
+        elif message_type == 'world_data':
+            blocks = data.get('blocks', [])
+            textures = data.get('textures', {})
+            
+            print(f"WORLD_DATA received:")
+            print(f"  - Blocks count: {len(blocks)}")
+            print(f"  - Textures count: {len(textures)}")
+            
+            if blocks:
+                print("First 3 blocks:")
+                for i, block in enumerate(blocks[:3]):
+                    print(f"  Block {i}: {block}")
+                
+                print(f"Last block: {blocks[-1]}")
+            
+            success_count = 0
+            error_count = 0
+            
+            for i, block_data in enumerate(blocks):
+                try:
+                    if isinstance(block_data, dict):
+                        position = block_data.get('position')
+                        block_type = block_data.get('block_type')
+                        
+                        if position and block_type:
+                            # Convert to tuple if it's a list
+                            if isinstance(position, list):
+                                position = tuple(position)
+                            
+                            success = self.add_block_visual(position, block_type)
+                            if success:
+                                success_count += 1
+                            else:
+                                error_count += 1
+                        else:
+                            print(f"Block {i}: Missing position or block_type: {block_data}")
+                            error_count += 1
+                    else:
+                        print(f"Block {i}: Not a dict: {block_data}")
+                        error_count += 1
+                        
+                except Exception as e:
+                    print(f"Error processing block {i}: {e}")
+                    error_count += 1
+            
+            print(f"WORLD_DATA processing complete:")
+            print(f"  - Success: {success_count}")
+            print(f"  - Errors: {error_count}")
+            print(f"  - Total blocks in memory: {len(self.blocks)}")
+            
+            self.status_text.setText(f"Loaded: {success_count}, Errors: {error_count}")
+            
+        elif message_type == 'world_chunk':
+            print("Received world_chunk - processing same as world_data")
+            # Process same as world_data
+            self.handle_server_message({'type': 'world_data', **data})
+            
+        else:
+            print(f"Other message type: {message_type}")
+            print(f"Data: {data}")
     
     def process_network_messages(self):
-        """Process messages received from network thread."""
-        messages_processed = 0
-        while not self.incoming_messages.empty() and messages_processed < 10:  # Limite pour éviter les blocages
+        """Process network messages."""
+        while not self.incoming_messages.empty():
             try:
                 message = self.incoming_messages.get_nowait()
                 if isinstance(message, dict):
                     self.handle_server_message(message)
-                    messages_processed += 1
-            except:
-                break
+            except Exception as e:
+                print(f"Error processing message: {e}")
     
-    def handle_server_message(self, data):
-        """Handle message from server."""
-        message_type = data.get('type')
-        print(f"Received message: {message_type}")
+    def update(self, task):
+        """Update task."""
+        # Process messages
+        self.process_network_messages()
         
-        if message_type == 'welcome':
-            self.status_text.setText("Connected to server")
-            self.connected = True
-            # Request world data
-            request = {'type': 'get_world'}
-            self.outgoing_messages.put(json.dumps(request))
-            print("Requesting world data...")
-            
-        elif message_type == 'world_data':
-            blocks = data.get('blocks', [])
-            textures = data.get('textures', {})  # Textures du serveur (optionnel)
-            print(f"Received world data: {len(blocks)} blocks")
-            
-            for block_data in blocks:
-                try:
-                    position = tuple(block_data['position'])
-                    block_type = block_data['block_type']
-                    self.add_block_visual(position, block_type)
-                except Exception as e:
-                    print(f"Error processing block data {block_data}: {e}")
-            
-            print(f"Loaded {len(blocks)} blocks from server")
-            self.status_text.setText(f"Loaded {len(blocks)} blocks")
-            
-        elif message_type == 'world_chunk':
-            blocks = data.get('blocks', [])
-            chunk_index = data.get('chunk_index', 0)
-            total_chunks = data.get('total_chunks', 1)
-            
-            print(f"Received chunk {chunk_index + 1}/{total_chunks}: {len(blocks)} blocks")
-            
-            for block_data in blocks:
-                try:
-                    position = tuple(block_data['position'])
-                    block_type = block_data['block_type']
-                    self.add_block_visual(position, block_type)
-                except Exception as e:
-                    print(f"Error processing block data {block_data}: {e}")
-            
-            self.status_text.setText(f"Loading chunk {chunk_index + 1}/{total_chunks}")
-            
-        elif message_type == 'world_complete':
-            total_blocks = data.get('total_blocks', len(self.blocks))
-            print(f"World loading complete: {total_blocks} total blocks")
-            self.status_text.setText(f"World loaded: {total_blocks} blocks")
-            
-        elif message_type == 'block_added':
-            position = tuple(data['position'])
-            block_type = data['block_type']
-            print(f"Server says: block added {block_type} at {position}")
-            self.add_block_visual(position, block_type)
-            
-        elif message_type == 'block_removed':
-            position = tuple(data['position'])
-            print(f"Server says: block removed at {position}")
-            self.remove_block_visual(position)
-            
-        elif message_type == 'player_joined':
-            player_name = data.get('player_name', 'Unknown')
-            print(f"Player joined: {player_name}")
-            
-        elif message_type == 'player_moved':
-            # Ignore pour l'instant
-            pass
-        else:
-            print(f"Unknown message type: {message_type}")
+        # Update debug info
+        cam_pos = self.camera.getPos()
+        self.debug_text.setText(
+            f"Blocks: {len(self.blocks)}\n"
+            f"Pos: ({cam_pos.x:.1f}, {cam_pos.y:.1f}, {cam_pos.z:.1f})\n"
+            f"Connected: {self.connected}\n"
+            f"Press R: Request world\n"
+            f"Press T: Test block\n"
+            f"Press ESC: Exit"
+        )
+        
+        return task.cont
     
     def start_network_thread(self):
-        """Start network thread for WebSocket communication."""
+        """Start network thread."""
+        print("Starting network thread...")
         self.network_thread = threading.Thread(target=self.network_worker)
         self.network_thread.daemon = True
         self.network_thread.start()
-        print("Network thread started")
     
     def network_worker(self):
-        """Network thread worker."""
+        """Network worker."""
         async def connect_and_communicate():
             try:
                 uri = "ws://localhost:8765"
                 print(f"Connecting to {uri}...")
+                
                 async with websockets.connect(uri) as websocket:
-                    self.websocket = websocket
-                    print("Connected to server!")
+                    print("Connected!")
                     
-                    # Send join message
-                    join_message = {
-                        'type': 'join',
-                        'name': 'Player'
-                    }
-                    await websocket.send(json.dumps(join_message))
-                    print("Sent join message")
+                    # Send join
+                    join_msg = {'type': 'join', 'name': 'DebugPlayer'}
+                    await websocket.send(json.dumps(join_msg))
+                    print("Join message sent")
                     
-                    # Start listening for messages
-                    async def listen_for_messages():
-                        try:
-                            async for message in websocket:
+                    async def listen():
+                        async for message in websocket:
+                            try:
+                                data = json.loads(message)
+                                self.incoming_messages.put(data)
+                            except Exception as e:
+                                print(f"Error parsing message: {e}")
+                                print(f"Message: {message[:200]}...")
+                    
+                    async def send():
+                        while True:
+                            while not self.outgoing_messages.empty():
                                 try:
-                                    data = json.loads(message)
-                                    self.incoming_messages.put(data)
-                                except json.JSONDecodeError as e:
-                                    print(f"Invalid JSON: {message[:100]}... Error: {e}")
-                        except websockets.exceptions.ConnectionClosed:
-                            print("Connection closed by server")
-                        except Exception as e:
-                            print(f"Error in listen_for_messages: {e}")
+                                    msg = self.outgoing_messages.get_nowait()
+                                    await websocket.send(msg)
+                                except Exception as e:
+                                    print(f"Error sending: {e}")
+                            await asyncio.sleep(0.01)
                     
-                    async def send_queued_messages():
-                        try:
-                            while True:
-                                # Check for outgoing messages
-                                messages_sent = 0
-                                while not self.outgoing_messages.empty() and messages_sent < 5:
-                                    try:
-                                        msg = self.outgoing_messages.get_nowait()
-                                        if isinstance(msg, str):
-                                            await websocket.send(msg)
-                                            messages_sent += 1
-                                    except Exception as e:
-                                        print(f"Error sending message: {e}")
-                                        break
-                                await asyncio.sleep(0.01)
-                        except Exception as e:
-                            print(f"Error in send_queued_messages: {e}")
-                    
-                    # Run both tasks concurrently
-                    await asyncio.gather(
-                        listen_for_messages(),
-                        send_queued_messages()
-                    )
+                    await asyncio.gather(listen(), send())
                     
             except Exception as e:
                 print(f"Network error: {e}")
-                self.incoming_messages.put({
-                    'type': 'error',
-                    'message': str(e)
-                })
+                import traceback
+                traceback.print_exc()
         
-        # Run the async network code
         try:
             asyncio.run(connect_and_communicate())
         except Exception as e:
             print(f"Error in network worker: {e}")
 
 def main():
-    """Main function to start the client."""
-    print("Starting Minecraft client...")
-    client = MinecraftClient()
-    client.run()
+    """Main function."""
+    print("=== LANCEMENT DEBUG CLIENT ===")
+    app = DebugClient()
+    app.run()
 
 if __name__ == "__main__":
     main()
