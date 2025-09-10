@@ -1,10 +1,10 @@
 # cv_minecraft
 
-Un client et serveur Minecraft-like développé en Python avec Ursina pour le rendu 3D et WebSockets pour la communication réseau.
+Un client et serveur Minecraft-like développé en Python avec Panda3D pour le rendu 3D et WebSockets pour la communication réseau.
 
 ## 🎮 Fonctionnalités
 
-- **Client 3D** : Interface graphique avec Ursina Engine
+- **Client 3D** : Interface graphique avec Panda3D Engine
 - **Serveur multijoueur** : Gestion de plusieurs joueurs simultanément
 - **Monde persistant** : Génération et sauvegarde du monde
 - **Interactions** : Placer et détruire des blocs
@@ -111,6 +111,6 @@ cv_minecraft/
 
 ## 🔗 Dépendances
 
-- **ursina** : Moteur 3D pour le client
+- **Panda3D** : Moteur 3D pour le client
 - **websockets** : Communication client-serveur
 - **asyncio** : Programmation asynchrone
