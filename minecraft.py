@@ -8,6 +8,24 @@ import time
 import pyglet
 from pyglet.gl import *
 
+# Import missing GL constants if not available from pyglet
+try:
+    # These constants should be available after importing pyglet.gl
+    GL_FOG
+except NameError:
+    # Fallback to PyOpenGL if constants are not available from pyglet
+    try:
+        from OpenGL.GL import (
+            GL_FOG, GL_FOG_COLOR, GL_FOG_HINT, GL_DONT_CARE,
+            GL_FOG_MODE, GL_LINEAR, GL_FOG_START, GL_FOG_END,
+            GL_QUADS, GL_DEPTH_TEST, GL_PROJECTION, GL_MODELVIEW,
+            GL_FRONT_AND_BACK, GL_LINE, GL_FILL, GL_LINES,
+            GL_CULL_FACE, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+            GL_NEAREST, GL_TEXTURE_MAG_FILTER, GLfloat
+        )
+    except ImportError:
+        raise ImportError("OpenGL constants not available. Please install PyOpenGL: pip install PyOpenGL")
+
 
 
 from collections import deque
