@@ -258,8 +258,7 @@ class MinecraftClient:
         block = Entity(
             model='cube',
             color=color_value,
-            position=(x, y, z),
-            texture='white_cube'
+            position=(x, y, z)
         )
         
         self.world_blocks[(x, y, z)] = block
