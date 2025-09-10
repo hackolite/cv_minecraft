@@ -69,11 +69,16 @@ class MinecraftClient(ShowBase):
         
         # Variables de mouvement
         self.movement_speed = 20.0
-        self.mouse_sensitivity = 50.0
+        self.mouse_sensitivity = 1.0  # Réduit de 50.0 à 1.0 pour moins de sensibilité
         self.gravity = -20.0
         self.jump_force = 10.0
         self.velocity_y = 0
         self.is_grounded = False
+        
+        # Variables pour le mouvement de la souris
+        self.last_mouse_x = 0
+        self.last_mouse_y = 0
+        self.mouse_initialized = False
         
         # Touches pressées
         self.key_map = {
@@ -279,11 +284,32 @@ class MinecraftClient(ShowBase):
             mouse_x = base.mouseWatcherNode.getMouseX()
             mouse_y = base.mouseWatcherNode.getMouseY()
             
-            # Mise à jour de la rotation de la caméra
-            current_h = hpr.x - mouse_x * self.mouse_sensitivity
-            current_p = max(-90, min(90, hpr.y - mouse_y * self.mouse_sensitivity))
+            # Initialiser la position de la souris au premier passage
+            if not self.mouse_initialized:
+                self.last_mouse_x = mouse_x
+                self.last_mouse_y = mouse_y
+                self.mouse_initialized = True
+                return task.cont
+            
+            # Calculer le delta du mouvement de la souris
+            delta_x = mouse_x - self.last_mouse_x
+            delta_y = mouse_y - self.last_mouse_y
+            
+            # Mise à jour de la rotation de la caméra avec les deltas
+            current_h = hpr.x - delta_x * self.mouse_sensitivity
+            current_p = max(-90, min(90, hpr.y - delta_y * self.mouse_sensitivity))
             
             self.camera.setHpr(current_h, current_p, 0)
+            
+            # Stocker la position actuelle pour le prochain frame
+            self.last_mouse_x = mouse_x
+            self.last_mouse_y = mouse_y
+            
+            # Recentrer la souris si elle s'éloigne trop du centre pour éviter l'accumulation
+            if abs(mouse_x) > 0.8 or abs(mouse_y) > 0.8:
+                base.win.movePointer(0, int(base.win.getXSize() / 2), int(base.win.getYSize() / 2))
+                self.last_mouse_x = 0
+                self.last_mouse_y = 0
             
         return task.cont
         
