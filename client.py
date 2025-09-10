@@ -22,6 +22,7 @@ from panda3d.core import (
 )
 from panda3d.physics import BaseIntegrator, LinearVectorForce, ForceNode
 from direct.showbase.ShowBase import ShowBase
+from direct.showbase import DirectObject
 from direct.task import Task
 from direct.gui.OnscreenText import OnscreenText
 from direct.gui.DirectGui import DirectFrame
@@ -137,7 +138,7 @@ class MinecraftClient(ShowBase):
         self.cam.node().setLens(lens)
     
     def setup_lighting(self):
-        """Setup basic lighting."""
+        """Setup basic lighting and render states."""
         # Ambient light
         ambient_light = AmbientLight('ambient')
         ambient_light.setColor((0.3, 0.3, 0.3, 1))
@@ -150,6 +151,10 @@ class MinecraftClient(ShowBase):
         sun_light.setDirection(Vec3(-1, -1, -1))
         sun_np = self.render.attachNewNode(sun_light)
         self.render.setLight(sun_np)
+        
+        # Enable depth testing for proper block rendering
+        self.render.setDepthTest(True)
+        self.render.setDepthWrite(True)
     
     def setup_controls(self):
         """Setup keyboard controls."""
@@ -462,14 +467,14 @@ class MinecraftClient(ShowBase):
         
         color = colors.get(str(block_type), (0.5, 0.5, 0.5, 1))
         
-        # Create 6 faces
+        # Create 6 faces for a proper 1x1x1 cube
         faces = [
-            ((0, 0, 1), (0, 0, 0)),    # front
-            ((0, 0, -1), (0, 180, 0)), # back
-            ((-1, 0, 0), (0, 90, 0)),  # left
-            ((1, 0, 0), (0, -90, 0)),  # right
-            ((0, 1, 0), (-90, 0, 0)),  # top
-            ((0, -1, 0), (90, 0, 0))   # bottom
+            ((0, 0, 0.5), (0, 0, 0)),    # front
+            ((0, 0, -0.5), (0, 180, 0)), # back
+            ((-0.5, 0, 0), (0, 90, 0)),  # left
+            ((0.5, 0, 0), (0, -90, 0)),  # right
+            ((0, 0.5, 0), (-90, 0, 0)),  # top
+            ((0, -0.5, 0), (90, 0, 0))   # bottom
         ]
         
         for i, (offset, rotation) in enumerate(faces):
