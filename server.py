@@ -336,16 +336,25 @@ class MinecraftServer:
     
     async def handle_get_world(self, websocket, data):
         """Send world data to client."""
-        # For now, send a subset of the world around the player
+        # Send a limited subset of the world around the player to avoid message size limits
         player_pos = self.player_positions.get(websocket, (30, 50, 80))
-        player_sector = sectorize(player_pos)
+        px, py, pz = player_pos
         
-        # Get blocks in nearby sectors
+        # Get blocks within a smaller radius around the player
         blocks = []
-        for dx in range(-2, 3):
-            for dz in range(-2, 3):
-                sector = (player_sector[0] + dx, player_sector[1], player_sector[2] + dz)
-                blocks.extend(self.world.get_visible_blocks_in_sector(sector))
+        radius = 32  # Limit to 32 block radius to keep data manageable
+        max_blocks = 1000  # Hard limit on number of blocks to prevent huge messages
+        
+        for position, block in self.world.world.items():
+            x, y, z = position
+            # Check if block is within radius of player
+            distance = ((x - px) ** 2 + (y - py) ** 2 + (z - pz) ** 2) ** 0.5
+            if distance <= radius and self.world.exposed(position):
+                blocks.append(block.to_dict())
+                if len(blocks) >= max_blocks:
+                    break
+        
+        print(f"Sending {len(blocks)} blocks to client (radius: {radius})")
         
         response = {
             'type': 'world_data',
