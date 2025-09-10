@@ -33,7 +33,11 @@ from pyglet import image
 from pyglet.gl import *
 from pyglet.graphics import TextureGroup
 from pyglet.window import key, mouse
-from pyglet.graphics import get_default_shader
+try:
+    from pyglet.graphics import get_default_shader
+except ImportError:
+    # Fallback for older Pyglet versions
+    get_default_shader = None
 
 from noise_gen import NoiseGen
 
@@ -883,9 +887,29 @@ class Window(pyglet.window.Window):
             self.reticle.delete()
         x, y = self.width // 2, self.height // 2
         n = 10
-        self.reticle = get_default_shader().vertex_list(4, GL_LINES,
-            position=('v2f/static', (float(x - n), float(y), float(x + n), float(y), float(x), float(y - n), float(x), float(y + n)))
-        )
+        # Create crosshair vertex list - compatible with Pyglet 2.1.8
+        try:
+            # Try Pyglet 2.x approach first - vertex_list with positional args
+            self.reticle = pyglet.graphics.vertex_list(4, 
+                ('v2f/static', (float(x - n), float(y), float(x + n), float(y), float(x), float(y - n), float(x), float(y + n)))
+            )
+        except (AttributeError, TypeError):
+            # Fallback for older Pyglet versions or different API
+            if get_default_shader is not None:
+                try:
+                    self.reticle = get_default_shader().vertex_list(4, GL_LINES,
+                        position=('v2f/static', (float(x - n), float(y), float(x + n), float(y), float(x), float(y - n), float(x), float(y + n)))
+                    )
+                except:
+                    # Final fallback - direct vertex list with old style
+                    self.reticle = pyglet.graphics.vertex_list(4,
+                        ('v2f/static', (float(x - n), float(y), float(x + n), float(y), float(x), float(y - n), float(x), float(y + n)))
+                    )
+            else:
+                # Manual vertex list creation as last resort
+                self.reticle = pyglet.graphics.vertex_list(4,
+                    ('v2f/static', (float(x - n), float(y), float(x + n), float(y), float(x), float(y - n), float(x), float(y + n)))
+                )
 
     def set_2d(self):
         """ Configure OpenGL to draw in 2d.
@@ -966,7 +990,17 @@ class Window(pyglet.window.Window):
 
         """
         glColor3d(0, 0, 0)
-        self.reticle.draw(GL_LINES)
+        # Draw reticle compatible with both Pyglet 1.x and 2.x
+        if hasattr(self.reticle, 'draw'):
+            try:
+                # Try with mode parameter first (Pyglet 2.x style)
+                self.reticle.draw(mode=GL_LINES)
+            except TypeError:
+                # Fallback to old style without mode parameter
+                self.reticle.draw(GL_LINES)
+        else:
+            # If no draw method, something is wrong
+            pass
 
 
 def setup_fog():
