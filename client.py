@@ -52,6 +52,12 @@ class MinecraftClient:
         self.last_position = (0, 0, 0)
         self.position_update_timer = 0
         
+        # Variables pour gérer les clics souris
+        self.last_left_click = False
+        self.last_right_click = False
+        self.click_cooldown = 0.2  # Délai minimum entre les clics (en secondes)
+        self.last_click_time = 0
+        
         # Interface
         self.chat_messages = []
         self.chat_visible = False
@@ -462,11 +468,26 @@ class MinecraftClient:
         if held_keys['t'] and not self.chat_visible:
             self.toggle_chat()
             
-        # Interactions avec les blocs
-        if mouse.left:
-            self.handle_block_interaction("remove")
-        elif mouse.right:
-            self.handle_block_interaction("place")
+        # Gestion des clics souris avec détection de fronts
+        current_time = time.time()
+        current_left_click = mouse.left
+        current_right_click = mouse.right
+        
+        # Détecter les nouveaux clics (front montant) avec cooldown
+        if current_time - self.last_click_time > self.click_cooldown:
+            # Clic gauche (détruire) - détection du front montant
+            if current_left_click and not self.last_left_click:
+                self.handle_block_interaction("remove")
+                self.last_click_time = current_time
+            
+            # Clic droit (placer) - détection du front montant  
+            elif current_right_click and not self.last_right_click:
+                self.handle_block_interaction("place")
+                self.last_click_time = current_time
+        
+        # Sauvegarder l'état des clics pour la prochaine frame
+        self.last_left_click = current_left_click
+        self.last_right_click = current_right_click
 
 def run_network_thread(client):
     """Thread pour la communication réseau"""
