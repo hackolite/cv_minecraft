@@ -106,8 +106,9 @@ class MinecraftClient:
         # Interface utilisateur
         self.setup_ui()
         
-        # Lumière
+        # Lumière améliorée pour une meilleure visibilité
         DirectionalLight().look_at(Vec3(1, -1, -1))
+        AmbientLight(color=color.white, factor=0.3)  # Ajout de lumière ambiante
         
         return app
         
@@ -261,6 +262,7 @@ class MinecraftClient:
         self.world_blocks.clear()
         
         # Charger les nouveaux blocs
+        blocks_created = 0
         for block_data in world_data:
             self.create_block(
                 block_data["x"],
@@ -268,18 +270,26 @@ class MinecraftClient:
                 block_data["z"],
                 block_data["block_type"]
             )
+            blocks_created += 1
+            
+        logger.info(f"✅ {blocks_created} blocs visuels créés et chargés")
             
     def create_block(self, x, y, z, block_type):
         """Crée un bloc visuel dans le monde"""
-        color_value = self.block_types.get(block_type, color.white)
-        
-        block = Entity(
-            model='cube',
-            color=color_value,
-            position=(x, y, z)
-        )
-        
-        self.world_blocks[(x, y, z)] = block
+        try:
+            color_value = self.block_types.get(block_type, color.white)
+            
+            block = Entity(
+                model='cube',
+                color=color_value,
+                position=(x, y, z),
+                scale=(1, 1, 1)  # Ensure blocks are full size
+            )
+            
+            self.world_blocks[(x, y, z)] = block
+            
+        except Exception as e:
+            logger.error(f"Erreur création bloc en ({x}, {y}, {z}): {e}")
         
     def handle_world_update(self, message):
         """Gère les mises à jour du monde"""
