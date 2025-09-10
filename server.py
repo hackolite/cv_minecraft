@@ -285,7 +285,7 @@ class MinecraftServer:
         except Exception as e:
             logger.error(f"Erreur traitement message: {e}")
             
-    async def handle_client(self, websocket, path):
+    async def handle_client(self, websocket):
         """Gère une connexion client"""
         logger.info(f"Nouvelle connexion client: {websocket.remote_address}")
         
