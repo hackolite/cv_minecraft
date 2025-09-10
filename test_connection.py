@@ -115,12 +115,12 @@ def test_server_terrain():
         test_server = MinecraftServer(world_size=10)
         
         # Vérifier que le monde a été généré
-        if len(test_server.world) > 0:
-            print(f"✅ Terrain généré avec {len(test_server.world)} blocs")
+        if len(test_server.world.world) > 0:
+            print(f"✅ Terrain généré avec {len(test_server.world.world)} blocs")
             
             # Vérifier les types de blocs
-            block_types = set(block.block_type for block in test_server.world.values())
-            print(f"✅ Types de blocs trouvés: {', '.join(sorted(block_types))}")
+            block_types = set(str(block.block_type) for block in test_server.world.world.values())
+            print(f"✅ Types de blocs trouvés: {len(block_types)} types différents")
             
             return True
         else:
