@@ -90,7 +90,7 @@ class MinecraftClient:
         except:
             pass
         try:
-            self.player.mouse_sensitivity = 50  # Sensibilité de la souris
+            self.player.mouse_sensitivity = (50, 50)  # Sensibilité de la souris (x, y)
         except:
             pass
         
