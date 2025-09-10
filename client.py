@@ -74,7 +74,20 @@ class DebugClient(ShowBase):
         self.disableMouse()
         self.camera.setPos(self.position)
         self.camera.setHpr(0, 0, 0)
+        
+        # Enable depth testing for proper 3D rendering
+        self.render.setDepthTest(True)
+        self.render.setDepthWrite(True)
+        
+        # Set up proper perspective lens
+        lens = PerspectiveLens()
+        lens.setFov(70)
+        lens.setNear(0.1)
+        lens.setFar(1000.0)
+        self.camera.node().setLens(lens)
+        
         print(f"Camera position: {self.camera.getPos()}")
+        print("Depth testing enabled for proper 3D rendering")
     
     def setup_lighting(self):
         """Setup lighting."""
@@ -120,12 +133,76 @@ class DebugClient(ShowBase):
         """Setup basic controls."""
         print("Setting up controls...")
         
-        # Juste les controles de base pour le debug
+        # Debug controls
         self.accept("escape", sys.exit)
         self.accept("r", self.request_world_data)
         self.accept("t", self.test_add_block)
         
+        # Camera movement controls
+        self.accept("w", self.move_forward)
+        self.accept("s", self.move_backward)
+        self.accept("a", self.move_left)
+        self.accept("d", self.move_right)
+        self.accept("space", self.move_up)
+        self.accept("c", self.move_down)
+        
+        # Camera rotation
+        self.accept("arrow_left", self.turn_left)
+        self.accept("arrow_right", self.turn_right)
+        self.accept("arrow_up", self.look_up)
+        self.accept("arrow_down", self.look_down)
+        
         print("Controls setup complete")
+    
+    def move_forward(self):
+        """Move camera forward."""
+        self.camera.setY(self.camera, 2)
+        self.update_camera_position()
+        
+    def move_backward(self):
+        """Move camera backward.""" 
+        self.camera.setY(self.camera, -2)
+        self.update_camera_position()
+        
+    def move_left(self):
+        """Move camera left."""
+        self.camera.setX(self.camera, -2)
+        self.update_camera_position()
+        
+    def move_right(self):
+        """Move camera right."""
+        self.camera.setX(self.camera, 2)
+        self.update_camera_position()
+        
+    def move_up(self):
+        """Move camera up."""
+        self.camera.setZ(self.camera.getZ() + 2)
+        self.update_camera_position()
+        
+    def move_down(self):
+        """Move camera down."""
+        self.camera.setZ(self.camera.getZ() - 2)
+        self.update_camera_position()
+        
+    def turn_left(self):
+        """Turn camera left."""
+        self.camera.setH(self.camera.getH() + 10)
+        
+    def turn_right(self):
+        """Turn camera right."""
+        self.camera.setH(self.camera.getH() - 10)
+        
+    def look_up(self):
+        """Look up."""
+        self.camera.setP(self.camera.getP() + 10)
+        
+    def look_down(self):
+        """Look down."""
+        self.camera.setP(self.camera.getP() - 10)
+        
+    def update_camera_position(self):
+        """Update camera position and send to server if needed."""
+        self.position = self.camera.getPos()
     
     def request_world_data(self):
         """Demander les données du monde manuellement."""
@@ -315,9 +392,51 @@ class DebugClient(ShowBase):
             self.status_text.setText(f"Loaded: {success_count}, Errors: {error_count}")
             
         elif message_type == 'world_chunk':
-            print("Received world_chunk - processing same as world_data")
-            # Process same as world_data
-            self.handle_server_message({'type': 'world_data', **data})
+            blocks = data.get('blocks', [])
+            chunk_index = data.get('chunk_index', 0)
+            total_chunks = data.get('total_chunks', 1)
+            
+            print(f"WORLD_CHUNK received: {chunk_index+1}/{total_chunks} ({len(blocks)} blocks)")
+            
+            success_count = 0
+            error_count = 0
+            
+            for i, block_data in enumerate(blocks):
+                try:
+                    if isinstance(block_data, dict):
+                        position = block_data.get('position')
+                        block_type = block_data.get('block_type')
+                        
+                        if position and block_type:
+                            # Convert to tuple if it's a list
+                            if isinstance(position, list):
+                                position = tuple(position)
+                            
+                            success = self.add_block_visual(position, block_type)
+                            if success:
+                                success_count += 1
+                            else:
+                                error_count += 1
+                        else:
+                            print(f"Block {i}: Missing position or block_type: {block_data}")
+                            error_count += 1
+                    else:
+                        print(f"Block {i}: Not a dict: {block_data}")
+                        error_count += 1
+                        
+                except Exception as e:
+                    print(f"Error processing block {i}: {e}")
+                    error_count += 1
+            
+            print(f"CHUNK {chunk_index+1} processed: Success: {success_count}, Errors: {error_count}")
+            
+            self.status_text.setText(f"Loading chunk {chunk_index+1}/{total_chunks}...")
+            
+        elif message_type == 'world_complete':
+            total_blocks = data.get('total_blocks', 0)
+            print(f"WORLD_COMPLETE: All {total_blocks} blocks loaded")
+            print(f"Total blocks in memory: {len(self.blocks)}")
+            self.status_text.setText(f"Loaded: {len(self.blocks)} blocks")
             
         else:
             print(f"Other message type: {message_type}")
@@ -340,13 +459,16 @@ class DebugClient(ShowBase):
         
         # Update debug info
         cam_pos = self.camera.getPos()
+        cam_hpr = self.camera.getHpr()
         self.debug_text.setText(
             f"Blocks: {len(self.blocks)}\n"
             f"Pos: ({cam_pos.x:.1f}, {cam_pos.y:.1f}, {cam_pos.z:.1f})\n"
+            f"HPR: ({cam_hpr.x:.0f}, {cam_hpr.y:.0f}, {cam_hpr.z:.0f})\n"
             f"Connected: {self.connected}\n"
-            f"Press R: Request world\n"
-            f"Press T: Test block\n"
-            f"Press ESC: Exit"
+            f"WASD: Move, Space/C: Up/Down\n"
+            f"Arrows: Look around\n"
+            f"R: Request world, T: Test block\n"
+            f"ESC: Exit"
         )
         
         return task.cont
