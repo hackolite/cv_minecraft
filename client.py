@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minecraft-like Client using Panda3D
+Minecraft-like Client using Panda3D - Version corrigée
 Handles rendering, input, and server communication
 """
 
@@ -28,37 +28,15 @@ from direct.gui.OnscreenText import OnscreenText
 from direct.gui.DirectGui import DirectFrame
 from direct.actor.Actor import Actor
 
-# Block types (same as server)
-def tex_coord(x, y, n=4):
-    """Return the bounding vertices of the texture square."""
-    m = 1.0 / n
-    dx = x * m
-    dy = y * m
-    return dx, dy, dx + m, dy, dx + m, dy + m, dx, dy + m
-
-def tex_coords(top, bottom, side):
-    """Return a list of the texture squares for the top, bottom and side."""
-    top = tex_coord(*top)
-    bottom = tex_coord(*bottom)
-    side = tex_coord(*side)
-    result = []
-    result.extend(top)    # top
-    result.extend(bottom) # bottom
-    result.extend(side)   # left
-    result.extend(side)   # right
-    result.extend(side)   # front
-    result.extend(side)   # back
-    return result
-
-# Block type definitions (must match server)
-GRASS = tex_coords((1, 0), (0, 1), (0, 0))
-SAND = tex_coords((1, 1), (1, 1), (1, 1))
-BRICK = tex_coords((2, 0), (2, 0), (2, 0))
-STONE = tex_coords((2, 1), (2, 1), (2, 1))
-WOOD = tex_coords((3, 1), (3, 1), (3, 1))
-LEAF = tex_coords((3, 0), (3, 0), (3, 0))
-WATER = tex_coords((0, 2), (0, 2), (0, 2))
-FROG = tex_coords((1, 2), (1, 2), (1, 2))
+# Block types (doit correspondre au serveur - utilisation de chaînes maintenant)
+GRASS = "grass"
+SAND = "sand"
+BRICK = "brick"
+STONE = "stone"
+WOOD = "wood"
+LEAF = "leaf"
+WATER = "water"
+FROG = "frog"
 
 # Constants
 WALKING_SPEED = 5
@@ -81,7 +59,8 @@ class MinecraftClient(ShowBase):
         
         # Network
         self.websocket = None
-        self.message_queue = Queue()
+        self.outgoing_messages = Queue()  # Messages à envoyer au serveur
+        self.incoming_messages = Queue()  # Messages reçus du serveur
         self.connected = False
         
         # Player state
@@ -104,8 +83,8 @@ class MinecraftClient(ShowBase):
         self.blocks = {}  # position -> NodePath
         self.block_types = {}  # position -> block_type
         
-        # Inventory
-        self.inventory = [BRICK, GRASS, SAND, WOOD, LEAF, FROG]
+        # Inventory - utilisation des nouveaux types
+        self.inventory = [BRICK, GRASS, SAND, WOOD, LEAF, STONE, WATER, FROG]
         self.current_block = 0
         
         # Setup
@@ -121,6 +100,8 @@ class MinecraftClient(ShowBase):
         
         # Start update task
         self.taskMgr.add(self.update, "update")
+        
+        print("Minecraft client started")
     
     def setup_camera(self):
         """Setup camera and disable default mouse controls."""
@@ -171,8 +152,9 @@ class MinecraftClient(ShowBase):
         self.accept("space-up", self.set_key, ["jump", False])
         
         # Block selection
-        for i in range(1, 7):
-            self.accept(str(i), self.select_block, [i-1])
+        for i in range(1, 9):  # 1-8 pour 8 types de blocs
+            if i <= len(self.inventory):
+                self.accept(str(i), self.select_block, [i-1])
         
         # Mouse events
         self.accept("mouse1", self.on_left_click)  # Remove block
@@ -201,8 +183,14 @@ class MinecraftClient(ShowBase):
         )
         
         # Block info
+        block_names = {
+            BRICK: "Brick", GRASS: "Grass", SAND: "Sand", WOOD: "Wood",
+            LEAF: "Leaf", STONE: "Stone", WATER: "Water", FROG: "Frog"
+        }
+        current_block_name = block_names.get(self.inventory[self.current_block], "Unknown")
+        
         self.block_text = OnscreenText(
-            text="Block: Brick",
+            text=f"Block: {current_block_name} (Press 1-8)",
             pos=(-0.95, -0.95),
             scale=0.04,
             fg=(1, 1, 1, 1),
@@ -216,6 +204,15 @@ class MinecraftClient(ShowBase):
             scale=0.04,
             fg=(1, 1, 1, 1),
             align=3  # right
+        )
+        
+        # Block count
+        self.block_count_text = OnscreenText(
+            text="Blocks loaded: 0",
+            pos=(0, 0.8),
+            scale=0.04,
+            fg=(1, 1, 0, 1),
+            align=0
         )
     
     def setup_collision(self):
@@ -241,14 +238,21 @@ class MinecraftClient(ShowBase):
         """Select block type."""
         if 0 <= index < len(self.inventory):
             self.current_block = index
-            block_names = ['Brick', 'Grass', 'Sand', 'Wood', 'Leaf', 'Frog']
-            self.block_text.setText(f"Block: {block_names[index]}")
+            block_names = {
+                BRICK: "Brick", GRASS: "Grass", SAND: "Sand", WOOD: "Wood",
+                LEAF: "Leaf", STONE: "Stone", WATER: "Water", FROG: "Frog"
+            }
+            current_block_name = block_names.get(self.inventory[index], "Unknown")
+            self.block_text.setText(f"Block: {current_block_name} (Press 1-8)")
     
     def toggle_flying(self):
         """Toggle flying mode."""
         self.flying = not self.flying
         if self.flying:
             self.velocity.z = 0  # Stop falling
+            self.status_text.setText("Flying mode: ON")
+        else:
+            self.status_text.setText("Flying mode: OFF")
     
     def mouse_look_task(self, task):
         """Handle mouse look."""
@@ -316,12 +320,13 @@ class MinecraftClient(ShowBase):
         hit_pos, _ = self.ray_cast(self.camera.getPos(), look_vector)
         
         if hit_pos:
+            print(f"Removing block at {hit_pos}")
             # Send remove block message to server
             message = {
                 'type': 'remove_block',
-                'position': hit_pos
+                'position': list(hit_pos)  # Convertir en liste
             }
-            self.message_queue.put(json.dumps(message))
+            self.outgoing_messages.put(json.dumps(message))
     
     def on_right_click(self):
         """Handle right mouse click (place block)."""
@@ -332,13 +337,15 @@ class MinecraftClient(ShowBase):
         hit_pos, place_pos = self.ray_cast(self.camera.getPos(), look_vector)
         
         if hit_pos and place_pos and place_pos not in self.blocks:
+            selected_block = self.inventory[self.current_block]
+            print(f"Placing {selected_block} block at {place_pos}")
             # Send add block message to server
             message = {
                 'type': 'add_block',
-                'position': place_pos,
-                'block_type': self.inventory[self.current_block]
+                'position': list(place_pos),  # Convertir en liste
+                'block_type': selected_block
             }
-            self.message_queue.put(json.dumps(message))
+            self.outgoing_messages.put(json.dumps(message))
     
     def update(self, task):
         """Main update loop."""
@@ -351,6 +358,9 @@ class MinecraftClient(ShowBase):
         # Update position text
         pos = self.camera.getPos()
         self.pos_text.setText(f"Position: ({pos.x:.1f}, {pos.y:.1f}, {pos.z:.1f})")
+        
+        # Update block count
+        self.block_count_text.setText(f"Blocks loaded: {len(self.blocks)}")
         
         # Process network messages
         self.process_network_messages()
@@ -439,9 +449,9 @@ class MinecraftClient(ShowBase):
             pos = self.camera.getPos()
             message = {
                 'type': 'move',
-                'position': (pos.x, pos.y, pos.z)
+                'position': [pos.x, pos.y, pos.z]  # Liste au lieu de tuple
             }
-            self.message_queue.put(json.dumps(message))
+            self.outgoing_messages.put(json.dumps(message))
     
     def create_block_node(self, position, block_type):
         """Create a visual block at the given position."""
@@ -452,20 +462,19 @@ class MinecraftClient(ShowBase):
         # Create a simple cube by combining 6 cards
         block_node = self.render.attachNewNode("block")
         
-        # For simplicity, create a basic colored cube
-        # In a full implementation, you'd apply the texture coordinates
+        # Couleurs pour chaque type de bloc
         colors = {
-            str(GRASS): (0.2, 0.8, 0.2, 1),
-            str(SAND): (0.9, 0.8, 0.4, 1),
-            str(BRICK): (0.8, 0.3, 0.2, 1),
-            str(STONE): (0.5, 0.5, 0.5, 1),
-            str(WOOD): (0.6, 0.4, 0.2, 1),
-            str(LEAF): (0.1, 0.6, 0.1, 1),
-            str(WATER): (0.2, 0.4, 0.8, 0.7),
-            str(FROG): (0.8, 0.8, 0.2, 1)
+            GRASS: (0.2, 0.8, 0.2, 1),     # Vert
+            SAND: (0.9, 0.8, 0.4, 1),      # Sable
+            BRICK: (0.8, 0.3, 0.2, 1),     # Rouge brique
+            STONE: (0.5, 0.5, 0.5, 1),     # Gris pierre
+            WOOD: (0.6, 0.4, 0.2, 1),      # Marron bois
+            LEAF: (0.1, 0.6, 0.1, 1),      # Vert foncé feuilles
+            WATER: (0.2, 0.4, 0.8, 0.7),   # Bleu eau (transparent)
+            FROG: (0.8, 0.8, 0.2, 1)       # Jaune grenouille
         }
         
-        color = colors.get(str(block_type), (0.5, 0.5, 0.5, 1))
+        color = colors.get(block_type, (0.5, 0.5, 0.5, 1))  # Gris par défaut
         
         # Create 6 faces for a proper 1x1x1 cube
         faces = [
@@ -492,6 +501,7 @@ class MinecraftClient(ShowBase):
     def add_block_visual(self, position, block_type):
         """Add a visual block to the world."""
         if position not in self.blocks:
+            print(f"Adding visual block: {block_type} at {position}")
             block_node = self.create_block_node(position, block_type)
             self.blocks[position] = block_node
             self.block_types[position] = block_type
@@ -499,6 +509,7 @@ class MinecraftClient(ShowBase):
     def remove_block_visual(self, position):
         """Remove a visual block from the world."""
         if position in self.blocks:
+            print(f"Removing visual block at {position}")
             self.blocks[position].removeNode()
             del self.blocks[position]
             if position in self.block_types:
@@ -506,55 +517,104 @@ class MinecraftClient(ShowBase):
     
     def process_network_messages(self):
         """Process messages received from network thread."""
-        while not self.message_queue.empty():
+        messages_processed = 0
+        while not self.incoming_messages.empty() and messages_processed < 10:  # Limite pour éviter les blocages
             try:
-                message = self.message_queue.get_nowait()
+                message = self.incoming_messages.get_nowait()
                 if isinstance(message, dict):
                     self.handle_server_message(message)
+                    messages_processed += 1
             except:
-                pass
+                break
     
     def handle_server_message(self, data):
         """Handle message from server."""
         message_type = data.get('type')
+        print(f"Received message: {message_type}")
         
         if message_type == 'welcome':
             self.status_text.setText("Connected to server")
             self.connected = True
             # Request world data
             request = {'type': 'get_world'}
-            self.message_queue.put(json.dumps(request))
+            self.outgoing_messages.put(json.dumps(request))
+            print("Requesting world data...")
             
         elif message_type == 'world_data':
             blocks = data.get('blocks', [])
+            textures = data.get('textures', {})  # Textures du serveur (optionnel)
+            print(f"Received world data: {len(blocks)} blocks")
+            
             for block_data in blocks:
-                position = tuple(block_data['position'])
-                block_type = block_data['block_type']
-                self.add_block_visual(position, block_type)
+                try:
+                    position = tuple(block_data['position'])
+                    block_type = block_data['block_type']
+                    self.add_block_visual(position, block_type)
+                except Exception as e:
+                    print(f"Error processing block data {block_data}: {e}")
+            
             print(f"Loaded {len(blocks)} blocks from server")
+            self.status_text.setText(f"Loaded {len(blocks)} blocks")
+            
+        elif message_type == 'world_chunk':
+            blocks = data.get('blocks', [])
+            chunk_index = data.get('chunk_index', 0)
+            total_chunks = data.get('total_chunks', 1)
+            
+            print(f"Received chunk {chunk_index + 1}/{total_chunks}: {len(blocks)} blocks")
+            
+            for block_data in blocks:
+                try:
+                    position = tuple(block_data['position'])
+                    block_type = block_data['block_type']
+                    self.add_block_visual(position, block_type)
+                except Exception as e:
+                    print(f"Error processing block data {block_data}: {e}")
+            
+            self.status_text.setText(f"Loading chunk {chunk_index + 1}/{total_chunks}")
+            
+        elif message_type == 'world_complete':
+            total_blocks = data.get('total_blocks', len(self.blocks))
+            print(f"World loading complete: {total_blocks} total blocks")
+            self.status_text.setText(f"World loaded: {total_blocks} blocks")
             
         elif message_type == 'block_added':
             position = tuple(data['position'])
             block_type = data['block_type']
+            print(f"Server says: block added {block_type} at {position}")
             self.add_block_visual(position, block_type)
             
         elif message_type == 'block_removed':
             position = tuple(data['position'])
+            print(f"Server says: block removed at {position}")
             self.remove_block_visual(position)
+            
+        elif message_type == 'player_joined':
+            player_name = data.get('player_name', 'Unknown')
+            print(f"Player joined: {player_name}")
+            
+        elif message_type == 'player_moved':
+            # Ignore pour l'instant
+            pass
+        else:
+            print(f"Unknown message type: {message_type}")
     
     def start_network_thread(self):
         """Start network thread for WebSocket communication."""
         self.network_thread = threading.Thread(target=self.network_worker)
         self.network_thread.daemon = True
         self.network_thread.start()
+        print("Network thread started")
     
     def network_worker(self):
         """Network thread worker."""
         async def connect_and_communicate():
             try:
                 uri = "ws://localhost:8765"
+                print(f"Connecting to {uri}...")
                 async with websockets.connect(uri) as websocket:
                     self.websocket = websocket
+                    print("Connected to server!")
                     
                     # Send join message
                     join_message = {
@@ -562,30 +622,39 @@ class MinecraftClient(ShowBase):
                         'name': 'Player'
                     }
                     await websocket.send(json.dumps(join_message))
+                    print("Sent join message")
                     
                     # Start listening for messages
                     async def listen_for_messages():
-                        async for message in websocket:
-                            try:
-                                data = json.loads(message)
-                                self.message_queue.put(data)
-                            except json.JSONDecodeError:
-                                print(f"Invalid JSON: {message}")
+                        try:
+                            async for message in websocket:
+                                try:
+                                    data = json.loads(message)
+                                    self.incoming_messages.put(data)
+                                except json.JSONDecodeError as e:
+                                    print(f"Invalid JSON: {message[:100]}... Error: {e}")
+                        except websockets.exceptions.ConnectionClosed:
+                            print("Connection closed by server")
+                        except Exception as e:
+                            print(f"Error in listen_for_messages: {e}")
                     
                     async def send_queued_messages():
-                        while True:
-                            try:
+                        try:
+                            while True:
                                 # Check for outgoing messages
-                                while not self.message_queue.empty():
+                                messages_sent = 0
+                                while not self.outgoing_messages.empty() and messages_sent < 5:
                                     try:
-                                        msg = self.message_queue.get_nowait()
+                                        msg = self.outgoing_messages.get_nowait()
                                         if isinstance(msg, str):
                                             await websocket.send(msg)
-                                    except:
-                                        pass
+                                            messages_sent += 1
+                                    except Exception as e:
+                                        print(f"Error sending message: {e}")
+                                        break
                                 await asyncio.sleep(0.01)
-                            except:
-                                break
+                        except Exception as e:
+                            print(f"Error in send_queued_messages: {e}")
                     
                     # Run both tasks concurrently
                     await asyncio.gather(
@@ -595,16 +664,20 @@ class MinecraftClient(ShowBase):
                     
             except Exception as e:
                 print(f"Network error: {e}")
-                self.message_queue.put({
+                self.incoming_messages.put({
                     'type': 'error',
                     'message': str(e)
                 })
         
         # Run the async network code
-        asyncio.run(connect_and_communicate())
+        try:
+            asyncio.run(connect_and_communicate())
+        except Exception as e:
+            print(f"Error in network worker: {e}")
 
 def main():
     """Main function to start the client."""
+    print("Starting Minecraft client...")
     client = MinecraftClient()
     client.run()
 
