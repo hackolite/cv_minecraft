@@ -53,6 +53,7 @@ Le client vous demandera :
 ### Contrôles du jeu
 
 - **ZQSD** : Se déplacer
+- **Espace** : Sauter
 - **Souris** : Regarder autour
 - **Clic gauche** : Détruire un bloc
 - **Clic droit** : Placer un bloc

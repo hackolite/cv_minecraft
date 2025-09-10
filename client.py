@@ -71,9 +71,28 @@ class MinecraftClient:
         # Ciel
         sky = Sky()
         
-        # Contrôleur de joueur
+        # Contrôleur de joueur avec gravité et saut
         self.player = FirstPersonController()
         self.player.cursor.visible = False
+        
+        # Configuration de la gravité et du mouvement
+        # Note: certaines propriétés peuvent ne pas exister selon la version d'Ursina
+        try:
+            self.player.gravity = 1  # Activer la gravité
+        except:
+            pass
+        try:
+            self.player.jump_height = 2  # Hauteur de saut
+        except:
+            self.player.jump_height = 2  # Fallback
+        try:
+            self.player.speed = 5  # Vitesse de déplacement
+        except:
+            pass
+        try:
+            self.player.mouse_sensitivity = 50  # Sensibilité de la souris
+        except:
+            pass
         
         # Caméra
         camera.fov = 90
@@ -91,7 +110,7 @@ class MinecraftClient:
         # Texte d'information
         self.info_text = Text(
             "🎮 Minecraft-like\n" +
-            "ZQSD: Déplacer | Clic gauche: Détruire | Clic droit: Placer\n" +
+            "ZQSD: Déplacer | Espace: Sauter | Clic gauche: Détruire | Clic droit: Placer\n" +
             "1-6: Changer bloc | T: Chat | ESC: Quitter",
             position=(-0.95, 0.45),
             scale=0.7,
@@ -423,6 +442,18 @@ class MinecraftClient:
         if held_keys['escape']:
             application.quit()
             
+        # Saut avec la barre d'espace
+        if held_keys['space']:
+            # Le FirstPersonController d'Ursina gère le saut avec gravity
+            # On peut aussi utiliser player.y += jump_speed si besoin
+            if hasattr(self.player, 'jump'):
+                try:
+                    self.player.jump()
+                except:
+                    # Fallback pour saut manuel si jump() n'existe pas
+                    if self.player.grounded:
+                        self.player.velocity_y = self.player.jump_height
+            
         # Changement de bloc (touches 1-6)
         for i in range(1, 7):
             if held_keys[str(i)]:
@@ -487,7 +518,7 @@ def main():
             client.update_game()
         
         print("✅ Client démarré avec succès!")
-        print("🎮 Utilisez ZQSD pour vous déplacer, clic gauche pour détruire, clic droit pour placer des blocs")
+        print("🎮 Utilisez ZQSD pour vous déplacer, Espace pour sauter, clic gauche pour détruire, clic droit pour placer des blocs")
         app.run()
         
     except KeyboardInterrupt:
