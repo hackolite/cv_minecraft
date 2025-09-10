@@ -84,7 +84,7 @@ class DebugClient(ShowBase):
         lens.setFov(70)
         lens.setNear(0.1)
         lens.setFar(1000.0)
-        self.camera.node().setLens(lens)
+        self.cam.node().setLens(lens)
         
         print(f"Camera position: {self.camera.getPos()}")
         print("Depth testing enabled for proper 3D rendering")
