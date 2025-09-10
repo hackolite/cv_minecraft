@@ -69,7 +69,7 @@ class MinecraftClient(ShowBase):
         
         # Variables de mouvement
         self.movement_speed = 20.0
-        self.mouse_sensitivity = 1.0  # Réduit de 50.0 à 1.0 pour moins de sensibilité
+        self.mouse_sensitivity = 5.0  # Augmenté pour plus de sensibilité de la souris
         self.gravity = -20.0
         self.jump_force = 10.0
         self.velocity_y = 0
@@ -79,6 +79,9 @@ class MinecraftClient(ShowBase):
         self.last_mouse_x = 0
         self.last_mouse_y = 0
         self.mouse_initialized = False
+        
+        # Variables pour le plein écran
+        self.is_fullscreen = False
         
         # Touches pressées
         self.key_map = {
@@ -156,6 +159,9 @@ class MinecraftClient(ShowBase):
         self.accept("t", self.toggle_chat)
         self.accept("escape", sys.exit)
         
+        # Plein écran
+        self.accept("f11", self.toggle_fullscreen)
+        
         # Capturer la souris
         props = WindowProperties()
         props.setCursorHidden(True)
@@ -164,50 +170,76 @@ class MinecraftClient(ShowBase):
         
     def setup_ui(self):
         """Configure l'interface utilisateur"""
-        # Texte d'information
+        # Essayer de charger une belle police, sinon utiliser celle par défaut
+        try:
+            font = loader.loadFont("cmtt12")
+        except:
+            font = None  # Utiliser la police par défaut
+        
+        # Texte d'information avec style amélioré
         self.info_text = OnscreenText(
             text="🎮 Minecraft-like (Panda3D)\n" +
-                 "ZQSD: Déplacer | Espace: Sauter | Clic gauche: Détruire | Clic droit: Placer\n" +
-                 "1-6: Changer bloc | T: Chat | ESC: Quitter",
-            pos=(-1.3, 0.9),
-            scale=0.05,
-            fg=(1, 1, 1, 1),
-            align=TextNode.ALeft
+                 "🎯 ZQSD: Déplacer | Espace: Sauter | Souris: Regarder autour\n" +
+                 "🧱 Clic gauche: Détruire | Clic droit: Placer | 1-6: Changer bloc\n" +
+                 "💬 T: Chat | F11: Plein écran | ESC: Quitter",
+            pos=(-1.4, 0.95),
+            scale=0.045,
+            fg=(0.9, 0.9, 1.0, 1.0),  # Bleu clair plus agréable
+            shadow=(0.1, 0.1, 0.2, 0.8),  # Ombre pour meilleure lisibilité
+            align=TextNode.ALeft,
+            font=font
         )
         
-        # Indicateur de bloc sélectionné
+        # Indicateur de bloc sélectionné avec style amélioré
         self.block_indicator = OnscreenText(
-            text=f"Bloc: {self.current_block_type.title()}",
-            pos=(1.0, 0.9),
-            scale=0.06,
+            text=f"🧱 Bloc: {self.current_block_type.title()}",
+            pos=(1.2, 0.92),
+            scale=0.07,
             fg=self.block_types.get(self.current_block_type, (1, 1, 1, 1)),
-            align=TextNode.ARight
+            shadow=(0.1, 0.1, 0.1, 0.9),
+            align=TextNode.ARight,
+            font=font
         )
         
-        # Statut de connexion
+        # Statut de connexion avec style amélioré
         self.connection_status = OnscreenText(
-            text="Connexion...",
-            pos=(-1.3, -0.9),
+            text="🔄 Connexion...",
+            pos=(-1.4, -0.92),
             scale=0.05,
-            fg=(1, 0, 0, 1),
-            align=TextNode.ALeft
+            fg=(1.0, 0.6, 0.2, 1.0),  # Orange plus doux
+            shadow=(0.1, 0.1, 0.1, 0.8),
+            align=TextNode.ALeft,
+            font=font
         )
         
-        # Zone de chat (initialement cachée)
+        # Zone de chat avec style amélioré
         self.chat_frame = DirectFrame(
-            frameColor=(0.2, 0.2, 0.2, 0.7),
-            frameSize=(-1.5, 1.5, -0.8, -0.2),
+            frameColor=(0.05, 0.05, 0.15, 0.85),  # Bleu foncé plus élégant
+            borderWidth=(2, 2),
+            frameSize=(-1.5, 1.5, -0.8, -0.15),
             pos=(0, 0, 0)
         )
         self.chat_frame.hide()
         
         self.chat_text = OnscreenText(
-            text='',
+            text='💬 Appuyez sur T pour chatter...',
             parent=self.chat_frame,
-            pos=(0, 0.1),
+            pos=(0, 0.05),
             scale=0.04,
-            fg=(1, 1, 1, 1),
-            align=TextNode.ACenter
+            fg=(0.9, 0.9, 1.0, 1.0),  # Bleu clair
+            align=TextNode.ACenter,
+            font=font
+        )
+        
+        # Indicateur de performance (FPS)
+        self.fps_text = OnscreenText(
+            text="FPS: 60",
+            pos=(1.2, -0.85),
+            scale=0.04,
+            fg=(0.7, 1.0, 0.7, 1.0),  # Vert clair
+            shadow=(0.1, 0.1, 0.1, 0.8),
+            align=TextNode.ARight,
+            font=font
         )
         
     def set_key(self, key, value):
@@ -395,8 +427,8 @@ class MinecraftClient(ShowBase):
                             logger.info(f"Position initiale du joueur: ({player_data['x']}, {player_data['y']}, {player_data['z']})")
                             break
                     
-                    self.connection_status.setText(f"Connecté (ID: {self.player_id[:8]})")
-                    self.connection_status.setFg((0, 1, 0, 1))
+                    self.connection_status.setText(f"✅ Connecté (ID: {self.player_id[:8]})")
+                    self.connection_status.setFg((0.7, 1.0, 0.7, 1.0))  # Vert clair
                     
                 elif msg_type == "players_update":
                     self.update_players(message.get("players", []))
@@ -667,8 +699,27 @@ class MinecraftClient(ShowBase):
         block_list = list(self.block_types.keys())
         if 0 <= block_index < len(block_list):
             self.current_block_type = block_list[block_index]
-            self.block_indicator.setText(f"Bloc: {self.current_block_type.title()}")
+            self.block_indicator.setText(f"🧱 Bloc: {self.current_block_type.title()}")
             self.block_indicator.setFg(self.block_types[self.current_block_type])
+            
+    def toggle_fullscreen(self):
+        """Bascule entre mode fenêtré et plein écran"""
+        try:
+            self.is_fullscreen = not self.is_fullscreen
+            props = WindowProperties()
+            
+            if self.is_fullscreen:
+                props.setFullscreen(True)
+                logger.info("🖥️ Mode plein écran activé")
+            else:
+                props.setFullscreen(False)
+                props.setSize(1024, 768)  # Taille fenêtre par défaut
+                logger.info("🪟 Mode fenêtré activé")
+                
+            base.win.requestProperties(props)
+            
+        except Exception as e:
+            logger.error(f"Erreur lors du changement de mode d'affichage: {e}")
             
     def toggle_chat(self):
         """Active/désactive le chat"""
@@ -693,6 +744,18 @@ class MinecraftClient(ShowBase):
         """Mise à jour principale du jeu (appelée chaque frame)"""
         # Traiter les messages du serveur
         self.process_server_messages()
+        
+        # Mettre à jour l'affichage FPS
+        fps = globalClock.getAverageFrameRate()
+        if fps > 0:
+            self.fps_text.setText(f"FPS: {int(fps)}")
+            # Couleur selon la performance
+            if fps >= 50:
+                self.fps_text.setFg((0.7, 1.0, 0.7, 1.0))  # Vert = bon
+            elif fps >= 30:
+                self.fps_text.setFg((1.0, 1.0, 0.7, 1.0))  # Jaune = moyen
+            else:
+                self.fps_text.setFg((1.0, 0.7, 0.7, 1.0))  # Rouge = faible
         
         # Envoyer position si connecté
         self.position_update_timer += globalClock.getDt()
