@@ -40,7 +40,7 @@ class MinecraftClient:
             "grass": color.green,
             "stone": color.gray,
             "wood": color.brown,
-            "dirt": color.dark_brown,
+            "dirt": color.brown,
             "sand": color.yellow,
             "water": color.blue
         }
@@ -141,6 +141,10 @@ class MinecraftClient:
             
             return True
             
+        except ConnectionRefusedError:
+            logger.error(f"Impossible de se connecter au serveur {self.server_host}:{self.server_port}")
+            logger.error("Vérifiez que le serveur est démarré et accessible")
+            return False
         except Exception as e:
             logger.error(f"Erreur connexion serveur: {e}")
             return False
@@ -452,14 +456,49 @@ def main():
     print("🎮 Client Minecraft-like")
     print("=" * 30)
     
-    # Demander les informations de connexion
-    server_host = input("Adresse serveur (localhost): ").strip() or "localhost"
     try:
-        server_port = int(input("Port serveur (8765): ").strip() or "8765")
-    except ValueError:
-        server_port = 8765
+        # Demander les informations de connexion
+        server_host = input("Adresse serveur (localhost): ").strip() or "localhost"
+        try:
+            server_port = int(input("Port serveur (8765): ").strip() or "8765")
+        except ValueError:
+            server_port = 8765
+            
+        player_name = input("Nom du joueur (Joueur): ").strip() or "Joueur"
         
-    player_name = input("Nom du joueur (Joueur): ").strip() or "Joueur"
-    
-    # Créer le client
-    client = Minecraft
+        print(f"\n🔗 Connexion à {server_host}:{server_port} en tant que '{player_name}'...")
+        
+        # Créer le client
+        client = MinecraftClient(server_host, server_port)
+        client.player_name = player_name
+        
+        # Démarrer le thread réseau
+        network_thread = threading.Thread(target=run_network_thread, args=(client,))
+        network_thread.daemon = True
+        network_thread.start()
+        
+        print("🎮 Démarrage de l'interface 3D...")
+        
+        # Initialiser Ursina et démarrer le jeu
+        app = client.setup_ursina()
+        
+        # Boucle principale
+        def update():
+            client.update_game()
+        
+        print("✅ Client démarré avec succès!")
+        print("🎮 Utilisez ZQSD pour vous déplacer, clic gauche pour détruire, clic droit pour placer des blocs")
+        app.run()
+        
+    except KeyboardInterrupt:
+        print("\n⏹️  Client fermé par l'utilisateur")
+    except ImportError as e:
+        print(f"\n❌ Erreur d'importation: {e}")
+        print("🔧 Assurez-vous que toutes les dépendances sont installées:")
+        print("   pip install -r requirements.txt")
+    except Exception as e:
+        print(f"\n❌ Erreur inattendue: {e}")
+        print("🔧 Vérifiez que le serveur est démarré et accessible")
+
+if __name__ == "__main__":
+    main()
