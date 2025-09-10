@@ -1,57 +1,78 @@
-# Minecraft
+# Minecraft Client-Server
 
+This is a Minecraft-like game converted to client-server architecture using Panda3D for rendering and WebSocket for communication.
 
-This is a modded version of Fogleman's "Minecraft" which was created for an April Fools video.
+Original project based on Fogleman's "Minecraft" which was created for an April Fools video.
 
 https://github.com/fogleman/Minecraft
 
 Video here: https://www.youtube.com/watch?v=S4EUQD9QIzc&lc=z23mubkgxpapjvhot04t1aokgeofqomvondp5x4qnz1abk0h00410
 
+## Architecture
+
+The game is now split into two components:
+
+- **Server** (`server.py`): Manages the game world, handles multiplayer connections via WebSocket
+- **Client** (`client.py`): Renders the game using Panda3D, handles user input and networking
 
 ## How to Run
 
-```shell
-pip install pyglet
-git clone https://github.com/Hopson97/Minecraft-In-5-Seconds.git
-cd Minecraft-In-5-Seconds
-python main.py
-```
-
-### Mac
-
-On Mac OS X, you may have an issue with running Pyglet in 64-bit mode. Try running Python in 32-bit mode first:
+### Installation
 
 ```shell
-arch -i386 python main.py
+pip install -r requirements.txt
 ```
 
-If that doesn't work, set Python to run in 32-bit mode by default:
+### Starting the Game
+
+1. **Start the Server** (in one terminal):
+```shell
+python3 server.py
+```
+
+2. **Start the Client** (in another terminal):
+```shell
+python3 client.py
+```
+
+Multiple clients can connect to the same server for multiplayer functionality.
+
+## Controls
+
+- **ZQSD**: Movement (forward/backward/left/right)
+- **Space**: Jump
+- **Tab**: Toggle flying mode
+- **Mouse**: Look around
+- **Left Click**: Remove block
+- **Right Click**: Place block
+- **1-6**: Select block type (Brick, Grass, Sand, Wood, Leaf, Frog)
+
+## Features
+
+- **Multiplayer Support**: Multiple players can connect simultaneously
+- **Real-time Synchronization**: Block changes are synchronized across all clients
+- **Procedural World Generation**: Large 128x128 world with terrain, trees, and water
+- **Physics**: Gravity, jumping, collision detection
+- **Block Types**: 6 different block types with distinct textures
+- **Flying Mode**: Toggle between walking and flying
+
+## Technical Details
+
+- **Server**: Python WebSocket server managing world state (256K+ blocks)
+- **Client**: Panda3D-based 3D renderer with physics and networking
+- **Protocol**: JSON-based WebSocket messages for real-time communication
+- **World Format**: Blocks stored as position-texture pairs
+- **Rendering**: Simple colored cubes (can be extended with full textures)
+
+## Testing
+
+Run the test suite:
 
 ```shell
-defaults write com.apple.versioner.python Prefer-32-Bit -bool yes 
+python3 test_connection.py
 ```
 
-This assumes you are using the OS X default Python.  Works on Lion 10.7 with the default Python 2.7, and may work on other versions too.  Please raise an issue if not.
-    
-Or try Pyglet 1.2 alpha, which supports 64-bit mode:  
-
-```shell
-pip install https://pyglet.googlecode.com/files/pyglet-1.2alpha1.tar.gz 
-```
-
-### If you don't have pip or git
-
-For pip:
-
-- Mac or Linux: install with `sudo easy_install pip` (Mac or Linux) - or (Linux) find a package called something like 'python-pip' in your package manager.
-- Windows: [install Distribute then Pip](http://stackoverflow.com/a/12476379/992887) using the linked .MSI installers.
-
-For git:
-
-- Mac: install [Homebrew](http://mxcl.github.com/homebrew/) first, then `brew install git`.
-- Windows or Linux: see [Installing Git](http://git-scm.com/book/en/Getting-Started-Installing-Git) from the _Pro Git_ book.
-
-See the [wiki](https://github.com/fogleman/Minecraft/wiki) for this project to install Python, and other tips.
-
-
-[![Run on Repl.it](https://repl.it/badge/github/Hopson97/Minecraft-In-5-Seconds)](https://repl.it/github/Hopson97/Minecraft-In-5-Seconds)
+This will test:
+- Client imports and dependencies
+- Server terrain generation
+- Network connectivity (requires server to be running)
