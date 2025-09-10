@@ -219,6 +219,18 @@ class MinecraftClient:
                     self.player_id = message.get("player_id")
                     self.load_world(message.get("world", []))
                     self.update_players(message.get("players", []))
+                    
+                    # Set initial player position from server data
+                    players_data = message.get("players", [])
+                    for player_data in players_data:
+                        if player_data["id"] == self.player_id:
+                            # Set our player's position to match server
+                            self.player.x = player_data["x"]
+                            self.player.y = player_data["y"] 
+                            self.player.z = player_data["z"]
+                            logger.info(f"Position initiale du joueur: ({self.player.x}, {self.player.y}, {self.player.z})")
+                            break
+                    
                     self.connection_status.text = f"Connecté (ID: {self.player_id[:8]})"
                     self.connection_status.color = color.green
                     
