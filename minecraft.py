@@ -119,6 +119,7 @@ STONE = tex_coords((2, 1), (2, 1), (2, 1))
 WOOD = tex_coords((3, 1), (3, 1), (3, 1))
 LEAF = tex_coords((3, 0), (3, 0), (3, 0))
 WATER = tex_coords((0, 2), (0, 2), (0, 2))
+FROG = tex_coords((1, 2), (1, 2), (1, 2))
 
 FACES = [
     ( 0, 1, 0),
@@ -539,7 +540,7 @@ class Window(pyglet.window.Window):
         self.dy = 0
 
         # A list of blocks the player can place. Hit num keys to cycle.
-        self.inventory = [BRICK, GRASS, SAND, WOOD, LEAF]
+        self.inventory = [BRICK, GRASS, SAND, WOOD, LEAF, FROG]
 
         # The current block the user can place. Hit num keys to cycle.
         self.block = self.inventory[0]
@@ -819,11 +820,11 @@ class Window(pyglet.window.Window):
             Number representing any modifying keys that were pressed.
 
         """
-        if symbol == key.W:
+        if symbol == key.Z:
             self.strafe[0] -= 1
         elif symbol == key.S:
             self.strafe[0] += 1
-        elif symbol == key.A:
+        elif symbol == key.Q:
             self.strafe[1] -= 1
         elif symbol == key.D:
             self.strafe[1] += 1
@@ -845,6 +846,8 @@ class Window(pyglet.window.Window):
                 self.sprinting = True
         elif symbol == key.TAB:
             self.flying = not self.flying
+        elif symbol == key.F11:
+            self.set_fullscreen(not self.fullscreen)
         elif symbol in self.num_keys:
             index = (symbol - self.num_keys[0]) % len(self.inventory)
             self.block = self.inventory[index]
@@ -861,11 +864,11 @@ class Window(pyglet.window.Window):
             Number representing any modifying keys that were pressed.
 
         """
-        if symbol == key.W:
+        if symbol == key.Z:
             self.strafe[0] += 1
         elif symbol == key.S:
             self.strafe[0] -= 1
-        elif symbol == key.A:
+        elif symbol == key.Q:
             self.strafe[1] += 1
         elif symbol == key.D:
             self.strafe[1] -= 1
