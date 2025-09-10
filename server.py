@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minecraft-like Server
+Minecraft-like Server - Version corrigée
 Manages the game world and handles client connections via WebSocket
 """
 
@@ -14,7 +14,17 @@ from collections import deque
 
 from noise_gen import NoiseGen
 
-# Block types and texture coordinates
+# Block types - utilisation d'identifiants simples
+GRASS = "grass"
+SAND = "sand"
+BRICK = "brick"
+STONE = "stone"
+WOOD = "wood"
+LEAF = "leaf"
+WATER = "water"
+FROG = "frog"
+
+# Coordonnées de texture pour le client
 def tex_coord(x, y, n=4):
     """Return the bounding vertices of the texture square."""
     m = 1.0 / n
@@ -36,15 +46,17 @@ def tex_coords(top, bottom, side):
     result.extend(side)   # back
     return result
 
-# Block type definitions
-GRASS = tex_coords((1, 0), (0, 1), (0, 0))
-SAND = tex_coords((1, 1), (1, 1), (1, 1))
-BRICK = tex_coords((2, 0), (2, 0), (2, 0))
-STONE = tex_coords((2, 1), (2, 1), (2, 1))
-WOOD = tex_coords((3, 1), (3, 1), (3, 1))
-LEAF = tex_coords((3, 0), (3, 0), (3, 0))
-WATER = tex_coords((0, 2), (0, 2), (0, 2))
-FROG = tex_coords((1, 2), (1, 2), (1, 2))
+# Mapping des textures - à envoyer au client si nécessaire
+BLOCK_TEXTURES = {
+    GRASS: tex_coords((1, 0), (0, 1), (0, 0)),
+    SAND: tex_coords((1, 1), (1, 1), (1, 1)),
+    BRICK: tex_coords((2, 0), (2, 0), (2, 0)),
+    STONE: tex_coords((2, 1), (2, 1), (2, 1)),
+    WOOD: tex_coords((3, 1), (3, 1), (3, 1)),
+    LEAF: tex_coords((3, 0), (3, 0), (3, 0)),
+    WATER: tex_coords((0, 2), (0, 2), (0, 2)),
+    FROG: tex_coords((1, 2), (1, 2), (1, 2))
+}
 
 # Constants
 SECTOR_SIZE = 16
@@ -73,7 +85,7 @@ class Block:
     def to_dict(self):
         """Convert block to dictionary for JSON serialization."""
         return {
-            'position': self.position,
+            'position': list(self.position),  # Assure-toi que c'est une liste
             'block_type': self.block_type
         }
 
@@ -93,6 +105,8 @@ class GameWorld:
         n = self.world_size
         s = 1  # step size
         
+        print("Generating world...")
+        
         # Generate height map
         height_map = {}
         for x in xrange(0, n, s):
@@ -100,6 +114,7 @@ class GameWorld:
                 height_map[(x, z)] = int(gen.getHeight(x, z))
         
         # Generate the world
+        blocks_created = 0
         for x in xrange(0, n, s):
             for z in xrange(0, n, s):
                 h = height_map[(x, z)]
@@ -107,35 +122,45 @@ class GameWorld:
                 # Water level blocks
                 if h < 15:
                     self.add_block((x, h, z), SAND)
+                    blocks_created += 1
                     for y in range(h + 1, 15):
                         self.add_block((x, y, z), WATER)
+                        blocks_created += 1
                     continue
                 
                 # Sandy areas
                 if h < 18:
                     self.add_block((x, h, z), SAND)
+                    blocks_created += 1
                 else:
                     self.add_block((x, h, z), GRASS)
+                    blocks_created += 1
                 
                 # Fill below surface with stone
-                for y in xrange(h - 1, 0, -1):
+                for y in xrange(max(1, h - 5), h):  # Limite la profondeur pour réduire le nombre de blocs
                     self.add_block((x, y, z), STONE)
+                    blocks_created += 1
                 
                 # Maybe add tree
                 if h > 20:
-                    if random.randrange(0, 1000) > 990:
-                        tree_height = random.randrange(5, 7)
+                    if random.randrange(0, 1000) > 995:  # Moins d'arbres
+                        tree_height = random.randrange(3, 5)
                         
                         # Tree trunk
                         for y in xrange(h + 1, h + tree_height):
                             self.add_block((x, y, z), WOOD)
+                            blocks_created += 1
                         
-                        # Tree leaves
+                        # Tree leaves (plus compact)
                         leaf_h = h + tree_height
-                        for lz in xrange(z - 2, z + 3):
-                            for lx in xrange(x - 2, x + 3):
-                                for ly in xrange(3):
-                                    self.add_block((lx, leaf_h + ly, lz), LEAF)
+                        for lz in xrange(z - 1, z + 2):
+                            for lx in xrange(x - 1, x + 2):
+                                for ly in xrange(2):
+                                    if 0 <= lx < n and 0 <= lz < n:  # Vérification des limites
+                                        self.add_block((lx, leaf_h + ly, lz), LEAF)
+                                        blocks_created += 1
+        
+        print(f"World generation complete. Created {blocks_created} blocks.")
     
     def add_block(self, position, texture):
         """Add a block to the world."""
@@ -193,23 +218,23 @@ class GameWorld:
                 return True
         return False
     
-    def get_visible_blocks_in_sector(self, sector):
-        """Get all visible blocks in a sector."""
-        if sector not in self.sectors:
-            return []
+    def get_blocks_in_range(self, center_pos, radius):
+        """Get all blocks within radius of center position."""
+        cx, cy, cz = center_pos
+        blocks = []
         
-        visible_blocks = []
-        for position in self.sectors[sector]:
-            if self.exposed(position):
-                block = self.world[position]
-                visible_blocks.append(block.to_dict())
+        for position, block in self.world.items():
+            x, y, z = position
+            distance = ((x - cx) ** 2 + (y - cy) ** 2 + (z - cz) ** 2) ** 0.5
+            if distance <= radius:
+                blocks.append(block)
         
-        return visible_blocks
+        return blocks
 
 class MinecraftServer:
     """Main server class handling WebSocket connections and world management."""
     
-    def __init__(self, world_size=128, port=8765):
+    def __init__(self, world_size=64, port=8765):  # Taille réduite par défaut
         self.world = GameWorld(world_size)
         self.port = port
         self.clients = set()
@@ -251,6 +276,22 @@ class MinecraftServer:
         for client in disconnected:
             await self.unregister_client(client)
     
+    def find_spawn_position(self):
+        """Find a suitable spawn position above ground."""
+        # Cherche une position au sol près du centre du monde
+        center = self.world.world_size // 2
+        
+        for x in range(center - 10, center + 10):
+            for z in range(center - 10, center + 10):
+                # Trouve le bloc le plus haut à cette position
+                for y in range(50, 10, -1):  # Cherche de haut en bas
+                    if (x, y, z) in self.world.world:
+                        # Position du spawn = 2 blocs au-dessus du sol
+                        return (x, y + 2, z)
+        
+        # Position par défaut si rien n'est trouvé
+        return (center, 25, center)
+    
     async def handle_message(self, websocket, message):
         """Handle incoming message from client."""
         try:
@@ -274,19 +315,24 @@ class MinecraftServer:
             print(f"Invalid JSON received: {message}")
         except Exception as e:
             print(f"Error handling message: {e}")
+            import traceback
+            traceback.print_exc()
     
     async def handle_join(self, websocket, data):
         """Handle player join."""
         player_name = data.get('name', 'Anonymous')
         
-        # Set initial position
-        self.player_positions[websocket] = (30, 50, 80)
+        # Trouve une position de spawn appropriée
+        spawn_pos = self.find_spawn_position()
+        self.player_positions[websocket] = spawn_pos
+        
+        print(f"Player {player_name} spawned at {spawn_pos}")
         
         # Send welcome message
         response = {
             'type': 'welcome',
             'player_name': player_name,
-            'position': self.player_positions[websocket]
+            'position': spawn_pos
         }
         await websocket.send(json.dumps(response))
         
@@ -311,10 +357,11 @@ class MinecraftServer:
     async def handle_add_block(self, websocket, data):
         """Handle block placement."""
         position = data.get('position')
-        block_type = data.get('block_type')
+        block_type = data.get('block_type', STONE)  # Type par défaut
         
-        if position and block_type:
+        if position:
             if self.world.add_block(position, block_type):
+                print(f"Block added at {position}: {block_type}")
                 # Broadcast block addition to all clients
                 await self.broadcast({
                     'type': 'block_added',
@@ -328,6 +375,7 @@ class MinecraftServer:
         
         if position:
             if self.world.remove_block(position):
+                print(f"Block removed at {position}")
                 # Broadcast block removal to all clients
                 await self.broadcast({
                     'type': 'block_removed',
@@ -336,31 +384,56 @@ class MinecraftServer:
     
     async def handle_get_world(self, websocket, data):
         """Send world data to client."""
-        # Send a limited subset of the world around the player to avoid message size limits
-        player_pos = self.player_positions.get(websocket, (30, 50, 80))
-        px, py, pz = player_pos
+        # Position du joueur
+        player_pos = self.player_positions.get(websocket)
+        if not player_pos:
+            player_pos = self.find_spawn_position()
+            self.player_positions[websocket] = player_pos
         
-        # Get blocks within a smaller radius around the player
-        blocks = []
-        radius = 32  # Limit to 32 block radius to keep data manageable
-        max_blocks = 1000  # Hard limit on number of blocks to prevent huge messages
+        print(f"Sending world data around position: {player_pos}")
         
-        for position, block in self.world.world.items():
-            x, y, z = position
-            # Check if block is within radius of player
-            distance = ((x - px) ** 2 + (y - py) ** 2 + (z - pz) ** 2) ** 0.5
-            if distance <= radius and self.world.exposed(position):
-                blocks.append(block.to_dict())
-                if len(blocks) >= max_blocks:
-                    break
+        # Obtient les blocs dans un rayon autour du joueur
+        radius = 50  # Rayon augmenté
+        blocks_in_range = self.world.get_blocks_in_range(player_pos, radius)
         
-        print(f"Sending {len(blocks)} blocks to client (radius: {radius})")
+        # Filtre seulement les blocs exposés pour réduire la taille des données
+        visible_blocks = []
+        for block in blocks_in_range:
+            if self.world.exposed(block.position):
+                visible_blocks.append(block.to_dict())
         
+        print(f"Sending {len(visible_blocks)} visible blocks to client (radius: {radius})")
+        
+        # Envoie les coordonnées de texture aussi
         response = {
             'type': 'world_data',
-            'blocks': blocks
+            'blocks': visible_blocks,
+            'textures': BLOCK_TEXTURES  # Inclut les définitions de texture
         }
-        await websocket.send(json.dumps(response))
+        
+        # Envoie en plusieurs petits messages si nécessaire
+        if len(visible_blocks) > 500:  # Si trop de blocs
+            # Découpe en chunks
+            chunk_size = 500
+            for i in range(0, len(visible_blocks), chunk_size):
+                chunk = visible_blocks[i:i+chunk_size]
+                chunk_response = {
+                    'type': 'world_chunk',
+                    'blocks': chunk,
+                    'chunk_index': i // chunk_size,
+                    'total_chunks': (len(visible_blocks) + chunk_size - 1) // chunk_size
+                }
+                if i == 0:  # Premier chunk inclut les textures
+                    chunk_response['textures'] = BLOCK_TEXTURES
+                await websocket.send(json.dumps(chunk_response))
+            
+            # Message de fin
+            await websocket.send(json.dumps({
+                'type': 'world_complete',
+                'total_blocks': len(visible_blocks)
+            }))
+        else:
+            await websocket.send(json.dumps(response))
     
     async def handle_client(self, websocket, path):
         """Handle a client connection."""
@@ -385,7 +458,7 @@ class MinecraftServer:
 
 def main():
     """Main function to start the server."""
-    server = MinecraftServer()
+    server = MinecraftServer(world_size=64)  # Taille réduite pour les tests
     try:
         asyncio.run(server.start_server())
     except KeyboardInterrupt:
