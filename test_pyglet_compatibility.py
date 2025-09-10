@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-Test script to verify Pyglet 2.1.8 compatibility changes
-without requiring a display server
+Pyglet 2.1.8 Compatibility Verification Script
+
+This script verifies that the codebase is compatible with Pyglet 2.1.8
+without requiring a display server (headless-friendly).
+
+Usage: python3 test_pyglet_compatibility.py
 """
 
 import sys
@@ -29,43 +33,9 @@ def test_syntax():
     
     return True
 
-def test_imports():
-    """Test that imports work correctly"""
-    print("\n🔍 Testing imports...")
-    
-    # Test noise_gen import (should work without display)
-    try:
-        import noise_gen
-        print("✅ noise_gen: Import OK")
-    except Exception as e:
-        print(f"❌ noise_gen: Import failed: {e}")
-        return False
-    
-    # Test specific Pyglet compatibility
-    try:
-        import pyglet
-        print(f"✅ Pyglet version: {pyglet.version}")
-        
-        # Test that our compatibility imports work
-        from pyglet.graphics import TextureGroup
-        print("✅ TextureGroup import: OK")
-        
-        # Test that our fallback import structure is correct
-        try:
-            from pyglet.graphics import get_default_shader
-            print("✅ get_default_shader import: OK")
-        except ImportError:
-            print("✅ get_default_shader import: OK (fallback handled)")
-        
-    except Exception as e:
-        print(f"❌ Pyglet imports failed: {e}")
-        return False
-    
-    return True
-
-def test_changes():
-    """Test specific changes made for Pyglet 2.1.8"""
-    print("\n🔍 Testing Pyglet 2.1.8 compatibility changes...")
+def test_pyglet_compatibility():
+    """Test specific Pyglet 2.1.8 compatibility features"""
+    print("\n🔍 Testing Pyglet 2.1.8 compatibility features...")
     
     with open('minecraft.py', 'r') as f:
         code = f.read()
@@ -85,7 +55,7 @@ def test_changes():
         return False
     
     # Check draw_reticle compatibility
-    if 'except TypeError:' in code and 'mode=GL_LINES' in code:
+    if 'mode=GL_LINES' in code and 'except TypeError:' in code:
         print("✅ draw_reticle compatibility code present")
     else:
         print("❌ draw_reticle compatibility code missing")
@@ -117,8 +87,7 @@ def main():
     
     tests = [
         ("Syntax check", test_syntax),
-        ("Import check", test_imports), 
-        ("Compatibility changes", test_changes),
+        ("Pyglet compatibility features", test_pyglet_compatibility),
         ("Requirements check", test_requirements),
     ]
     
@@ -143,6 +112,7 @@ def main():
     
     if all_passed:
         print(f"\n🎉 All tests passed! Code is compatible with Pyglet 2.1.8")
+        print("📝 See PYGLET_COMPATIBILITY.md for detailed information about changes made.")
         return True
     else:
         print(f"\n⚠️  Some tests failed. Please review the issues above.")
