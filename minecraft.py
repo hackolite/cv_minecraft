@@ -33,6 +33,7 @@ from pyglet import image
 from pyglet.gl import *
 from pyglet.graphics import TextureGroup
 from pyglet.window import key, mouse
+from pyglet.graphics import get_default_shader
 
 from noise_gen import NoiseGen
 
@@ -882,8 +883,8 @@ class Window(pyglet.window.Window):
             self.reticle.delete()
         x, y = self.width // 2, self.height // 2
         n = 10
-        self.reticle = pyglet.graphics.vertex_list(4,
-            ('v2i', (x - n, y, x + n, y, x, y - n, x, y + n))
+        self.reticle = get_default_shader().vertex_list(4, GL_LINES,
+            position=('v2i', (x - n, y, x + n, y, x, y - n, x, y + n))
         )
 
     def set_2d(self):
