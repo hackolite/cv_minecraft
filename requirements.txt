@@ -2,3 +2,4 @@ Panda3D
 websockets==12.0
 asyncio
 PyOpenGL
+pyglet
