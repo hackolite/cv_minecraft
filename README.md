@@ -1,116 +1,57 @@
-# cv_minecraft
+# Minecraft
 
-Un client et serveur Minecraft-like développé en Python avec Panda3D pour le rendu 3D et WebSockets pour la communication réseau.
 
-## 🎮 Fonctionnalités
+This is a modded version of Fogleman's "Minecraft" which was created for an April Fools video.
 
-- **Client 3D** : Interface graphique avec Panda3D Engine
-- **Serveur multijoueur** : Gestion de plusieurs joueurs simultanément
-- **Monde persistant** : Génération et sauvegarde du monde
-- **Interactions** : Placer et détruire des blocs
-- **Chat** : Communication entre joueurs
-- **Types de blocs** : Grass, stone, wood, dirt, sand, water
+https://github.com/fogleman/Minecraft
 
-## 📋 Prérequis
+Video here: https://www.youtube.com/watch?v=S4EUQD9QIzc&lc=z23mubkgxpapjvhot04t1aokgeofqomvondp5x4qnz1abk0h00410
 
-- Python 3.8+
-- Dépendances listées dans `requirements.txt`
 
-## 🚀 Installation
+## How to Run
 
-1. **Cloner le repository** :
-```bash
-git clone <repository_url>
-cd cv_minecraft
+```shell
+pip install pyglet
+git clone https://github.com/Hopson97/Minecraft-In-5-Seconds.git
+cd Minecraft-In-5-Seconds
+python main.py
 ```
 
-2. **Installer les dépendances** :
-```bash
-pip install -r requirements.txt
+### Mac
+
+On Mac OS X, you may have an issue with running Pyglet in 64-bit mode. Try running Python in 32-bit mode first:
+
+```shell
+arch -i386 python main.py
 ```
 
-## 🎯 Utilisation
+If that doesn't work, set Python to run in 32-bit mode by default:
 
-### Démarrer le serveur
-
-```bash
-python3 server.py
+```shell
+defaults write com.apple.versioner.python Prefer-32-Bit -bool yes 
 ```
 
-Le serveur démarrera sur `localhost:8765` par défaut.
+This assumes you are using the OS X default Python.  Works on Lion 10.7 with the default Python 2.7, and may work on other versions too.  Please raise an issue if not.
+    
+Or try Pyglet 1.2 alpha, which supports 64-bit mode:  
 
-### Démarrer le client
-
-```bash
-python3 client.py
+```shell
+pip install https://pyglet.googlecode.com/files/pyglet-1.2alpha1.tar.gz 
 ```
 
-Le client vous demandera :
-- Adresse du serveur (par défaut : localhost)
-- Port du serveur (par défaut : 8765)  
-- Nom du joueur (par défaut : Joueur)
+### If you don't have pip or git
 
-### Contrôles du jeu
+For pip:
 
-- **ZQSD** : Se déplacer
-- **Espace** : Sauter
-- **Souris** : Regarder autour
-- **Clic gauche** : Détruire un bloc
-- **Clic droit** : Placer un bloc
-- **1-6** : Changer le type de bloc sélectionné
-- **T** : Ouvrir/fermer le chat
-- **ESC** : Quitter le jeu
+- Mac or Linux: install with `sudo easy_install pip` (Mac or Linux) - or (Linux) find a package called something like 'python-pip' in your package manager.
+- Windows: [install Distribute then Pip](http://stackoverflow.com/a/12476379/992887) using the linked .MSI installers.
 
-## 🧪 Tests
+For git:
 
-Pour vérifier que tout fonctionne correctement :
+- Mac: install [Homebrew](http://mxcl.github.com/homebrew/) first, then `brew install git`.
+- Windows or Linux: see [Installing Git](http://git-scm.com/book/en/Getting-Started-Installing-Git) from the _Pro Git_ book.
 
-```bash
-# Démarrer le serveur dans un terminal
-python3 server.py
+See the [wiki](https://github.com/fogleman/Minecraft/wiki) for this project to install Python, and other tips.
 
-# Dans un autre terminal, lancer les tests
-python3 test_connection.py
-```
 
-## 🔧 Résolution des problèmes
-
-### "Le client ne fonctionne pas"
-
-1. **Vérifier les dépendances** :
-```bash
-pip install -r requirements.txt
-```
-
-2. **Vérifier que le serveur est démarré** :
-```bash
-python3 server.py
-```
-
-3. **Tester la connexion** :
-```bash
-python3 test_connection.py
-```
-
-### Erreurs courantes
-
-- **ModuleNotFoundError** : Installez les dépendances avec `pip install -r requirements.txt`
-- **ConnectionRefusedError** : Le serveur n'est pas démarré ou n'est pas accessible
-- **Erreurs graphiques** : Vérifiez que votre système supporte OpenGL
-
-## 📁 Structure du projet
-
-```
-cv_minecraft/
-├── client.py              # Client Minecraft avec interface 3D
-├── server.py              # Serveur WebSocket multijoueur
-├── test_connection.py     # Tests de connectivité
-├── requirements.txt       # Dépendances Python
-└── README.md             # Cette documentation
-```
-
-## 🔗 Dépendances
-
-- **Panda3D** : Moteur 3D pour le client
-- **websockets** : Communication client-serveur
-- **asyncio** : Programmation asynchrone
+[![Run on Repl.it](https://repl.it/badge/github/Hopson97/Minecraft-In-5-Seconds)](https://repl.it/github/Hopson97/Minecraft-In-5-Seconds)
