@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """
-Client Minecraft-like en Python avec Ursina
+Client Minecraft-like en Python avec Panda3D
 Interface 3D et communication WebSocket avec le serveur
 """
 
-from ursina import *
-from ursina.prefabs.first_person_controller import FirstPersonController
+from panda3d.core import *
+from direct.showbase.ShowBase import ShowBase
+from direct.task import Task
+from direct.gui.DirectGui import *
+from direct.actor.Actor import Actor
+from direct.interval.IntervalGlobal import *
 import asyncio
 import websockets
 import json
@@ -14,13 +18,16 @@ import queue
 import time
 from typing import Dict, List
 import logging
+import sys
 
 # Configuration du logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class MinecraftClient:
+class MinecraftClient(ShowBase):
     def __init__(self, server_host="localhost", server_port=8765):
+        ShowBase.__init__(self)
+        
         self.server_host = server_host
         self.server_port = server_port
         self.websocket = None
@@ -32,17 +39,17 @@ class MinecraftClient:
         self.send_queue = queue.Queue()
         
         # Stockage des entités du jeu
-        self.world_blocks: Dict[tuple, Entity] = {}
-        self.other_players: Dict[str, Entity] = {}
+        self.world_blocks: Dict[tuple, NodePath] = {}
+        self.other_players: Dict[str, NodePath] = {}
         
         # Types de blocs et leurs couleurs
         self.block_types = {
-            "grass": color.green,
-            "stone": color.gray,
-            "wood": color.brown,
-            "dirt": color.brown,
-            "sand": color.yellow,
-            "water": color.blue
+            "grass": (0, 0.8, 0, 1),      # vert
+            "stone": (0.5, 0.5, 0.5, 1),  # gris
+            "wood": (0.6, 0.3, 0, 1),     # marron
+            "dirt": (0.4, 0.2, 0, 1),     # marron foncé
+            "sand": (1, 1, 0, 1),         # jaune
+            "water": (0, 0, 1, 1)         # bleu
         }
         
         self.current_block_type = "grass"
@@ -53,100 +60,230 @@ class MinecraftClient:
         self.position_update_timer = 0
         
         # Variables pour gérer les clics souris
-        self.last_left_click = False
-        self.last_right_click = False
         self.click_cooldown = 0.2  # Délai minimum entre les clics (en secondes)
         self.last_click_time = 0
         
         # Interface
         self.chat_messages = []
         self.chat_visible = False
-        self.chat_input = None
         
-    def setup_ursina(self):
-        """Initialise Ursina et la scène 3D"""
-        app = Ursina()
+        # Variables de mouvement
+        self.movement_speed = 20.0
+        self.mouse_sensitivity = 50.0
+        self.gravity = -20.0
+        self.jump_force = 10.0
+        self.velocity_y = 0
+        self.is_grounded = False
         
+        # Touches pressées
+        self.key_map = {
+            "forward": False,
+            "backward": False, 
+            "left": False,
+            "right": False,
+            "jump": False
+        }
+        
+        self.setup_panda3d()
+        
+    def setup_panda3d(self):
+        """Initialise Panda3D et la scène 3D"""
         # Configuration de la fenêtre
-        window.title = "Minecraft-like Client"
-        window.borderless = False
-        window.fullscreen = False
-        window.exit_button.visible = False
-        window.fps_counter.enabled = True
+        base.win.setWindowTitle("Minecraft-like Client (Panda3D)")
         
-        # Ciel
-        sky = Sky()
+        # Désactiver la souris par défaut de Panda3D
+        self.disableMouse()
         
-        # Contrôleur de joueur avec gravité et saut
-        self.player = FirstPersonController()
-        self.player.cursor.visible = False
+        # Configurer la caméra pour vue à la première personne
+        self.camera.setPos(0, 0, 10)
+        self.camera.setHpr(0, 0, 0)
         
-        # Configuration de la gravité et du mouvement
-        # Note: certaines propriétés peuvent ne pas exister selon la version d'Ursina
-        try:
-            self.player.gravity = 1  # Activer la gravité
-        except:
-            pass
-        try:
-            self.player.jump_height = 2  # Hauteur de saut
-        except:
-            self.player.jump_height = 2  # Fallback
-        try:
-            self.player.speed = 5  # Vitesse de déplacement
-        except:
-            pass
-        try:
-            self.player.mouse_sensitivity = (50, 50)  # Sensibilité de la souris (x, y)
-        except:
-            pass
+        # Configuration de l'éclairage
+        self.render.setShaderAuto()
         
-        # Caméra
-        camera.fov = 90
+        # Lumière directionnelle
+        dlight = DirectionalLight('dlight')
+        dlight.setDirection(Vec3(1, -1, -1))
+        dlnp = self.render.attachNewNode(dlight)
+        self.render.setLight(dlnp)
+        
+        # Lumière ambiante
+        alight = AmbientLight('alight')
+        alight.setColor((0.3, 0.3, 0.3, 1))
+        alnp = self.render.attachNewNode(alight)
+        self.render.setLight(alnp)
+        
+        # Configuration des contrôles
+        self.setup_controls()
         
         # Interface utilisateur
         self.setup_ui()
         
-        # Lumière améliorée pour une meilleure visibilité
-        DirectionalLight().look_at(Vec3(1, -1, -1))
-        AmbientLight(color=color.white, factor=0.3)  # Ajout de lumière ambiante
+        # Démarrer les tâches
+        self.taskMgr.add(self.update_game, "update_game")
+        self.taskMgr.add(self.update_movement, "update_movement")
         
-        return app
+    def setup_controls(self):
+        """Configure les contrôles clavier et souris"""
+        # Contrôles clavier
+        self.accept("z", self.set_key, ["forward", True])
+        self.accept("z-up", self.set_key, ["forward", False])
+        self.accept("s", self.set_key, ["backward", True])
+        self.accept("s-up", self.set_key, ["backward", False])
+        self.accept("q", self.set_key, ["left", True])
+        self.accept("q-up", self.set_key, ["left", False])
+        self.accept("d", self.set_key, ["right", True])
+        self.accept("d-up", self.set_key, ["right", False])
+        self.accept("space", self.set_key, ["jump", True])
+        self.accept("space-up", self.set_key, ["jump", False])
+        
+        # Contrôles souris
+        self.accept("mouse1", self.handle_left_click)
+        self.accept("mouse3", self.handle_right_click)
+        
+        # Changement de blocs (touches 1-6)
+        for i in range(1, 7):
+            self.accept(str(i), self.change_block_type, [i - 1])
+            
+        # Chat et quitter
+        self.accept("t", self.toggle_chat)
+        self.accept("escape", sys.exit)
+        
+        # Capturer la souris
+        props = WindowProperties()
+        props.setCursorHidden(True)
+        props.setMouseMode(WindowProperties.MRelative)
+        base.win.requestProperties(props)
         
     def setup_ui(self):
         """Configure l'interface utilisateur"""
         # Texte d'information
-        self.info_text = Text(
-            "🎮 Minecraft-like\n" +
-            "ZQSD: Déplacer | Espace: Sauter | Clic gauche: Détruire | Clic droit: Placer\n" +
-            "1-6: Changer bloc | T: Chat | ESC: Quitter",
-            position=(-0.95, 0.45),
-            scale=0.7,
-            color=color.white
+        self.info_text = OnscreenText(
+            text="🎮 Minecraft-like (Panda3D)\n" +
+                 "ZQSD: Déplacer | Espace: Sauter | Clic gauche: Détruire | Clic droit: Placer\n" +
+                 "1-6: Changer bloc | T: Chat | ESC: Quitter",
+            pos=(-1.3, 0.9),
+            scale=0.05,
+            fg=(1, 1, 1, 1),
+            align=TextNode.ALeft
         )
         
         # Indicateur de bloc sélectionné
-        self.block_indicator = Text(
-            f"Bloc: {self.current_block_type.title()}",
-            position=(0.7, 0.45),
-            scale=0.8,
-            color=self.block_types.get(self.current_block_type, color.white)
+        self.block_indicator = OnscreenText(
+            text=f"Bloc: {self.current_block_type.title()}",
+            pos=(1.0, 0.9),
+            scale=0.06,
+            fg=self.block_types.get(self.current_block_type, (1, 1, 1, 1)),
+            align=TextNode.ARight
         )
         
         # Statut de connexion
-        self.connection_status = Text(
-            "Connexion...",
-            position=(-0.95, -0.45),
-            scale=0.7,
-            color=color.red
+        self.connection_status = OnscreenText(
+            text="Connexion...",
+            pos=(-1.3, -0.9),
+            scale=0.05,
+            fg=(1, 0, 0, 1),
+            align=TextNode.ALeft
         )
         
-        # Zone de chat
-        self.chat_panel = Entity(parent=camera.ui, model='quad', 
-                               color=color.dark_gray, scale=(0.8, 0.3), 
-                               position=(-0.1, -0.2), alpha=0.7, visible=False)
+        # Zone de chat (initialement cachée)
+        self.chat_frame = DirectFrame(
+            frameColor=(0.2, 0.2, 0.2, 0.7),
+            frameSize=(-1.5, 1.5, -0.8, -0.2),
+            pos=(0, 0, 0)
+        )
+        self.chat_frame.hide()
         
-        self.chat_text = Text('', parent=self.chat_panel, position=(0, 0.1), 
-                             scale=0.5, color=color.white, visible=False)
+        self.chat_text = OnscreenText(
+            text='',
+            parent=self.chat_frame,
+            pos=(0, 0.1),
+            scale=0.04,
+            fg=(1, 1, 1, 1),
+            align=TextNode.ACenter
+        )
+        
+    def set_key(self, key, value):
+        """Définit l'état d'une touche"""
+        self.key_map[key] = value
+        
+    def handle_left_click(self):
+        """Gère le clic gauche (détruire bloc)"""
+        current_time = time.time()
+        if current_time - self.last_click_time > self.click_cooldown:
+            self.handle_block_interaction("remove")
+            self.last_click_time = current_time
+            
+    def handle_right_click(self):
+        """Gère le clic droit (placer bloc)"""
+        current_time = time.time()
+        if current_time - self.last_click_time > self.click_cooldown:
+            self.handle_block_interaction("place")
+            self.last_click_time = current_time
+            
+    def update_movement(self, task):
+        """Met à jour le mouvement du joueur"""
+        dt = globalClock.getDt()
+        
+        # Récupérer la position actuelle de la caméra
+        pos = self.camera.getPos()
+        hpr = self.camera.getHpr()
+        
+        # Calculer la direction de mouvement
+        move_vector = Vec3(0, 0, 0)
+        
+        if self.key_map["forward"]:
+            move_vector.y += self.movement_speed * dt
+        if self.key_map["backward"]:
+            move_vector.y -= self.movement_speed * dt
+        if self.key_map["left"]:
+            move_vector.x -= self.movement_speed * dt
+        if self.key_map["right"]:
+            move_vector.x += self.movement_speed * dt
+            
+        # Appliquer la rotation de la caméra au mouvement
+        if move_vector.length() > 0:
+            # Transformer le vecteur de mouvement selon l'orientation de la caméra
+            move_vector = self.camera.getRelativeVector(self.render, move_vector)
+            move_vector.z = 0  # Pas de mouvement vertical avec les touches de direction
+            
+            # Appliquer le mouvement
+            new_pos = pos + move_vector
+            self.camera.setPos(new_pos)
+            
+        # Gestion de la gravité et du saut
+        if self.key_map["jump"] and self.is_grounded:
+            self.velocity_y = self.jump_force
+            self.is_grounded = False
+            
+        # Appliquer la gravité
+        self.velocity_y += self.gravity * dt
+        
+        # Appliquer le mouvement vertical
+        new_y = pos.z + self.velocity_y * dt
+        
+        # Collision simple avec le sol (y=0)
+        if new_y <= 0:
+            new_y = 0
+            self.velocity_y = 0
+            self.is_grounded = True
+        else:
+            self.is_grounded = False
+            
+        self.camera.setZ(new_y)
+        
+        # Gestion de la souris pour regarder autour
+        if base.mouseWatcherNode.hasMouse():
+            mouse_x = base.mouseWatcherNode.getMouseX()
+            mouse_y = base.mouseWatcherNode.getMouseY()
+            
+            # Mise à jour de la rotation de la caméra
+            current_h = hpr.x - mouse_x * self.mouse_sensitivity
+            current_p = max(-90, min(90, hpr.y - mouse_y * self.mouse_sensitivity))
+            
+            self.camera.setHpr(current_h, current_p, 0)
+            
+        return task.cont
         
     async def connect_to_server(self):
         """Se connecte au serveur WebSocket"""
@@ -226,14 +363,12 @@ class MinecraftClient:
                     for player_data in players_data:
                         if player_data["id"] == self.player_id:
                             # Set our player's position to match server
-                            self.player.x = player_data["x"]
-                            self.player.y = player_data["y"] 
-                            self.player.z = player_data["z"]
-                            logger.info(f"Position initiale du joueur: ({self.player.x}, {self.player.y}, {self.player.z})")
+                            self.camera.setPos(player_data["x"], player_data["y"], player_data["z"])
+                            logger.info(f"Position initiale du joueur: ({player_data['x']}, {player_data['y']}, {player_data['z']})")
                             break
                     
-                    self.connection_status.text = f"Connecté (ID: {self.player_id[:8]})"
-                    self.connection_status.color = color.green
+                    self.connection_status.setText(f"Connecté (ID: {self.player_id[:8]})")
+                    self.connection_status.setFg((0, 1, 0, 1))
                     
                 elif msg_type == "players_update":
                     self.update_players(message.get("players", []))
@@ -258,7 +393,7 @@ class MinecraftClient:
         
         # Supprimer les blocs existants
         for block in self.world_blocks.values():
-            destroy(block)
+            block.removeNode()
         self.world_blocks.clear()
         
         # Charger les nouveaux blocs
@@ -277,16 +412,49 @@ class MinecraftClient:
     def create_block(self, x, y, z, block_type):
         """Crée un bloc visuel dans le monde"""
         try:
-            color_value = self.block_types.get(block_type, color.white)
+            # Créer un cube simple
+            from panda3d.core import CardMaker
+            cm = CardMaker("block")
+            cm.setFrame(-0.5, 0.5, -0.5, 0.5)
             
-            block = Entity(
-                model='cube',
-                color=color_value,
-                position=(x, y, z),
-                scale=(1, 1, 1)  # Ensure blocks are full size
-            )
+            # Créer les 6 faces du cube
+            block_node = self.render.attachNewNode("block")
             
-            self.world_blocks[(x, y, z)] = block
+            # Face avant
+            face = block_node.attachNewNode(cm.generate())
+            face.setPos(0, 0.5, 0)
+            
+            # Face arrière
+            face = block_node.attachNewNode(cm.generate())
+            face.setPos(0, -0.5, 0)
+            face.setHpr(180, 0, 0)
+            
+            # Face gauche
+            face = block_node.attachNewNode(cm.generate())
+            face.setPos(-0.5, 0, 0)
+            face.setHpr(90, 0, 0)
+            
+            # Face droite
+            face = block_node.attachNewNode(cm.generate())
+            face.setPos(0.5, 0, 0)
+            face.setHpr(-90, 0, 0)
+            
+            # Face haut
+            face = block_node.attachNewNode(cm.generate())
+            face.setPos(0, 0, 0.5)
+            face.setHpr(0, -90, 0)
+            
+            # Face bas
+            face = block_node.attachNewNode(cm.generate())
+            face.setPos(0, 0, -0.5)
+            face.setHpr(0, 90, 0)
+            
+            # Positionner et colorer le bloc
+            block_node.setPos(x, y, z)
+            color_value = self.block_types.get(block_type, (1, 1, 1, 1))
+            block_node.setColor(*color_value)
+            
+            self.world_blocks[(x, y, z)] = block_node
             
         except Exception as e:
             logger.error(f"Erreur création bloc en ({x}, {y}, {z}): {e}")
@@ -303,7 +471,7 @@ class MinecraftClient:
                 
         elif action == "remove":
             if (x, y, z) in self.world_blocks:
-                destroy(self.world_blocks[(x, y, z)])
+                self.world_blocks[(x, y, z)].removeNode()
                 del self.world_blocks[(x, y, z)]
                 
     def update_players(self, players_data):
@@ -323,45 +491,72 @@ class MinecraftClient:
             
             if player_id not in self.other_players:
                 # Créer un nouveau joueur
-                player_entity = Entity(
-                    model='cube',
-                    color=color.red,
-                    position=(x, y, z),
-                    scale=0.8
-                )
+                from panda3d.core import CardMaker
+                cm = CardMaker("player")
+                cm.setFrame(-0.4, 0.4, -0.4, 0.4)
+                
+                player_node = self.render.attachNewNode("player")
+                
+                # Créer un cube simple pour représenter le joueur
+                for i in range(6):  # 6 faces
+                    face = player_node.attachNewNode(cm.generate())
+                    if i == 0:  # Face avant
+                        face.setPos(0, 0.4, 0)
+                    elif i == 1:  # Face arrière
+                        face.setPos(0, -0.4, 0)
+                        face.setHpr(180, 0, 0)
+                    elif i == 2:  # Face gauche
+                        face.setPos(-0.4, 0, 0)
+                        face.setHpr(90, 0, 0)
+                    elif i == 3:  # Face droite
+                        face.setPos(0.4, 0, 0)
+                        face.setHpr(-90, 0, 0)
+                    elif i == 4:  # Face haut
+                        face.setPos(0, 0, 0.4)
+                        face.setHpr(0, -90, 0)
+                    else:  # Face bas
+                        face.setPos(0, 0, -0.4)
+                        face.setHpr(0, 90, 0)
+                
+                player_node.setPos(x, y, z)
+                player_node.setColor(1, 0, 0, 1)  # Rouge pour les autres joueurs
                 
                 # Nom du joueur au-dessus
-                name_tag = Text(
-                    name,
-                    parent=player_entity,
-                    position=(0, 1.5, 0),
-                    scale=2,
-                    color=color.white,
-                    billboard=True
+                name_tag = OnscreenText(
+                    text=name,
+                    pos=(0, 0),
+                    scale=0.1,
+                    fg=(1, 1, 1, 1),
+                    align=TextNode.ACenter
                 )
+                name_tag.reparentTo(player_node)
+                name_tag.setPos(0, 0, 1.5)
+                name_tag.setBillboardAxis()
                 
-                player_entity.name_tag = name_tag
-                self.other_players[player_id] = player_entity
+                player_node.name_tag = name_tag
+                self.other_players[player_id] = player_node
                 
             else:
                 # Mettre à jour la position
-                self.other_players[player_id].position = (x, y, z)
+                self.other_players[player_id].setPos(x, y, z)
                 
         # Supprimer les joueurs déconnectés
         for player_id in list(self.other_players.keys()):
             if player_id not in current_player_ids:
-                player_entity = self.other_players[player_id]
-                destroy(player_entity.name_tag)
-                destroy(player_entity)
+                player_node = self.other_players[player_id]
+                if hasattr(player_node, 'name_tag'):
+                    player_node.name_tag.removeNode()
+                player_node.removeNode()
                 del self.other_players[player_id]
                 
     def send_position_update(self):
         """Envoie la position du joueur au serveur"""
         if self.connected and self.player_id:
+            pos = self.camera.getPos()
             current_pos = (
-                round(self.player.x, 2),
-                round(self.player.y, 2), 
-                round(self.player.z, 2)
+                round(pos.x, 2),
+                round(pos.y, 2), 
+                round(pos.z, 2)
             )
             
             # N'envoyer que si la position a changé
@@ -382,21 +577,38 @@ class MinecraftClient:
             return
             
         # Raycast pour trouver le bloc visé
-        hit_info = raycast(
-            origin=camera.world_position,
-            direction=camera.forward,
-            distance=5,
-            ignore=[self.player]
-        )
+        from panda3d.core import CollisionTraverser, CollisionNode, CollisionRay, CollisionHandlerQueue
         
-        if hit_info.hit:
-            # Calculer la position du bloc
+        # Créer un ray depuis la caméra
+        picker_node = CollisionNode('mouseRay')
+        picker_np = self.camera.attachNewNode(picker_node)
+        picker_node.setFromCollideMask(GeomNode.getDefaultCollideMask())
+        picker_ray = CollisionRay()
+        picker_ray.setOrigin(0, 0, 0)
+        picker_ray.setDirection(0, 1, 0)  # Direction vers l'avant
+        picker_node.addSolid(picker_ray)
+        
+        traverser = CollisionTraverser('traverser')
+        queue = CollisionHandlerQueue()
+        traverser.addCollider(picker_np, queue)
+        traverser.traverse(self.render)
+        
+        # Nettoyer
+        picker_np.removeNode()
+        
+        if queue.getNumEntries() > 0:
+            # Prendre le premier objet touché
+            queue.sortEntries()
+            entry = queue.getEntry(0)
+            hit_pos = entry.getSurfacePoint(self.render)
+            
             if action == "place":
                 # Placer sur la face touchée
-                block_pos = hit_info.world_point + hit_info.normal * 0.5
+                normal = entry.getSurfaceNormal(self.render)
+                block_pos = hit_pos + normal * 0.5
             else:
                 # Détruire le bloc touché
-                block_pos = hit_info.world_point - hit_info.normal * 0.5
+                block_pos = hit_pos - entry.getSurfaceNormal(self.render) * 0.5
                 
             # Arrondir aux coordonnées entières
             bx = int(block_pos.x + 0.5) if block_pos.x >= 0 else int(block_pos.x - 0.5)
@@ -427,21 +639,16 @@ class MinecraftClient:
         block_list = list(self.block_types.keys())
         if 0 <= block_index < len(block_list):
             self.current_block_type = block_list[block_index]
-            self.block_indicator.text = f"Bloc: {self.current_block_type.title()}"
-            self.block_indicator.color = self.block_types[self.current_block_type]
+            self.block_indicator.setText(f"Bloc: {self.current_block_type.title()}")
+            self.block_indicator.setFg(self.block_types[self.current_block_type])
             
     def toggle_chat(self):
         """Active/désactive le chat"""
         self.chat_visible = not self.chat_visible
-        self.chat_panel.visible = self.chat_visible
-        self.chat_text.visible = self.chat_visible
-        
         if self.chat_visible:
-            mouse.locked = False
-            self.player.cursor.visible = True
+            self.chat_frame.show()
         else:
-            mouse.locked = True  
-            self.player.cursor.visible = False
+            self.chat_frame.hide()
             
     def add_chat_message(self, player_name, message):
         """Ajoute un message au chat"""
@@ -452,64 +659,20 @@ class MinecraftClient:
         if len(self.chat_messages) > 10:
             self.chat_messages.pop(0)
             
-        self.chat_text.text = '\n'.join(self.chat_messages)
+        self.chat_text.setText('\n'.join(self.chat_messages))
         
-    def update_game(self):
+    def update_game(self, task):
         """Mise à jour principale du jeu (appelée chaque frame)"""
         # Traiter les messages du serveur
         self.process_server_messages()
         
         # Envoyer position si connecté
-        self.position_update_timer += time.dt
+        self.position_update_timer += globalClock.getDt()
         if self.position_update_timer > 0.1:  # 10 FPS pour les positions
             self.send_position_update()
             self.position_update_timer = 0
             
-        # Gestion des entrées
-        if held_keys['escape']:
-            application.quit()
-            
-        # Saut avec la barre d'espace
-        if held_keys['space']:
-            # Le FirstPersonController d'Ursina gère le saut avec gravity
-            # On peut aussi utiliser player.y += jump_speed si besoin
-            if hasattr(self.player, 'jump'):
-                try:
-                    self.player.jump()
-                except:
-                    # Fallback pour saut manuel si jump() n'existe pas
-                    if self.player.grounded:
-                        self.player.velocity_y = self.player.jump_height
-            
-        # Changement de bloc (touches 1-6)
-        for i in range(1, 7):
-            if held_keys[str(i)]:
-                self.change_block_type(i - 1)
-                
-        # Chat
-        if held_keys['t'] and not self.chat_visible:
-            self.toggle_chat()
-            
-        # Gestion des clics souris avec détection de fronts
-        current_time = time.time()
-        current_left_click = mouse.left
-        current_right_click = mouse.right
-        
-        # Détecter les nouveaux clics (front montant) avec cooldown
-        if current_time - self.last_click_time > self.click_cooldown:
-            # Clic gauche (détruire) - détection du front montant
-            if current_left_click and not self.last_left_click:
-                self.handle_block_interaction("remove")
-                self.last_click_time = current_time
-            
-            # Clic droit (placer) - détection du front montant  
-            elif current_right_click and not self.last_right_click:
-                self.handle_block_interaction("place")
-                self.last_click_time = current_time
-        
-        # Sauvegarder l'état des clics pour la prochaine frame
-        self.last_left_click = current_left_click
-        self.last_right_click = current_right_click
+        return task.cont
 
 def run_network_thread(client):
     """Thread pour la communication réseau"""
@@ -526,7 +689,7 @@ def run_network_thread(client):
 
 def main():
     """Point d'entrée principal"""
-    print("🎮 Client Minecraft-like")
+    print("🎮 Client Minecraft-like (Panda3D)")
     print("=" * 30)
     
     try:
@@ -551,17 +714,11 @@ def main():
         network_thread.start()
         
         print("🎮 Démarrage de l'interface 3D...")
-        
-        # Initialiser Ursina et démarrer le jeu
-        app = client.setup_ursina()
-        
-        # Boucle principale
-        def update():
-            client.update_game()
-        
         print("✅ Client démarré avec succès!")
         print("🎮 Utilisez ZQSD pour vous déplacer, Espace pour sauter, clic gauche pour détruire, clic droit pour placer des blocs")
-        app.run()
+        
+        # Démarrer la boucle principale de Panda3D
+        client.run()
         
     except KeyboardInterrupt:
         print("\n⏹️  Client fermé par l'utilisateur")
