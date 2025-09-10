@@ -89,7 +89,9 @@ class MinecraftClient(ShowBase):
     def setup_panda3d(self):
         """Initialise Panda3D et la scène 3D"""
         # Configuration de la fenêtre
-        base.win.setWindowTitle("Minecraft-like Client (Panda3D)")
+        props = WindowProperties()
+        props.setTitle("Minecraft-like Client (Panda3D)")
+        base.win.requestProperties(props)
         
         # Désactiver la souris par défaut de Panda3D
         self.disableMouse()
