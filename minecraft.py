@@ -884,7 +884,7 @@ class Window(pyglet.window.Window):
         x, y = self.width // 2, self.height // 2
         n = 10
         self.reticle = get_default_shader().vertex_list(4, GL_LINES,
-            position=('v2f', (float(x - n), float(y), float(x + n), float(y), float(x), float(y - n), float(x), float(y + n)))
+            position=('v2f/static', (float(x - n), float(y), float(x + n), float(y), float(x), float(y - n), float(x), float(y + n)))
         )
 
     def set_2d(self):
