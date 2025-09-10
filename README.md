@@ -39,13 +39,16 @@ Multiple clients can connect to the same server for multiplayer functionality.
 
 ## Controls
 
-- **ZQSD**: Movement (forward/backward/left/right)
-- **Space**: Jump
-- **Tab**: Toggle flying mode
-- **Mouse**: Look around
+- **WASD**: Movement (forward/backward/left/right) 
+- **Space/C**: Move up/down
+- **Arrow Keys**: Look around
+- **Mouse**: Look around (in full client)
 - **Left Click**: Remove block
 - **Right Click**: Place block
 - **1-6**: Select block type (Brick, Grass, Sand, Wood, Leaf, Frog)
+- **Tab**: Toggle flying mode
+- **R**: Request world data (debug client)
+- **T**: Test block placement (debug client)
 
 ## Features
 
@@ -63,16 +66,22 @@ Multiple clients can connect to the same server for multiplayer functionality.
 - **Protocol**: JSON-based WebSocket messages for real-time communication
 - **World Format**: Blocks stored as position-texture pairs
 - **Rendering**: Simple colored cubes (can be extended with full textures)
+- **Data Transfer**: Chunked loading for large worlds (>500 blocks sent in chunks)
+- **3D Engine**: Proper depth testing and perspective rendering enabled
 
 ## Testing
 
 Run the test suite:
 
 ```shell
-python3 test_connection.py
+python3 test_connection.py      # Test basic connectivity
+python3 verify_fix.py          # Verify block rendering fix
+python3 test_3d_rendering.py   # Test 3D rendering capabilities
 ```
 
 This will test:
 - Client imports and dependencies
-- Server terrain generation
+- Server terrain generation  
 - Network connectivity (requires server to be running)
+- Chunked world data transfer
+- 3D block rendering and positioning
