@@ -48,21 +48,21 @@ def validate_problem_requirements():
         from client import MinecraftClient
         client = MinecraftClient()
         
-        # Vérifier le code pour FirstPersonController
-        with open('/home/runner/work/cv_minecraft/cv_minecraft/client.py', 'r') as f:
-            client_code = f.read()
+        # Vérifier que les contrôles WASD sont implémentés
+        if hasattr(client, 'on_key_press'):
+            print("   ✅ Gestion des touches implémentée")
             
-        if 'FirstPersonController' in client_code and 'ZQSD' in client_code:
-            print("   ✅ FirstPersonController configuré")
-            print("   ✅ Interface WASD (ZQSD) documentée")
-            
-            # Vérifier les méthodes de configuration
-            if 'setup_ursina' in client_code:
-                print("   ✅ Configuration Ursina préparée")
+            # Vérifier que WASD est mentionné dans le README
+            with open("README.md", "r") as f:
+                readme_content = f.read()
                 
-            requirements_met.append("mouvement_wasd")
+            if "WASD" in readme_content:
+                print("   ✅ Contrôles WASD documentés")
+                requirements_met.append("mouvement_wasd")
+            else:
+                print("   ❌ Contrôles WASD non documentés")
         else:
-            print("   ❌ Configuration WASD non trouvée")
+            print("   ❌ Gestion des touches non trouvée")
             
     except Exception as e:
         print(f"   ❌ Erreur mouvement WASD: {e}")
@@ -76,12 +76,12 @@ def validate_problem_requirements():
         client = MinecraftClient()
         
         # Vérifier que les méthodes de gestion des blocs existent
-        if hasattr(client, 'handle_block_interaction'):
+        if hasattr(client, 'send_block_action') and hasattr(client, 'on_mouse_press'):
             print("   ✅ Gestion d'interaction avec les blocs")
             
             # Vérifier les types de blocs disponibles
-            if hasattr(client, 'block_types') and len(client.block_types) > 0:
-                print(f"   ✅ Types de blocs disponibles: {', '.join(client.block_types.keys())}")
+            if hasattr(client, 'inventory') and len(client.inventory) > 0:
+                print(f"   ✅ Types de blocs disponibles: {', '.join(client.inventory)}")
                 
             requirements_met.append("creation_suppression_blocs")
         else:
@@ -98,11 +98,14 @@ def validate_problem_requirements():
         from client import MinecraftClient
         client = MinecraftClient()
         
-        # Vérifier la configuration de la gravité
-        print("   ✅ Configuration de gravité préparée")
-        print("   ✅ FirstPersonController d'Ursina inclut la gravité par défaut")
-        
-        requirements_met.append("gravite")
+        # Vérifier que la gravité est implémentée
+        if hasattr(client, 'dy') and hasattr(client, 'flying'):
+            print("   ✅ Configuration de gravité implémentée")
+            print("   ✅ Vélocité verticale et mode vol gérés")
+            
+            requirements_met.append("gravite")
+        else:
+            print("   ❌ Configuration de gravité non trouvée")
         
     except Exception as e:
         print(f"   ❌ Erreur gravité: {e}")
@@ -112,15 +115,21 @@ def validate_problem_requirements():
     # 5. Possibilité de sauter
     print("5️⃣ Vérification de la possibilité de sauter...")
     try:
-        # Vérifier le code client pour la gestion du saut
-        with open('/home/runner/work/cv_minecraft/cv_minecraft/client.py', 'r') as f:
-            client_code = f.read()
-            
-        if 'space' in client_code.lower() and 'saut' in client_code.lower():
+        from client import MinecraftClient
+        client = MinecraftClient()
+        
+        # Vérifier que le saut est implémenté
+        if hasattr(client, 'jumping') and hasattr(client, 'dy'):
             print("   ✅ Gestion du saut avec barre d'espace implémentée")
             print("   ✅ Configuration de hauteur de saut")
-            print("   ✅ Interface d'aide mise à jour avec le saut")
             
+            # Vérifier le README pour la documentation
+            with open("README.md", "r") as f:
+                readme_content = f.read()
+                
+            if "Space" in readme_content and "Jump" in readme_content:
+                print("   ✅ Interface d'aide mise à jour avec le saut")
+                
             requirements_met.append("saut")
         else:
             print("   ❌ Code de saut non trouvé")
