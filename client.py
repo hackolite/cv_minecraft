@@ -53,6 +53,8 @@ class DebugClient(ShowBase):
         
         # Player
         self.position = Vec3(32, 32, 25)  # Position initiale plus appropriée
+        self.last_sent_position = None  # Track last sent position to avoid spam
+        self.position_update_threshold = 0.5  # Minimum distance to send update
         
         # Setup basique
         self.setup_camera()
@@ -264,6 +266,26 @@ class DebugClient(ShowBase):
     def update_camera_position(self):
         """Update camera position and send to server if needed."""
         self.position = self.camera.getPos()
+        
+        # Send position update to server only if moved significantly
+        if self.connected:
+            should_send = False
+            
+            if self.last_sent_position is None:
+                should_send = True
+            else:
+                # Calculate distance moved since last update
+                distance = (self.position - self.last_sent_position).length()
+                if distance >= self.position_update_threshold:
+                    should_send = True
+            
+            if should_send:
+                position_data = {
+                    'type': 'move',
+                    'position': [self.position.x, self.position.y, self.position.z]
+                }
+                self.outgoing_messages.put(json.dumps(position_data))
+                self.last_sent_position = Vec3(self.position)
     
     def request_world_data(self):
         """Demander les données du monde manuellement."""
@@ -396,9 +418,25 @@ class DebugClient(ShowBase):
             self.status_text.setText("Connected - Press R for world data")
             self.connected = True
             
+            # Handle initial spawn position from server
+            spawn_position = data.get('position')
+            if spawn_position:
+                print(f"Setting spawn position: {spawn_position}")
+                # Convert to Vec3 and set camera position
+                spawn_vec = Vec3(spawn_position[0], spawn_position[1], spawn_position[2])
+                self.camera.setPos(spawn_vec)
+                self.position = spawn_vec
+                self.last_sent_position = Vec3(spawn_vec)  # Initialize last sent position
+            
             # Auto-request world data
             print("Auto-requesting world data...")
             self.request_world_data()
+            
+        elif message_type == 'player_moved':
+            # Handle other player movements (for multiplayer)
+            position = data.get('position')
+            if position:
+                print(f"Other player moved to: {position}")
             
         elif message_type == 'world_data':
             blocks = data.get('blocks', [])
