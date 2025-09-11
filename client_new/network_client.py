@@ -94,6 +94,8 @@ class NetworkClient:
             PacketType.BLOCK_CHANGE, self._handle_block_change)
         self.connection.register_packet_handler(
             PacketType.CHAT_MESSAGE, self._handle_chat_message)
+        self.connection.register_packet_handler(
+            PacketType.DISCONNECT, self._handle_disconnect_packet)
     
     async def _perform_handshake(self):
         """Perform the login handshake"""
@@ -175,6 +177,16 @@ class NetworkClient:
         # Callback for chat message
         if self.on_chat_message:
             self.on_chat_message(packet.sender, packet.message, packet.timestamp)
+    
+    async def _handle_disconnect_packet(self, packet):
+        """Handle disconnect packet from server"""
+        from protocol.packets import DisconnectPacket
+        if isinstance(packet, DisconnectPacket):
+            logger.info(f"Server disconnected us: {packet.reason}")
+            await self.disconnect(packet.reason)
+        else:
+            logger.warning(f"Received disconnect packet but couldn't parse reason")
+            await self.disconnect("Server disconnect")
     
     async def send_position_update(self, x: float, y: float, z: float, 
                                  yaw: float = 0.0, pitch: float = 0.0, on_ground: bool = True):

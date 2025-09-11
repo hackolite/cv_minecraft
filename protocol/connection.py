@@ -87,10 +87,13 @@ class Connection:
         
         try:
             packet_data = packet.to_bytes()
-            logger.debug(f"Sending packet {packet.packet_id} with {len(packet_data)} bytes")
+            logger.debug(f"Sending packet {packet.packet_id} with {len(packet_data)} bytes: {packet_data}")
             
             self.writer.write(packet_data)
-            await self.writer.drain()
+            await self.writer.drain()  # Ensure data is sent
+            
+            # Small delay to ensure packet is fully transmitted
+            await asyncio.sleep(0.01)
             
             self.packets_sent += 1
             self.bytes_sent += len(packet_data)
@@ -116,27 +119,26 @@ class Connection:
             
             packet_length = struct.unpack('!I', length_data)[0]
             logger.debug(f"Packet length: {packet_length}")
+            logger.debug(f"Raw length bytes: {length_data}")
             
             # Validate packet length
             if packet_length < 2 or packet_length > 65536:  # Reasonable limits
                 logger.error(f"Invalid packet length: {packet_length}")
                 return None
             
-            # Read packet ID (2 bytes)
-            logger.debug("Reading packet ID...")
-            packet_id_data = await self.reader.readexactly(2)
-            packet_id = struct.unpack('!H', packet_id_data)[0]
+            # Read the entire packet data (packet ID + payload)
+            logger.debug(f"Reading full packet data of {packet_length} bytes...")
+            packet_data = await self.reader.readexactly(packet_length)
+            logger.debug(f"Raw packet data: {packet_data}")
+            
+            # Extract packet ID (first 2 bytes)
+            packet_id = struct.unpack('!H', packet_data[0:2])[0]
             logger.debug(f"Packet ID: {packet_id}")
             
-            # Read packet payload
-            payload_length = packet_length - 2  # Subtract packet ID length
-            logger.debug(f"Payload length: {payload_length}")
-            
-            if payload_length > 0:
-                logger.debug("Reading payload...")
-                payload = await self.reader.readexactly(payload_length)
-            else:
-                payload = b''
+            # Extract payload (remaining bytes)
+            payload = packet_data[2:]
+            logger.debug(f"Payload length: {len(payload)}")
+            logger.debug(f"Raw payload bytes: {payload}")
             
             # Create packet from registry
             packet_class = PACKET_REGISTRY.get(packet_id)
@@ -148,10 +150,15 @@ class Connection:
             packet = packet_class()
             if payload:
                 logger.debug(f"Parsing payload for packet {packet_id}")
-                packet.read(payload)
+                try:
+                    packet.read(payload)
+                except Exception as parse_error:
+                    logger.error(f"Failed to parse packet {packet_id}: {parse_error}")
+                    logger.error(f"Payload was: {payload}")
+                    raise
             
             self.packets_received += 1
-            self.bytes_received += len(length_data) + len(packet_id_data) + len(payload)
+            self.bytes_received += len(length_data) + len(packet_data)
             
             logger.debug(f"Successfully received packet {packet_id} ({packet_length} bytes)")
             

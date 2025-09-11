@@ -96,16 +96,31 @@ class HandshakePacket(Packet):
     
     def read(self, data: bytes) -> None:
         offset = 0
+        
+        # Check minimum length
+        if len(data) < 8:  # protocol_version(4) + addr_length(2) + port(2)
+            raise ValueError(f"HandshakePacket data too short: {len(data)} bytes")
+        
         self.protocol_version = struct.unpack('!I', data[offset:offset+4])[0]
         offset += 4
         
         addr_length = struct.unpack('!H', data[offset:offset+2])[0]
         offset += 2
+        
+        # Check if we have enough data for address
+        if offset + addr_length + 6 > len(data):  # addr + port(2) + next_state(4)
+            raise ValueError(f"HandshakePacket data insufficient for address and remaining fields")
+        
         self.server_address = data[offset:offset+addr_length].decode('utf-8')
         offset += addr_length
         
         self.server_port = struct.unpack('!H', data[offset:offset+2])[0]
         offset += 2
+        
+        # Check if we have enough data for next_state
+        if offset + 4 > len(data):
+            raise ValueError(f"HandshakePacket data insufficient for next_state field")
+        
         self.next_state = struct.unpack('!I', data[offset:offset+4])[0]
     
     def write(self) -> bytes:
