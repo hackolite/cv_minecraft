@@ -50,6 +50,7 @@ FLYING_SPEED = 15
 # Server constants
 TICK_RATE = 20  # Server ticks per second
 UPDATE_RATE = 5  # World updates sent to clients per second
+PLAYER_TIMEOUT = 300  # Time in seconds to keep disconnected player sessions (5 minutes)
 
 
 class Block:
@@ -293,11 +294,18 @@ class MinecraftServer:
                 
             player_name = join_data.get("name", f"Player{len(self.players)}")
             
-            # Create player
-            player = Player(player_name, websocket)
-            self.players[player_name] = player
-            
-            print(f"Player {player_name} joined the game")
+            # Check if player already exists (reconnection)
+            if player_name in self.players:
+                # Reuse existing player, update websocket
+                player = self.players[player_name]
+                player.websocket = websocket
+                player.last_update = time.time()
+                print(f"Player {player_name} reconnected (reusing existing session)")
+            else:
+                # Create new player
+                player = Player(player_name, websocket)
+                self.players[player_name] = player
+                print(f"Player {player_name} joined the game (new session)")
             
             # Send initial world state
             await self.send_world_update(websocket, player)
@@ -325,14 +333,19 @@ class MinecraftServer:
         except Exception as e:
             print(f"Error handling client: {e}")
         finally:
-            # Clean up
+            # Clean up websocket but keep player session for potential reconnection
             self.websockets.discard(websocket)
-            if player and player.name in self.players:
-                print(f"Player {player.name} left the game")
-                del self.players[player.name]
+            if player:
+                print(f"Player {player.name} disconnected (session preserved for reconnection)")
+                # Mark websocket as None but keep player in players dict for reconnection
+                player.websocket = None
     
     async def send_world_update(self, websocket, player: Player):
         """Send world state update to a specific client"""
+        # Check if websocket is valid
+        if not websocket:
+            return
+            
         # Get blocks near the player
         blocks = self.get_blocks_in_range(player.position, radius=50)
         
@@ -371,8 +384,9 @@ class MinecraftServer:
                 current_time = time.time()
                 
                 if current_time - self.last_update >= 1.0 / UPDATE_RATE:
-                    # Create player list for broadcast
-                    players_data = [player.to_dict() for player in self.players.values()]
+                    # Create player list for broadcast (only connected players)
+                    connected_players = [player for player in self.players.values() if player.websocket is not None]
+                    players_data = [player.to_dict() for player in connected_players]
                     
                     update_msg = {
                         "type": "update",
@@ -383,12 +397,29 @@ class MinecraftServer:
                     await self.broadcast_message(update_msg)
                     self.last_update = current_time
                 
+                # Clean up stale player sessions every minute
+                if int(current_time) % 60 == 0:
+                    await self._cleanup_stale_players(current_time)
+                
                 # Sleep until next tick
                 await asyncio.sleep(1.0 / TICK_RATE)
                 
             except Exception as e:
                 print(f"Error in game loop: {e}")
                 await asyncio.sleep(1.0)
+    
+    async def _cleanup_stale_players(self, current_time: float):
+        """Remove player sessions that have been disconnected for too long"""
+        stale_players = []
+        for name, player in self.players.items():
+            if player.websocket is None:
+                time_since_disconnect = current_time - player.last_update
+                if time_since_disconnect > PLAYER_TIMEOUT:
+                    stale_players.append(name)
+        
+        for name in stale_players:
+            del self.players[name]
+            print(f"Removed stale player session: {name}")
     
     async def start_server(self):
         """Start the WebSocket server"""

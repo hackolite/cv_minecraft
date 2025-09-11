@@ -485,11 +485,27 @@ class MinecraftClient(pyglet.window.Window if PYGLET_AVAILABLE else object):
             try:
                 if not self.connected:
                     await self._connect_to_server()
-                await asyncio.sleep(0.1)
+                else:
+                    # If connected, just wait and check connection health
+                    await asyncio.sleep(1.0)
+                    await self._check_connection_health()
             except Exception as e:
                 print(f"Network error: {e}")
                 self.connected = False
                 await asyncio.sleep(5)  # Wait before retrying
+    
+    async def _check_connection_health(self):
+        """Check if the connection is still healthy"""
+        if self.websocket and not self.websocket.closed:
+            try:
+                # Send a ping to check if connection is alive
+                await self.websocket.ping()
+            except Exception:
+                # Connection is dead, mark as disconnected
+                self.connected = False
+        else:
+            # Connection is closed, mark as disconnected
+            self.connected = False
     
     async def _connect_to_server(self):
         """Connect to the game server"""
