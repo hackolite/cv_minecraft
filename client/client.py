@@ -54,7 +54,17 @@ try:
 
     PYGLET_AVAILABLE = True
 except ImportError as e:
-    print(f"Pyglet not available: {e}")
+    print(f"❌ Pyglet not available: {e}")
+    print("🔧 To fix this:")
+    print("   - Install required libraries: sudo apt-get install libglu1-mesa-dev")
+    print("   - For headless environments: use 'xvfb-run -a python3 client/client.py'")
+    PYGLET_AVAILABLE = False
+except Exception as e:
+    print(f"❌ Display initialization failed: {e}")
+    print("🔧 Solutions:")
+    print("   - For headless environments: use 'xvfb-run -a python3 client/client.py'")
+    print("   - Check X11 forwarding if using SSH: ssh -X")
+    print("   - Ensure DISPLAY environment variable is set")
     PYGLET_AVAILABLE = False
     
     # Mock classes for testing
@@ -222,10 +232,13 @@ class ClientModel:
                 
             if os.path.exists(texture_path):
                 self.group = TextureGroup(image.load(texture_path).get_texture())
+                print(f"✅ Texture loaded successfully: {texture_path}")
             else:
-                print("Warning: texture.png not found, using default")
+                print("⚠️  Warning: texture.png not found, using default")
                 self.group = None
         else:
+            print("❌ Pyglet not available - blocks will not be visible!")
+            print("🔧 Run with: xvfb-run -a python3 client/client.py")
             self.batch = None
             self.group = None
         
@@ -262,8 +275,17 @@ class ClientModel:
                 self.world[pos] = texture
                 self.sectors.setdefault(sectorize(pos), []).append(pos)
         
+        print(f"📦 Received {len(blocks_data)} blocks from server")
+        print(f"🌍 World now contains {len(self.world)} blocks")
+        
         # Show blocks in the current area immediately
         self._show_nearby_blocks()
+        
+        if not PYGLET_AVAILABLE:
+            print("❌ Blocks loaded but not visible - no display available")
+            print("🔧 Use: xvfb-run -a python3 client/client.py")
+        else:
+            print(f"✅ {len(self._shown)} blocks rendered successfully")
     
     def _show_nearby_blocks(self):
         """Show blocks in all sectors that should be visible"""
@@ -293,21 +315,26 @@ class ClientModel:
     def _show_block(self, position, texture):
         """Private implementation of the show_block() method."""
         if not PYGLET_AVAILABLE or not self.batch:
+            # Block data is stored but not rendered due to display limitations
             return
             
         x, y, z = position
         vertex_data = cube_vertices(x, y, z, 0.5)
         texture_data = list(texture)
         
-        if self.group:
-            vertex_list = self.batch.add(24, GL_QUADS, self.group,
-                ('v3f/static', vertex_data),
-                ('t2f/static', texture_data))
-        else:
-            vertex_list = self.batch.add(24, GL_QUADS, None,
-                ('v3f/static', vertex_data))
-        
-        self._shown[position] = vertex_list
+        try:
+            if self.group:
+                vertex_list = self.batch.add(24, GL_QUADS, self.group,
+                    ('v3f/static', vertex_data),
+                    ('t2f/static', texture_data))
+            else:
+                vertex_list = self.batch.add(24, GL_QUADS, None,
+                    ('v3f/static', vertex_data))
+            
+            self._shown[position] = vertex_list
+        except Exception as e:
+            print(f"⚠️  Warning: Failed to render block at {position}: {e}")
+            # Continue without crashing - block data is still stored
     
     def hide_block(self, position, immediate=True):
         """Hide the block at the given position."""
@@ -848,6 +875,24 @@ class MinecraftClient(pyglet.window.Window if PYGLET_AVAILABLE else object):
         super().on_close()
 
 
+def check_display_requirements():
+    """Check if display requirements are met for rendering"""
+    if not PYGLET_AVAILABLE:
+        return False
+    
+    import os
+    display = os.environ.get('DISPLAY')
+    if not display:
+        print("❌ No DISPLAY environment variable set")
+        print("🔧 For headless environments:")
+        print("   xvfb-run -a python3 client/client.py")
+        print("🔧 For SSH with X11 forwarding:")
+        print("   ssh -X username@hostname")
+        return False
+    
+    return True
+
+
 def setup_fog():
     """Configure the OpenGL fog properties."""
     glEnable(GL_FOG)
@@ -869,10 +914,29 @@ def setup():
 
 def main():
     """Main entry point."""
-    window = MinecraftClient(width=1280, height=720, caption='Minecraft Client', resizable=True)
-    window.set_exclusive_mouse(True)
-    setup()
-    pyglet.app.run()
+    print("🎮 Starting Minecraft-like Client")
+    print("==================================")
+    
+    # Check display requirements
+    if not check_display_requirements():
+        print("\n🚨 CRITICAL: Display not available - blocks will not be visible!")
+        print("💡 This is likely why you're experiencing invisible blocks.")
+        print("\n🛠️  Quick fixes:")
+        print("   • For headless systems: xvfb-run -a python3 client/client.py")
+        print("   • For SSH: use 'ssh -X' for X11 forwarding")
+        print("   • For local systems: ensure X11/Wayland display is running")
+        print("\nContinuing with limited functionality...")
+        
+    if PYGLET_AVAILABLE:
+        window = MinecraftClient(width=1280, height=720, caption='Minecraft Client', resizable=True)
+        window.set_exclusive_mouse(True)
+        setup()
+        pyglet.app.run()
+    else:
+        print("Running in headless mode - no window will be displayed")
+        # Keep the process alive for testing purposes
+        import time
+        time.sleep(5)
 
 
 if __name__ == '__main__':

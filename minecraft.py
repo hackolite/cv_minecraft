@@ -5,39 +5,79 @@ import math
 import random
 import time
 
-import pyglet
-from pyglet.gl import *
-
-# Import missing GL constants if not available from pyglet
+# Try to import Pyglet components with better error handling
 try:
-    # These constants should be available after importing pyglet.gl
-    GL_FOG
-except NameError:
-    # Fallback to PyOpenGL if constants are not available from pyglet
+    import pyglet
+    from pyglet.gl import *
+    from pyglet import image
+    from pyglet.graphics import TextureGroup
+    from pyglet.window import key, mouse
     try:
-        from OpenGL.GL import (
-            GL_FOG, GL_FOG_COLOR, GL_FOG_HINT, GL_DONT_CARE,
-            GL_FOG_MODE, GL_LINEAR, GL_FOG_START, GL_FOG_END,
-            GL_QUADS, GL_DEPTH_TEST, GL_PROJECTION, GL_MODELVIEW,
-            GL_FRONT_AND_BACK, GL_LINE, GL_FILL, GL_LINES,
-            GL_CULL_FACE, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-            GL_NEAREST, GL_TEXTURE_MAG_FILTER, GLfloat
-        )
+        from pyglet.graphics import get_default_shader
     except ImportError:
-        raise ImportError("OpenGL constants not available. Please install PyOpenGL: pip install PyOpenGL")
-
-
+        # Fallback for older Pyglet versions
+        get_default_shader = None
+    PYGLET_AVAILABLE = True
+except ImportError as e:
+    print(f"❌ Pyglet not available: {e}")
+    print("🔧 To fix this:")
+    print("   - Install required libraries: sudo apt-get install libglu1-mesa-dev")
+    print("   - For headless environments: use 'xvfb-run -a python3 minecraft.py'")
+    PYGLET_AVAILABLE = False
+    # Create mock objects to prevent crashes
+    class MockPyglet:
+        class graphics:
+            class Batch:
+                def __init__(self): pass
+                def add(self, *args, **kwargs): return None
+        class window:
+            class Window:
+                def __init__(self, *args, **kwargs): pass
+    pyglet = MockPyglet()
+    get_default_shader = None
+except Exception as e:
+    print(f"❌ Display initialization failed: {e}")
+    print("🔧 Solutions:")
+    print("   - For headless environments: use 'xvfb-run -a python3 minecraft.py'")
+    print("   - Check X11 forwarding if using SSH: ssh -X")
+    print("   - Ensure DISPLAY environment variable is set")
+    PYGLET_AVAILABLE = False
+    # Create mock objects to prevent crashes
+    class MockPyglet:
+        class graphics:
+            class Batch:
+                def __init__(self): pass
+                def add(self, *args, **kwargs): return None
+        class window:
+            class Window:
+                def __init__(self, *args, **kwargs): pass
+    pyglet = MockPyglet()
+    get_default_shader = None
 
 from collections import deque
-from pyglet import image
-from pyglet.gl import *
-from pyglet.graphics import TextureGroup
-from pyglet.window import key, mouse
-try:
-    from pyglet.graphics import get_default_shader
-except ImportError:
-    # Fallback for older Pyglet versions
-    get_default_shader = None
+
+# Import missing GL constants if not available from pyglet
+if PYGLET_AVAILABLE:
+    try:
+        # These constants should be available after importing pyglet.gl
+        GL_FOG
+    except NameError:
+        # Fallback to PyOpenGL if constants are not available from pyglet
+        try:
+            from OpenGL.GL import (
+                GL_FOG, GL_FOG_COLOR, GL_FOG_HINT, GL_DONT_CARE,
+                GL_FOG_MODE, GL_LINEAR, GL_FOG_START, GL_FOG_END,
+                GL_QUADS, GL_DEPTH_TEST, GL_PROJECTION, GL_MODELVIEW,
+                GL_FRONT_AND_BACK, GL_LINE, GL_FILL, GL_LINES,
+                GL_CULL_FACE, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                GL_NEAREST, GL_TEXTURE_MAG_FILTER, GLfloat
+            )
+        except ImportError:
+            print("⚠️  Warning: OpenGL constants not available. Install PyOpenGL: pip install PyOpenGL")
+            PYGLET_AVAILABLE = False
+
+
+
 
 from noise_gen import NoiseGen
 
@@ -1048,10 +1088,25 @@ def setup():
 
 
 def main():
+    """Main entry point for the standalone Minecraft game."""
+    print("🎮 Starting Minecraft-like Game")
+    print("==============================")
+    
+    if not PYGLET_AVAILABLE:
+        print("\n🚨 CRITICAL: Display not available - blocks will not be visible!")
+        print("💡 This is likely why you're experiencing invisible blocks.")
+        print("\n🛠️  Quick fixes:")
+        print("   • For headless systems: xvfb-run -a python3 minecraft.py")
+        print("   • For SSH: use 'ssh -X' for X11 forwarding")
+        print("   • For local systems: ensure X11/Wayland display is running")
+        print("\nGame cannot run without display. Exiting...")
+        return
+        
     window = Window(width=1280, height=720, caption='Minecraft', resizable=True)
     # Hide the mouse cursor and prevent the mouse from leaving the window.
     window.set_exclusive_mouse(True)
     setup()
     pyglet.app.run()
 
-main()
+if __name__ == '__main__':
+    main()
