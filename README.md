@@ -2,6 +2,32 @@
 
 This is a Minecraft-like game implemented with a true client-server architecture supporting multiplayer gameplay through an agent-based system. The server manages all world logic, player actions, and state synchronization while clients act as visual agents connecting via WebSocket.
 
+## 🚨 Important: Display Requirements
+
+**If you're experiencing invisible blocks, this is likely due to missing display requirements.**
+
+### For Headless/Server Environments
+```shell
+# Install virtual display
+sudo apt-get install xvfb
+
+# Run with virtual display
+xvfb-run -a python3 client/client.py
+xvfb-run -a python3 minecraft.py
+```
+
+### For SSH Connections
+```shell
+# Connect with X11 forwarding
+ssh -X username@hostname
+
+# Then run normally
+python3 client/client.py
+```
+
+### For Local Systems
+Ensure you have a running display server (X11 or Wayland) before starting the game.
+
 ## Architecture
 
 ### Agent-Based Multiplayer System
@@ -51,6 +77,9 @@ This is a Minecraft-like game implemented with a true client-server architecture
 ### Prerequisites
 ```shell
 pip install -r requirements.txt
+
+# For headless environments (servers without display)
+sudo apt-get install xvfb
 ```
 
 ### Starting the Server
@@ -65,6 +94,14 @@ The server will:
 
 ### Starting a Client
 ```shell
+# For systems with display
+python3 client/client.py
+
+# For headless systems (recommended for servers)
+xvfb-run -a python3 client/client.py
+
+# For SSH connections
+ssh -X username@hostname
 python3 client/client.py
 ```
 Each client will:
@@ -144,6 +181,44 @@ BLOCK_TEXTURES["CUSTOM"] = custom_texture_coords
 - **Architecture**: True client-server with agent-based players
 - **World Format**: Block-based 3D voxel world
 - **Terrain**: Procedural generation using noise algorithms
+
+## Troubleshooting
+
+### Problem: "None of the blocks are visible" / "aucun des blocs n'est visible"
+
+**Root Cause:** The game requires a display server (X11/Wayland) to render blocks. Without it, Pyglet cannot initialize the graphics system.
+
+**Solutions:**
+
+1. **For headless servers:**
+   ```shell
+   sudo apt-get install xvfb
+   xvfb-run -a python3 client/client.py
+   ```
+
+2. **For SSH connections:**
+   ```shell
+   ssh -X username@hostname
+   python3 client/client.py
+   ```
+
+3. **For local systems:**
+   - Ensure X11 or Wayland is running
+   - Check DISPLAY environment variable: `echo $DISPLAY`
+
+### Problem: "Library GLU not found"
+```shell
+sudo apt-get install libglu1-mesa-dev
+```
+
+### Problem: WebSocket connection failed
+```shell
+# Make sure server is running first
+python3 server/server.py
+
+# Then start client
+python3 client/client.py
+```
 
 ## Development
 
