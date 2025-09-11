@@ -137,13 +137,13 @@ class GameWorld:
                     blocks_created += 1
                 
                 # Fill below surface with stone
-                for y in xrange(max(1, h - 5), h):  # Limite la profondeur pour réduire le nombre de blocs
+                for y in xrange(max(1, h - 3), h):  # Réduit de 5 à 3 pour moins de blocs souterrains
                     self.add_block((x, y, z), STONE)
                     blocks_created += 1
                 
                 # Maybe add tree
                 if h > 20:
-                    if random.randrange(0, 1000) > 995:  # Moins d'arbres
+                    if random.randrange(0, 1000) > 998:  # Moins d'arbres (0.2% au lieu de 0.5%)
                         tree_height = random.randrange(3, 5)
                         
                         # Tree trunk
@@ -234,7 +234,7 @@ class GameWorld:
 class MinecraftServer:
     """Main server class handling WebSocket connections and world management."""
     
-    def __init__(self, world_size=64, port=8765):  # Taille réduite par défaut
+    def __init__(self, world_size=24, port=8765):  # Taille réduite pour moins de blocs
         self.world = GameWorld(world_size)
         self.port = port
         self.clients = set()
@@ -458,7 +458,7 @@ class MinecraftServer:
 
 def main():
     """Main function to start the server."""
-    server = MinecraftServer(world_size=64)  # Taille réduite pour les tests
+    server = MinecraftServer()  # Use default reduced size (24)
     try:
         asyncio.run(server.start_server())
     except KeyboardInterrupt:

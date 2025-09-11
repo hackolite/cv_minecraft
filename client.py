@@ -71,7 +71,7 @@ class DebugClient(ShowBase):
     def setup_camera(self):
         """Setup camera."""
         print("Setting up camera...")
-        self.disableMouse()
+        # Enable mouse for camera control
         self.camera.setPos(self.position)
         self.camera.setHpr(0, 0, 0)
         
@@ -86,8 +86,14 @@ class DebugClient(ShowBase):
         lens.setFar(1000.0)
         self.cam.node().setLens(lens)
         
+        # Setup mouse controls for camera
+        self.mouse_sensitivity = 0.2
+        self.camera_pitch = 0
+        self.camera_yaw = 0
+        
         print(f"Camera position: {self.camera.getPos()}")
         print("Depth testing enabled for proper 3D rendering")
+        print("Mouse controls enabled for camera view changes")
     
     def setup_lighting(self):
         """Setup lighting."""
@@ -146,13 +152,26 @@ class DebugClient(ShowBase):
         self.accept("space", self.move_up)
         self.accept("c", self.move_down)
         
-        # Camera rotation
+        # Camera rotation (keyboard fallback)
         self.accept("arrow_left", self.turn_left)
         self.accept("arrow_right", self.turn_right)
         self.accept("arrow_up", self.look_up)
         self.accept("arrow_down", self.look_down)
         
-        print("Controls setup complete")
+        # Mouse controls for camera
+        self.accept("mouse1", self.mouse_click)  # Left click
+        self.accept("mouse3", self.mouse_right_click)  # Right click
+        
+        # Enable mouse tracking for camera rotation
+        self.mouse_enabled = True
+        if self.mouseWatcherNode.hasMouse():
+            self.last_mouse_x = self.mouseWatcherNode.getMouseX()
+            self.last_mouse_y = self.mouseWatcherNode.getMouseY()
+        else:
+            self.last_mouse_x = 0
+            self.last_mouse_y = 0
+        
+        print("Controls setup complete (including mouse camera controls)")
     
     def move_forward(self):
         """Move camera forward."""
@@ -186,19 +205,58 @@ class DebugClient(ShowBase):
         
     def turn_left(self):
         """Turn camera left."""
-        self.camera.setH(self.camera.getH() + 10)
+        self.camera_yaw += 10
+        self.update_camera_rotation()
         
     def turn_right(self):
         """Turn camera right."""
-        self.camera.setH(self.camera.getH() - 10)
+        self.camera_yaw -= 10
+        self.update_camera_rotation()
         
     def look_up(self):
         """Look up."""
-        self.camera.setP(self.camera.getP() + 10)
+        self.camera_pitch = max(-90, self.camera_pitch + 10)
+        self.update_camera_rotation()
         
     def look_down(self):
         """Look down."""
-        self.camera.setP(self.camera.getP() - 10)
+        self.camera_pitch = min(90, self.camera_pitch - 10)
+        self.update_camera_rotation()
+    
+    def update_camera_rotation(self):
+        """Update camera rotation based on pitch and yaw."""
+        self.camera.setHpr(self.camera_yaw, self.camera_pitch, 0)
+    
+    def mouse_click(self):
+        """Handle left mouse click."""
+        print("Left mouse click detected")
+    
+    def mouse_right_click(self):
+        """Handle right mouse click."""
+        print("Right mouse click detected")
+    
+    def handle_mouse_movement(self):
+        """Handle mouse movement for camera rotation."""
+        if not self.mouse_enabled or not self.mouseWatcherNode.hasMouse():
+            return
+        
+        # Get current mouse position
+        mouse_x = self.mouseWatcherNode.getMouseX()
+        mouse_y = self.mouseWatcherNode.getMouseY()
+        
+        # Calculate mouse movement delta
+        delta_x = mouse_x - self.last_mouse_x
+        delta_y = mouse_y - self.last_mouse_y
+        
+        # Update camera rotation based on mouse movement
+        if abs(delta_x) > 0.01 or abs(delta_y) > 0.01:
+            self.camera_yaw -= delta_x * self.mouse_sensitivity * 100
+            self.camera_pitch = max(-90, min(90, self.camera_pitch + delta_y * self.mouse_sensitivity * 100))
+            self.update_camera_rotation()
+        
+        # Update last mouse position
+        self.last_mouse_x = mouse_x
+        self.last_mouse_y = mouse_y
         
     def update_camera_position(self):
         """Update camera position and send to server if needed."""
@@ -454,6 +512,9 @@ class DebugClient(ShowBase):
     
     def update(self, task):
         """Update task."""
+        # Handle mouse movement for camera rotation
+        self.handle_mouse_movement()
+        
         # Process messages
         self.process_network_messages()
         
@@ -466,7 +527,7 @@ class DebugClient(ShowBase):
             f"HPR: ({cam_hpr.x:.0f}, {cam_hpr.y:.0f}, {cam_hpr.z:.0f})\n"
             f"Connected: {self.connected}\n"
             f"WASD: Move, Space/C: Up/Down\n"
-            f"Arrows: Look around\n"
+            f"Mouse: Look around, Arrows: Look (fallback)\n"
             f"R: Request world, T: Test block\n"
             f"ESC: Exit"
         )
@@ -525,6 +586,9 @@ class DebugClient(ShowBase):
             asyncio.run(connect_and_communicate())
         except Exception as e:
             print(f"Error in network worker: {e}")
+
+# Alias for compatibility with tests
+MinecraftClient = DebugClient
 
 def main():
     """Main function."""
