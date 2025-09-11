@@ -39,16 +39,22 @@ Multiple clients can connect to the same server for multiplayer functionality.
 
 ## Controls
 
-- **WASD**: Movement (forward/backward/left/right) 
+### Movement Controls (Both QWERTY and AZERTY keyboard layouts supported)
+- **WASD** or **ZQSD**: Movement (forward/backward/left/right) 
 - **Space/C**: Move up/down
-- **Arrow Keys**: Look around
-- **Mouse**: Look around (in full client)
+- **Arrow Keys**: Look around (keyboard fallback)
+- **Mouse**: Look around (smooth camera rotation)
 - **Left Click**: Remove block
 - **Right Click**: Place block
 - **1-6**: Select block type (Brick, Grass, Sand, Wood, Leaf, Frog)
 - **Tab**: Toggle flying mode
 - **R**: Request world data (debug client)
 - **T**: Test block placement (debug client)
+
+### Improved Controls
+- **Configurable mouse sensitivity**: Smooth and responsive camera rotation
+- **Dual keyboard layout support**: Works with both QWERTY and AZERTY layouts
+- **Responsive movement**: Improved keyboard control responsiveness
 
 ## Features
 
@@ -58,6 +64,8 @@ Multiple clients can connect to the same server for multiplayer functionality.
 - **Physics**: Gravity, jumping, collision detection
 - **Block Types**: 6 different block types with distinct textures
 - **Flying Mode**: Toggle between walking and flying
+- **Improved Rendering**: Configurable block sizes and consistent visual quality
+- **Enhanced Controls**: Smooth mouse controls and responsive keyboard input
 
 ## Technical Details
 
