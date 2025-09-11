@@ -261,6 +261,17 @@ class ClientModel:
                 texture = BLOCK_TEXTURES[block_type]
                 self.world[pos] = texture
                 self.sectors.setdefault(sectorize(pos), []).append(pos)
+        
+        # Show blocks in the current area immediately
+        self._show_nearby_blocks()
+    
+    def _show_nearby_blocks(self):
+        """Show blocks in all sectors that should be visible"""
+        # Get all sectors that contain blocks
+        for sector in self.sectors.keys():
+            self.show_sector(sector)
+        # Process the queue to ensure blocks are shown immediately
+        self.process_entire_queue()
     
     def exposed(self, position):
         """Returns False if given position is surrounded on all 6 sides by blocks."""
@@ -513,6 +524,9 @@ class MinecraftClient(pyglet.window.Window if PYGLET_AVAILABLE else object):
             player_data = message_data.get("player")
             if player_data:
                 self.position = player_data.get("pos", self.position)
+            
+            # Reset sector to ensure proper rendering after world update
+            self.sector = None
                 
         elif message_type == "update":
             # Update other players
