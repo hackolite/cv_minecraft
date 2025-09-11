@@ -490,7 +490,8 @@ class PygletMinecraftClient(pyglet.window.Window):
         self.strafe = [0, 0]
         
         # Current (x, y, z) position in the world
-        self.position = (30, 50, 80)
+        # Position player in the center of the generated world at a reasonable height
+        self.position = (12, 20, 12)
         
         # Rotation (horizontal, vertical) in degrees
         self.rotation = (0, 0)

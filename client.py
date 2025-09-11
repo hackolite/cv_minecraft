@@ -52,7 +52,8 @@ class DebugClient(ShowBase):
         self.block_types = {}
         
         # Player
-        self.position = Vec3(32, 32, 25)  # Position initiale plus appropriée
+        # Position player in the center of the generated world at a reasonable height
+        self.position = Vec3(12, 20, 12)  # Position centered in the world
         self.last_sent_position = None  # Track last sent position to avoid spam
         self.position_update_threshold = 0.5  # Minimum distance to send update
         

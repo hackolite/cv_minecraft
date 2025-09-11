@@ -527,7 +527,8 @@ class Window(pyglet.window.Window):
 
         # Current (x, y, z) position in the world, specified with floats. Note
         # that, perhaps unlike in math class, the y-axis is the vertical axis.
-        self.position = (30, 50, 80)
+        # Position player in the center of the generated world at a reasonable height
+        self.position = (12, 20, 12)
 
         # First element is rotation of the player in the x-z plane (ground
         # plane) measured from the z-axis down. The second is the rotation
