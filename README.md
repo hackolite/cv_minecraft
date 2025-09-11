@@ -1,57 +1,162 @@
-# Minecraft
+# Minecraft - Multiplayer Client-Server Architecture
 
+This is a Minecraft-like game implemented with a true client-server architecture supporting multiplayer gameplay through an agent-based system. The server manages all world logic, player actions, and state synchronization while clients act as visual agents connecting via WebSocket.
 
-This is a modded version of Fogleman's "Minecraft" which was created for an April Fools video.
+## Architecture
 
-https://github.com/fogleman/Minecraft
+### Agent-Based Multiplayer System
+- **Server (`/server/server.py`)**: Handles WebSocket clients, maintains world state, manages player agents, broadcasts updates
+- **Client (`/client/client.py`)**: Handles local game loop with Pyglet, connects via WebSocket, visualizes world, sends player actions to server
+- **True Client-Server**: All game logic (block placement, player movement, inventory, etc.) is strictly server-side
+- **Agent Representation**: Each connected client is represented as a distinct agent on the server with its own state (position, inventory, etc.)
+- **Regular Updates**: Server broadcasts updates at a regular tick rate to all clients
 
-Video here: https://www.youtube.com/watch?v=S4EUQD9QIzc&lc=z23mubkgxpapjvhot04t1aokgeofqomvondp5x4qnz1abk0h00410
+### Communication Protocol
 
+**Client-to-Server Messages:**
+```json
+// Join the game
+{"type": "join", "name": "PlayerName"}
+
+// Move player
+{"type": "move", "pos": [12, 50, 21], "rotation": [0, 0]}
+
+// Place/remove blocks
+{"type": "block", "pos": [12, 49, 21], "action": "place", "block_type": "STONE"}
+{"type": "block", "pos": [12, 49, 21], "action": "remove"}
+
+// Chat message
+{"type": "chat", "message": "Hello world!"}
+```
+
+**Server-to-Client Messages:**
+```json
+// World state update
+{
+  "type": "world_update",
+  "blocks": [{"pos": [10, 49, 20], "type": "GRASS"}, ...],
+  "player": {"name": "Alice", "pos": [10, 50, 20], "rotation": [0, 0]}
+}
+
+// Player updates
+{
+  "type": "update", 
+  "players": [{"name": "Alice", "pos": [10, 50, 20]}, ...],
+  "timestamp": 1234567890
+}
+```
 
 ## How to Run
 
+### Prerequisites
 ```shell
-pip install pyglet
-git clone https://github.com/Hopson97/Minecraft-In-5-Seconds.git
-cd Minecraft-In-5-Seconds
-python main.py
+pip install -r requirements.txt
 ```
 
-### Mac
-
-On Mac OS X, you may have an issue with running Pyglet in 64-bit mode. Try running Python in 32-bit mode first:
-
+### Starting the Server
 ```shell
-arch -i386 python main.py
+python3 server/server.py
+```
+The server will:
+- Generate a procedural world with terrain, water, and trees
+- Start listening on `ws://localhost:8765`
+- Handle multiple client connections
+- Manage all game logic server-side
+
+### Starting a Client
+```shell
+python3 client/client.py
+```
+Each client will:
+- Connect to the server as an agent
+- Display the 3D world using Pyglet
+- Send player actions to the server
+- Receive and display world updates
+
+### Controls (Client)
+- **WASD**: Move (ZQSD on French keyboards)  
+- **Mouse**: Look around
+- **Space**: Jump
+- **Left Click**: Remove block
+- **Right Click**: Place block
+- **1-5**: Select block type
+- **Tab**: Toggle flying mode
+- **Escape**: Release mouse cursor
+
+## Features
+
+### Server Features
+- **Procedural World Generation**: Terrain with hills, water, sand beaches, and trees
+- **Multi-Client Support**: Handle multiple simultaneous players
+- **Block Management**: Server-side validation of block placement/removal
+- **Player State**: Position, inventory, flying mode for each agent
+- **Real-time Updates**: Regular broadcasts of world state changes
+- **Collision Detection**: Server validates movement and prevents clipping
+
+### Client Features
+- **3D Rendering**: Pyglet-based OpenGL rendering with textures
+- **Network Synchronization**: Real-time world state updates from server
+- **Input Handling**: WASD movement, mouse look, block interaction
+- **Visual Feedback**: Crosshair, player position display, block count
+- **Agent Behavior**: Acts as autonomous agent sending actions to server
+
+### Block Types
+- **GRASS**: Green surface blocks with dirt sides
+- **STONE**: Gray underground material  
+- **SAND**: Beach and desert material
+- **WOOD**: Tree trunks
+- **LEAF**: Tree foliage
+- **WATER**: Fluid blocks in low areas
+- **BRICK**: Player-buildable construction material
+
+## Extensibility
+
+The agent-based architecture supports easy extension with:
+
+### AI Agents
+```python
+# Add bot players that can connect and act autonomously
+class AIAgent:
+    async def connect_to_server(self):
+        # Connect as WebSocket client
+        # Implement AI behavior (pathfinding, building, etc.)
 ```
 
-If that doesn't work, set Python to run in 32-bit mode by default:
-
-```shell
-defaults write com.apple.versioner.python Prefer-32-Bit -bool yes 
+### Custom Block Types
+```python
+# Server-side block type registration
+CUSTOM_BLOCK = "CUSTOM"
+# Client-side texture mapping
+BLOCK_TEXTURES["CUSTOM"] = custom_texture_coords
 ```
 
-This assumes you are using the OS X default Python.  Works on Lion 10.7 with the default Python 2.7, and may work on other versions too.  Please raise an issue if not.
-    
-Or try Pyglet 1.2 alpha, which supports 64-bit mode:  
+### Game Modes
+- Creative mode with unlimited resources
+- Survival mode with health and hunger
+- PvP combat between player agents
+- Collaborative building projects
 
+## Technical Details
+
+- **Language**: Python 3.12+
+- **Graphics**: Pyglet with OpenGL
+- **Networking**: WebSockets for real-time communication
+- **Architecture**: True client-server with agent-based players
+- **World Format**: Block-based 3D voxel world
+- **Terrain**: Procedural generation using noise algorithms
+
+## Development
+
+### Running Tests
 ```shell
-pip install https://pyglet.googlecode.com/files/pyglet-1.2alpha1.tar.gz 
+python3 test_connection.py
 ```
 
-### If you don't have pip or git
+### Architecture Benefits
+1. **Scalable Multiplayer**: Server handles all authoritative game state
+2. **Cheat Prevention**: Clients cannot modify world without server validation  
+3. **Consistent State**: All players see the same synchronized world
+4. **Agent Extensibility**: Easy to add AI bots or specialized client types
+5. **Network Efficiency**: Only necessary updates are broadcast to clients
 
-For pip:
-
-- Mac or Linux: install with `sudo easy_install pip` (Mac or Linux) - or (Linux) find a package called something like 'python-pip' in your package manager.
-- Windows: [install Distribute then Pip](http://stackoverflow.com/a/12476379/992887) using the linked .MSI installers.
-
-For git:
-
-- Mac: install [Homebrew](http://mxcl.github.com/homebrew/) first, then `brew install git`.
-- Windows or Linux: see [Installing Git](http://git-scm.com/book/en/Getting-Started-Installing-Git) from the _Pro Git_ book.
-
-See the [wiki](https://github.com/fogleman/Minecraft/wiki) for this project to install Python, and other tips.
-
-
-[![Run on Repl.it](https://repl.it/badge/github/Hopson97/Minecraft-In-5-Seconds)](https://repl.it/github/Hopson97/Minecraft-In-5-Seconds)
+Original base game by [Fogleman](https://github.com/fogleman/Minecraft), extended for multiplayer agent-based architecture.
