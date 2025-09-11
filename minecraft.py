@@ -69,6 +69,13 @@ TERMINAL_VELOCITY = 50
 PLAYER_HEIGHT = 2
 PLAYER_FOV = 80.0
 
+# Block rendering variables
+BLOCK_SIZE = 0.5  # Half-size of blocks (block width = 2 * BLOCK_SIZE)
+BLOCK_OUTLINE_SIZE = 0.51  # Slightly larger for block outline
+
+# Mouse and camera variables
+MOUSE_SENSITIVITY = 0.15  # Mouse sensitivity for camera rotation
+
 if sys.version_info[0] >= 3:
     xrange = range
 
@@ -372,7 +379,7 @@ class Model(object):
 
         """
         x, y, z = position
-        vertex_data = cube_vertices(x, y, z, 0.5)
+        vertex_data = cube_vertices(x, y, z, BLOCK_SIZE)
         texture_data = list(texture)
         # create vertex list
         # FIXME Maybe `add_indexed()` should be used instead
@@ -802,9 +809,8 @@ class Window(pyglet.window.Window):
 
         """
         if self.exclusive:
-            m = 0.15
             x, y = self.rotation
-            x, y = x + dx * m, y + dy * m
+            x, y = x + dx * MOUSE_SENSITIVITY, y + dy * MOUSE_SENSITIVITY
             y = max(-90, min(90, y))
             self.rotation = (x, y)
 
@@ -820,13 +826,13 @@ class Window(pyglet.window.Window):
             Number representing any modifying keys that were pressed.
 
         """
-        if symbol == key.Z:
+        if symbol == key.Z or symbol == key.W:  # Forward (AZERTY Z or QWERTY W)
             self.strafe[0] -= 1
-        elif symbol == key.S:
+        elif symbol == key.S:  # Backward (same in both layouts)
             self.strafe[0] += 1
-        elif symbol == key.Q:
+        elif symbol == key.Q or symbol == key.A:  # Left (AZERTY Q or QWERTY A)
             self.strafe[1] -= 1
-        elif symbol == key.D:
+        elif symbol == key.D:  # Right (same in both layouts)
             self.strafe[1] += 1
         elif symbol == key.C:
             self.fov_offset -= 60.0
@@ -864,13 +870,13 @@ class Window(pyglet.window.Window):
             Number representing any modifying keys that were pressed.
 
         """
-        if symbol == key.Z:
+        if symbol == key.Z or symbol == key.W:  # Forward (AZERTY Z or QWERTY W)
             self.strafe[0] += 1
-        elif symbol == key.S:
+        elif symbol == key.S:  # Backward (same in both layouts)
             self.strafe[0] -= 1
-        elif symbol == key.Q:
+        elif symbol == key.Q or symbol == key.A:  # Left (AZERTY Q or QWERTY A)
             self.strafe[1] += 1
-        elif symbol == key.D:
+        elif symbol == key.D:  # Right (same in both layouts)
             self.strafe[1] -= 1
         elif symbol == key.SPACE:
             self.jumping = False
@@ -972,7 +978,7 @@ class Window(pyglet.window.Window):
         block = self.model.hit_test(self.position, vector)[0]
         if block:
             x, y, z = block
-            vertex_data = cube_vertices(x, y, z, 0.51)
+            vertex_data = cube_vertices(x, y, z, BLOCK_OUTLINE_SIZE)
             glColor3d(0, 0, 0)
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
             pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))

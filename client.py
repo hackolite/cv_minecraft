@@ -87,7 +87,8 @@ class DebugClient(ShowBase):
         self.cam.node().setLens(lens)
         
         # Setup mouse controls for camera
-        self.mouse_sensitivity = 0.2
+        self.mouse_sensitivity = 0.15
+        self.movement_speed = 1.5  # Units per key press
         self.camera_pitch = 0
         self.camera_yaw = 0
         
@@ -144,11 +145,13 @@ class DebugClient(ShowBase):
         self.accept("r", self.request_world_data)
         self.accept("t", self.test_add_block)
         
-        # Camera movement controls
-        self.accept("w", self.move_forward)
-        self.accept("s", self.move_backward)
-        self.accept("a", self.move_left)
-        self.accept("d", self.move_right)
+        # Camera movement controls (support both QWERTY and AZERTY)
+        self.accept("w", self.move_forward)   # QWERTY forward
+        self.accept("z", self.move_forward)   # AZERTY forward
+        self.accept("s", self.move_backward)  # Same in both layouts
+        self.accept("a", self.move_left)      # QWERTY left
+        self.accept("q", self.move_left)      # AZERTY left
+        self.accept("d", self.move_right)     # Same in both layouts
         self.accept("space", self.move_up)
         self.accept("c", self.move_down)
         
@@ -175,32 +178,32 @@ class DebugClient(ShowBase):
     
     def move_forward(self):
         """Move camera forward."""
-        self.camera.setY(self.camera, 2)
+        self.camera.setY(self.camera, self.movement_speed)
         self.update_camera_position()
         
     def move_backward(self):
         """Move camera backward.""" 
-        self.camera.setY(self.camera, -2)
+        self.camera.setY(self.camera, -self.movement_speed)
         self.update_camera_position()
         
     def move_left(self):
         """Move camera left."""
-        self.camera.setX(self.camera, -2)
+        self.camera.setX(self.camera, -self.movement_speed)
         self.update_camera_position()
         
     def move_right(self):
         """Move camera right."""
-        self.camera.setX(self.camera, 2)
+        self.camera.setX(self.camera, self.movement_speed)
         self.update_camera_position()
         
     def move_up(self):
         """Move camera up."""
-        self.camera.setZ(self.camera.getZ() + 2)
+        self.camera.setZ(self.camera.getZ() + self.movement_speed)
         self.update_camera_position()
         
     def move_down(self):
         """Move camera down."""
-        self.camera.setZ(self.camera.getZ() - 2)
+        self.camera.setZ(self.camera.getZ() - self.movement_speed)
         self.update_camera_position()
         
     def turn_left(self):
@@ -250,8 +253,8 @@ class DebugClient(ShowBase):
         
         # Update camera rotation based on mouse movement
         if abs(delta_x) > 0.01 or abs(delta_y) > 0.01:
-            self.camera_yaw -= delta_x * self.mouse_sensitivity * 100
-            self.camera_pitch = max(-90, min(90, self.camera_pitch + delta_y * self.mouse_sensitivity * 100))
+            self.camera_yaw -= delta_x * self.mouse_sensitivity * 50  # Reduced from 100 to 50
+            self.camera_pitch = max(-90, min(90, self.camera_pitch + delta_y * self.mouse_sensitivity * 50))
             self.update_camera_rotation()
         
         # Update last mouse position
