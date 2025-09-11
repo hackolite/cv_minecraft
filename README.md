@@ -1,6 +1,6 @@
-# Minecraft Client-Server
+# Minecraft Client-Server (Pyglet-based)
 
-This is a Minecraft-like game converted to client-server architecture using Panda3D for rendering and WebSocket for communication.
+This is a Minecraft-like game with client-server architecture using **Pyglet** for rendering and WebSocket for communication.
 
 Original project based on Fogleman's "Minecraft" which was created for an April Fools video.
 
@@ -13,7 +13,7 @@ Video here: https://www.youtube.com/watch?v=S4EUQD9QIzc&lc=z23mubkgxpapjvhot04t1
 The game is now split into two components:
 
 - **Server** (`server.py`): Manages the game world, handles multiplayer connections via WebSocket
-- **Client** (`client.py`): Renders the game using Panda3D, handles user input and networking
+- **Pyglet Client** (`pyglet_client.py`): Renders the game using Pyglet, handles user input and networking
 
 ## How to Run
 
@@ -30,9 +30,9 @@ pip install -r requirements.txt
 python3 server.py
 ```
 
-2. **Start the Client** (in another terminal):
+2. **Start the Pyglet Client** (in another terminal):
 ```shell
-python3 client.py
+python3 pyglet_client.py
 ```
 
 Multiple clients can connect to the same server for multiplayer functionality.
@@ -41,55 +41,66 @@ Multiple clients can connect to the same server for multiplayer functionality.
 
 ### Movement Controls (Both QWERTY and AZERTY keyboard layouts supported)
 - **WASD** or **ZQSD**: Movement (forward/backward/left/right) 
-- **Space/C**: Move up/down
+- **Space**: Jump
+- **C**: Crouch / Zoom out
 - **Arrow Keys**: Look around (keyboard fallback)
 - **Mouse**: Look around (smooth camera rotation)
 - **Left Click**: Remove block
 - **Right Click**: Place block
 - **1-6**: Select block type (Brick, Grass, Sand, Wood, Leaf, Frog)
 - **Tab**: Toggle flying mode
-- **R**: Request world data (debug client)
-- **T**: Test block placement (debug client)
+- **R**: Sprint
+- **Shift**: Crouch
+- **F11**: Toggle fullscreen
+- **ESC**: Release mouse capture
 
 ### Improved Controls
 - **Configurable mouse sensitivity**: Smooth and responsive camera rotation
 - **Dual keyboard layout support**: Works with both QWERTY and AZERTY layouts
 - **Responsive movement**: Improved keyboard control responsiveness
+- **Physics-based movement**: Gravity, jumping, and collision detection
 
 ## Features
 
+- **Pyglet-based Rendering**: Uses Pyglet for efficient OpenGL rendering
 - **Multiplayer Support**: Multiple players can connect simultaneously
 - **Real-time Synchronization**: Block changes are synchronized across all clients
-- **Procedural World Generation**: Large 128x128 world with terrain, trees, and water
+- **Procedural World Generation**: Terrain with hills, trees, and water
 - **Physics**: Gravity, jumping, collision detection
 - **Block Types**: 6 different block types with distinct textures
 - **Flying Mode**: Toggle between walking and flying
-- **Improved Rendering**: Configurable block sizes and consistent visual quality
-- **Enhanced Controls**: Smooth mouse controls and responsive keyboard input
+- **Sprint and Crouch**: Enhanced movement mechanics
+- **Mouse Controls**: Smooth camera rotation with mouse
 
 ## Technical Details
 
-- **Server**: Python WebSocket server managing world state (256K+ blocks)
-- **Client**: Panda3D-based 3D renderer with physics and networking
+- **Server**: Python WebSocket server managing world state
+- **Client**: Pyglet-based 3D renderer with physics and networking
 - **Protocol**: JSON-based WebSocket messages for real-time communication
 - **World Format**: Blocks stored as position-texture pairs
-- **Rendering**: Simple colored cubes (can be extended with full textures)
+- **Rendering**: Textured cubes with efficient batched rendering
 - **Data Transfer**: Chunked loading for large worlds (>500 blocks sent in chunks)
-- **3D Engine**: Proper depth testing and perspective rendering enabled
+- **3D Engine**: OpenGL-based rendering with proper depth testing
 
 ## Testing
 
 Run the test suite:
 
 ```shell
-python3 test_connection.py      # Test basic connectivity
-python3 verify_fix.py          # Verify block rendering fix
-python3 test_3d_rendering.py   # Test 3D rendering capabilities
+python3 test_pyglet_implementation.py  # Test pyglet implementation
+python3 test_connection.py             # Test basic connectivity  
+python3 verify_fix.py                  # Verify block rendering fix
 ```
 
 This will test:
-- Client imports and dependencies
-- Server terrain generation  
+- Server world generation and management
+- Pyglet client structure and game mechanics
 - Network connectivity (requires server to be running)
-- Chunked world data transfer
-- 3D block rendering and positioning
+- WebSocket communication protocol
+- Block placement and removal system
+
+## Alternative Clients
+
+- **pyglet_client.py**: Pyglet-based client (main implementation)
+- **client.py**: Panda3D-based client (legacy)
+- **minecraft.py**: Original monolithic version

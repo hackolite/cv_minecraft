@@ -241,6 +241,10 @@ class MinecraftServer:
         self.player_positions = {}  # websocket -> position
         
     def __len__(self):
+        """Return number of blocks in the world.""" 
+        return len(self.world.world)
+    
+    def get_world_size(self):
         """Return number of blocks in the world."""
         return len(self.world.world)
     
