@@ -211,6 +211,9 @@ class ClientModel:
     """Client-side world model for rendering"""
     
     def __init__(self):
+        # Thread synchronization
+        self._world_lock = threading.Lock()
+        
         # Rendering components
         if PYGLET_AVAILABLE:
             self.batch = pyglet.graphics.Batch()
@@ -240,12 +243,13 @@ class ClientModel:
         
     def clear_world(self):
         """Clear all world data"""
-        self.world.clear()
-        self.shown.clear()
-        for vertex_list in self._shown.values():
-            vertex_list.delete()
-        self._shown.clear()
-        self.sectors.clear()
+        with self._world_lock:
+            self.world.clear()
+            self.shown.clear()
+            for vertex_list in self._shown.values():
+                vertex_list.delete()
+            self._shown.clear()
+            self.sectors.clear()
         
     def update_world_from_server(self, blocks_data):
         """Update world state from server data"""
@@ -253,17 +257,23 @@ class ClientModel:
         self.clear_world()
         
         # Add blocks from server
-        for block_data in blocks_data:
-            pos = tuple(block_data["pos"])
-            block_type = block_data["type"]
-            
-            if block_type in BLOCK_TEXTURES:
-                texture = BLOCK_TEXTURES[block_type]
-                self.world[pos] = texture
-                self.sectors.setdefault(sectorize(pos), []).append(pos)
+        with self._world_lock:
+            for block_data in blocks_data:
+                pos = tuple(block_data["pos"])
+                block_type = block_data["type"]
+                
+                if block_type in BLOCK_TEXTURES:
+                    texture = BLOCK_TEXTURES[block_type]
+                    self.world[pos] = texture
+                    self.sectors.setdefault(sectorize(pos), []).append(pos)
         
         # Show blocks in the current area immediately
         self._show_nearby_blocks()
+    
+    def get_world_size(self):
+        """Get the number of blocks in world in a thread-safe way"""
+        with self._world_lock:
+            return len(self.world)
     
     def _show_nearby_blocks(self):
         """Show blocks in all sectors that should be visible"""
@@ -276,19 +286,22 @@ class ClientModel:
     def exposed(self, position):
         """Returns False if given position is surrounded on all 6 sides by blocks."""
         x, y, z = position
-        for dx, dy, dz in FACES:
-            if (x + dx, y + dy, z + dz) not in self.world:
-                return True
-        return False
+        with self._world_lock:
+            for dx, dy, dz in FACES:
+                if (x + dx, y + dy, z + dz) not in self.world:
+                    return True
+            return False
     
     def show_block(self, position, immediate=True):
         """Show the block at the given position."""
-        texture = self.world[position]
-        self.shown[position] = texture
-        if immediate:
-            self._show_block(position, texture)
-        else:
-            self._enqueue(self._show_block, position, texture)
+        with self._world_lock:
+            if position in self.world:
+                texture = self.world[position]
+                self.shown[position] = texture
+                if immediate:
+                    self._show_block(position, texture)
+                else:
+                    self._enqueue(self._show_block, position, texture)
     
     def _show_block(self, position, texture):
         """Private implementation of the show_block() method."""
@@ -324,10 +337,21 @@ class ClientModel:
     
     def show_sector(self, sector):
         """Ensure all blocks in the given sector are shown."""
-        positions = self.sectors.get(sector, [])
-        for position in positions:
-            if position not in self.shown and self.exposed(position):
-                self.show_block(position, False)
+        with self._world_lock:
+            positions = self.sectors.get(sector, [])
+            for position in positions:
+                if position not in self.shown:
+                    # Check if exposed without calling the locked method
+                    x, y, z = position
+                    exposed = False
+                    for dx, dy, dz in FACES:
+                        if (x + dx, y + dy, z + dz) not in self.world:
+                            exposed = True
+                            break
+                    if exposed:
+                        texture = self.world[position]
+                        self.shown[position] = texture
+                        self._enqueue(self._show_block, position, texture)
     
     def hide_sector(self, sector):
         """Ensure all blocks in the given sector are hidden."""
@@ -576,7 +600,8 @@ class MinecraftClient(pyglet.window.Window if PYGLET_AVAILABLE else object):
     
     def set_exclusive_mouse(self, exclusive):
         """Capture or release the mouse cursor."""
-        super(MinecraftClient, self).set_exclusive_mouse(exclusive)
+        if PYGLET_AVAILABLE and hasattr(super(MinecraftClient, self), 'set_exclusive_mouse'):
+            super(MinecraftClient, self).set_exclusive_mouse(exclusive)
         self.exclusive = exclusive
     
     def get_sight_vector(self):
@@ -826,7 +851,8 @@ class MinecraftClient(pyglet.window.Window if PYGLET_AVAILABLE else object):
     def draw_label(self):
         """Draw the label in the top left of the screen."""
         x, y, z = self.position
-        self.label.text = f'({x:.1f}, {y:.1f}, {z:.1f}) {len(self.model.world)} blocks'
+        world_size = self.model.get_world_size()
+        self.label.text = f'({x:.1f}, {y:.1f}, {z:.1f}) {world_size} blocks'
         self.label.draw()
     
     def draw_reticle(self):
