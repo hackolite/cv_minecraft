@@ -247,7 +247,10 @@ class MinecraftServer:
         json_msg = message.to_json()
         disconnected = []
         
-        for player_id, websocket in self.clients.items():
+        # Create a copy of the items to avoid dictionary change during iteration
+        clients_copy = list(self.clients.items())
+        
+        for player_id, websocket in clients_copy:
             if exclude_player and player_id == exclude_player:
                 continue
             
