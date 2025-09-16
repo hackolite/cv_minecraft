@@ -279,6 +279,45 @@ class Model(object):
                 return True
         return False
 
+    def face_exposed(self, position, face_direction):
+        """ Check if a specific face of a block is exposed.
+        
+        Parameters
+        ----------
+        position : tuple of len 3
+            The (x, y, z) position of the block.
+        face_direction : tuple of len 3
+            The (dx, dy, dz) direction of the face to check.
+            
+        Returns
+        -------
+        exposed : bool
+            True if the face is exposed (no neighboring block), False otherwise.
+        """
+        x, y, z = position
+        dx, dy, dz = face_direction
+        neighbor_pos = (x + dx, y + dy, z + dz)
+        return neighbor_pos not in self.world
+    
+    def get_exposed_faces(self, position):
+        """ Get all exposed faces of a block.
+        
+        Parameters
+        ----------
+        position : tuple of len 3
+            The (x, y, z) position of the block.
+            
+        Returns
+        -------
+        exposed_faces : list
+            List of face directions (dx, dy, dz) that are exposed.
+        """
+        exposed_faces = []
+        for face in FACES:
+            if self.face_exposed(position, face):
+                exposed_faces.append(face)
+        return exposed_faces
+
     def add_block(self, position, texture, immediate=True):
         """ Add a block with the given `texture` and `position` to the world.
 
@@ -320,6 +359,23 @@ class Model(object):
                 self.hide_block(position)
             self.check_neighbors(position)
 
+    def neighbors(self, position):
+        """ Generate all neighboring positions for a given position.
+        
+        Parameters
+        ----------
+        position : tuple of len 3
+            The (x, y, z) position to get neighbors for.
+            
+        Yields
+        ------
+        neighbor : tuple of len 3
+            Each neighboring (x, y, z) position.
+        """
+        x, y, z = position
+        for dx, dy, dz in FACES:
+            yield (x + dx, y + dy, z + dz)
+
     def check_neighbors(self, position):
         """ Check all blocks surrounding `position` and ensure their visual
         state is current. This means hiding blocks that are not exposed and
@@ -327,17 +383,40 @@ class Model(object):
         is added or removed.
 
         """
-        x, y, z = position
-        for dx, dy, dz in FACES:
-            key = (x + dx, y + dy, z + dz)
-            if key not in self.world:
+        for neighbor in self.neighbors(position):
+            if neighbor not in self.world:
                 continue
-            if self.exposed(key):
-                if key not in self.shown:
-                    self.show_block(key)
+            if self.exposed(neighbor):
+                if neighbor not in self.shown:
+                    self.show_block(neighbor)
             else:
-                if key in self.shown:
-                    self.hide_block(key)
+                if neighbor in self.shown:
+                    self.hide_block(neighbor)
+
+    def check_neighbors_batch(self, positions):
+        """ Check neighbors for multiple positions efficiently.
+        This avoids duplicate processing when multiple adjacent blocks change.
+        
+        Parameters
+        ----------
+        positions : iterable of tuples
+            Collection of (x, y, z) positions to check neighbors for.
+        """
+        # Collect all unique neighbors to avoid duplicate processing
+        neighbors_to_check = set()
+        for position in positions:
+            neighbors_to_check.update(self.neighbors(position))
+        
+        # Process each unique neighbor once
+        for neighbor in neighbors_to_check:
+            if neighbor not in self.world:
+                continue
+            if self.exposed(neighbor):
+                if neighbor not in self.shown:
+                    self.show_block(neighbor)
+            else:
+                if neighbor in self.shown:
+                    self.hide_block(neighbor)
 
     def show_block(self, position, immediate=True):
         """ Show the block at the given `position`. This method assumes the
