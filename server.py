@@ -3,310 +3,508 @@ Minecraft Server - Server-side game world and client connections
 """
 
 import asyncio
-import websockets
+import logging
 import uuid
+import websockets
 from typing import Dict, Tuple, Optional, List, Any
 
 from noise_gen import NoiseGen
+from protocol import (
+    MessageType, BlockType, Message, PlayerState, BlockUpdate,
+    create_world_init_message, create_world_chunk_message, 
+    create_world_update_message, create_player_list_message
+)
 
+# ---------- Constants ----------
 SECTOR_SIZE = 16
+WORLD_SIZE = 128
+DEFAULT_CHUNK_SIZE = 16
+DEFAULT_SPAWN_POSITION = (30, 50, 80)
+WATER_LEVEL = 15
+GRASS_LEVEL = 18
 
-# ---------- Protocol Definitions ----------
-
-import json
-from enum import Enum
-
-class MessageType(Enum):
-    # Client → Server
-    PLAYER_JOIN = "player_join"
-    PLAYER_MOVE = "player_move"  # maintenant avec delta
-    PLAYER_LOOK = "player_look"
-    BLOCK_PLACE = "block_place"
-    BLOCK_DESTROY = "block_destroy"
-    CHAT_MESSAGE = "chat_message"
-    PLAYER_DISCONNECT = "player_disconnect"
-
-    # Server → Client
-    WORLD_INIT = "world_init"
-    WORLD_CHUNK = "world_chunk"
-    WORLD_UPDATE = "world_update"
-    PLAYER_UPDATE = "player_update"
-    BLOCK_UPDATE = "block_update"
-    CHAT_BROADCAST = "chat_broadcast"
-    PLAYER_LIST = "player_list"
-    ERROR = "error"
-
-class BlockType:
-    GRASS = "grass"
-    SAND = "sand"
-    BRICK = "brick"
-    STONE = "stone"
-    WOOD = "wood"
-    LEAF = "leaf"
-    WATER = "water"
-    AIR = "air"
-
-class Message:
-    def __init__(self, msg_type: MessageType, data: Dict[str, Any], player_id: Optional[str] = None):
-        self.type = msg_type
-        self.data = data
-        self.player_id = player_id
-        self.timestamp = None
-
-    def to_json(self) -> str:
-        return json.dumps({
-            "type": self.type.value,
-            "data": self.data,
-            "player_id": self.player_id
-        })
-
-    @classmethod
-    def from_json(cls, json_str: str) -> 'Message':
-        data = json.loads(json_str)
-        msg_type = MessageType(data["type"])
-        return cls(msg_type, data["data"], data.get("player_id"))
-
-class PlayerState:
-    def __init__(self, player_id: str, position: Tuple[float, float, float],
-                 rotation: Tuple[float, float], name: Optional[str] = None):
-        self.id = player_id
-        self.position = position
-        self.rotation = rotation
-        self.name = name or f"Player_{player_id[:8]}"
-        self.flying = False
-        self.sprinting = False
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": self.id,
-            "position": self.position,
-            "rotation": self.rotation,
-            "name": self.name,
-            "flying": self.flying,
-            "sprinting": self.sprinting
-        }
-
-class BlockUpdate:
-    def __init__(self, position: Tuple[int, int, int], block_type: str, player_id: Optional[str] = None):
-        self.position = position
-        self.block_type = block_type
-        self.player_id = player_id
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "position": self.position,
-            "block_type": self.block_type,
-            "player_id": self.player_id
-        }
-
-# ---------- Message creators ----------
-
-def create_player_join_message(player_name: str) -> Message:
-    return Message(MessageType.PLAYER_JOIN, {"name": player_name})
-
-def create_world_init_message(world_data: Dict[str, Any]) -> Message:
-    return Message(MessageType.WORLD_INIT, world_data)
-
-def create_world_chunk_message(chunk_data: Dict[str, Any]) -> Message:
-    return Message(MessageType.WORLD_CHUNK, chunk_data)
-
-def create_world_update_message(blocks: List[BlockUpdate]) -> Message:
-    return Message(MessageType.WORLD_UPDATE, {"blocks": [b.to_dict() for b in blocks]})
-
-def create_player_list_message(players: List[PlayerState]) -> Message:
-    return Message(MessageType.PLAYER_LIST, {"players": [p.to_dict() for p in players]})
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 # ---------- Utility functions ----------
 
-def normalize(position):
+def normalize(position: Tuple[float, float, float]) -> Tuple[int, int, int]:
+    """Normalize position to integer coordinates."""
     x, y, z = position
     return int(round(x)), int(round(y)), int(round(z))
 
-def sectorize(position):
+
+def sectorize(position: Tuple[float, float, float]) -> Tuple[int, int, int]:
+    """Convert position to sector coordinates for spatial indexing."""
     x, y, z = normalize(position)
     return x // SECTOR_SIZE, 0, z // SECTOR_SIZE
+
+
+def validate_position(position: Tuple[float, float, float]) -> bool:
+    """Validate that position is within world bounds."""
+    x, y, z = position
+    return (0 <= x < WORLD_SIZE and 
+            y >= 0 and y < 256 and  # Allow Y starting from 0
+            0 <= z < WORLD_SIZE)
+
+
+def validate_block_type(block_type: str) -> bool:
+    """Validate that block type is allowed."""
+    allowed_types = {
+        BlockType.GRASS, BlockType.SAND, BlockType.BRICK, 
+        BlockType.STONE, BlockType.WOOD, BlockType.LEAF, 
+        BlockType.WATER, BlockType.AIR
+    }
+    return block_type in allowed_types
 
 # ---------- Game World ----------
 
 class GameWorld:
+    """Game world management with spatial indexing and validation."""
+    
     def __init__(self):
         self.world = {}       # position -> block type
         self.sectors = {}     # sector -> list of positions
         self._initialize_world()
 
     def _initialize_world(self):
+        """Initialize world with terrain generation."""
+        logging.info("Initializing world with terrain generation...")
         gen = NoiseGen(452692)
-        n = 128
-        s = 1
-        height_map = [0] * (n * n)
-        for x in range(0, n, s):
-            for z in range(0, n, s):
-                height_map[z + x * n] = int(gen.getHeight(x, z))
+        height_map = [0] * (WORLD_SIZE * WORLD_SIZE)
+        
+        # Generate height map with minimum height of 1
+        for x in range(0, WORLD_SIZE, 1):
+            for z in range(0, WORLD_SIZE, 1):
+                height = max(1, int(gen.getHeight(x, z)))  # Ensure minimum height of 1
+                height_map[z + x * WORLD_SIZE] = height
 
-        for x in range(0, n, s):
-            for z in range(0, n, s):
-                h = height_map[z + x * n]
-                if h < 15:
-                    self.add_block((x, h, z), BlockType.SAND)
-                    for y in range(h, 15):
-                        self.add_block((x, y, z), BlockType.WATER)
+        # Generate terrain based on height map
+        blocks_created = 0
+        for x in range(0, WORLD_SIZE, 1):
+            for z in range(0, WORLD_SIZE, 1):
+                h = height_map[z + x * WORLD_SIZE]
+                
+                # Water level handling
+                if h < WATER_LEVEL:
+                    if self._add_block_internal((x, h, z), BlockType.SAND):
+                        blocks_created += 1
+                    for y in range(h + 1, WATER_LEVEL):  # Start from h+1 to avoid duplication
+                        if self._add_block_internal((x, y, z), BlockType.WATER):
+                            blocks_created += 1
                     continue
-                self.add_block((x, h, z), BlockType.SAND if h < 18 else BlockType.GRASS)
+                
+                # Surface block type based on height
+                surface_block = BlockType.SAND if h < GRASS_LEVEL else BlockType.GRASS
+                if self._add_block_internal((x, h, z), surface_block):
+                    blocks_created += 1
+                
+                # Underground layers (only create blocks with Y >= 1)
                 for y in range(h - 1, 0, -1):
-                    self.add_block((x, y, z), BlockType.STONE)
+                    if self._add_block_internal((x, y, z), BlockType.STONE):
+                        blocks_created += 1
+        
+        logging.info(f"World initialized with {blocks_created} blocks")
 
-    def add_block(self, position: Tuple[int, int, int], block_type: str) -> bool:
+    def _add_block_internal(self, position: Tuple[int, int, int], block_type: str) -> bool:
+        """Internal method to add blocks without validation (for world generation)."""
         if position in self.world:
             return False
+        
+        x, y, z = position
+        # Ensure position is within bounds before adding
+        if not (0 <= x < WORLD_SIZE and y >= 0 and y < 256 and 0 <= z < WORLD_SIZE):
+            return False
+            
+        self.world[position] = block_type
+        self.sectors.setdefault(sectorize(position), []).append(position)
+        return True
+
+    def add_block(self, position: Tuple[int, int, int], block_type: str) -> bool:
+        """Add a block at the specified position."""
+        if not validate_position(position):
+            logging.warning(f"Invalid position for block placement: {position}")
+            return False
+            
+        if not validate_block_type(block_type):
+            logging.warning(f"Invalid block type: {block_type}")
+            return False
+            
+        if position in self.world:
+            return False  # Block already exists
+            
         self.world[position] = block_type
         self.sectors.setdefault(sectorize(position), []).append(position)
         return True
 
     def remove_block(self, position: Tuple[int, int, int]) -> bool:
-        if position not in self.world or self.world[position] == BlockType.STONE:
+        """Remove a block at the specified position."""
+        if not validate_position(position):
+            logging.warning(f"Invalid position for block removal: {position}")
             return False
+            
+        if position not in self.world:
+            return False  # No block to remove
+            
+        # Prevent removal of stone blocks (bedrock protection)
+        if self.world[position] == BlockType.STONE:
+            return False
+            
         del self.world[position]
-        self.sectors[sectorize(position)].remove(position)
+        sector = sectorize(position)
+        if sector in self.sectors and position in self.sectors[sector]:
+            self.sectors[sector].remove(position)
         return True
 
     def get_block(self, position: Tuple[int, int, int]) -> Optional[str]:
+        """Get block type at specified position."""
         return self.world.get(position)
 
-    def get_world_data(self) -> Dict:
-        return {"world_size": 128, "spawn_position": [30, 50, 80]}
+    def get_world_data(self) -> Dict[str, Any]:
+        """Get basic world information for client initialization."""
+        return {
+            "world_size": WORLD_SIZE, 
+            "spawn_position": DEFAULT_SPAWN_POSITION
+        }
 
-    def get_world_chunk(self, chunk_x: int, chunk_z: int, chunk_size: int = 16) -> Dict:
+    def get_world_chunk(self, chunk_x: int, chunk_z: int, chunk_size: int = DEFAULT_CHUNK_SIZE) -> Dict[str, Any]:
+        """Get a chunk of world data for streaming to clients."""
         blocks = {}
         start_x, start_z = chunk_x * chunk_size, chunk_z * chunk_size
         end_x, end_z = start_x + chunk_size, start_z + chunk_size
+        
         for pos, block_type in self.world.items():
             x, y, z = pos
             if start_x <= x < end_x and start_z <= z < end_z:
                 blocks[f"{x},{y},{z}"] = block_type
-        return {"chunk_x": chunk_x, "chunk_z": chunk_z, "blocks": blocks}
+                
+        return {
+            "chunk_x": chunk_x, 
+            "chunk_z": chunk_z, 
+            "blocks": blocks
+        }
+
+# ---------- Custom Exceptions ----------
+
+class ServerError(Exception):
+    """Base exception for server errors."""
+    pass
+
+
+class InvalidPlayerDataError(ServerError):
+    """Raised when player data is invalid."""
+    pass
+
+
+class InvalidWorldDataError(ServerError):
+    """Raised when world/block data is invalid."""
+    pass
+
 
 # ---------- Minecraft Server ----------
 
 class MinecraftServer:
-    def __init__(self, host='localhost', port=8765):
+    """WebSocket-based Minecraft server handling multiple clients."""
+    
+    def __init__(self, host: str = 'localhost', port: int = 8765):
         self.host = host
         self.port = port
         self.world = GameWorld()
         self.clients: Dict[str, websockets.WebSocketServerProtocol] = {}
         self.players: Dict[str, PlayerState] = {}
         self.running = False
+        self.logger = logging.getLogger(__name__)
 
-    async def register_client(self, websocket):
+    async def register_client(self, websocket: websockets.WebSocketServerProtocol) -> str:
+        """Register a new client connection."""
         player_id = str(uuid.uuid4())
         self.clients[player_id] = websocket
-        self.players[player_id] = PlayerState(player_id, (30,50,80), (0,0))
-        print(f"Player {player_id} connected")
+        self.players[player_id] = PlayerState(player_id, DEFAULT_SPAWN_POSITION, (0, 0))
+        self.logger.info(f"Player {player_id} connected from {websocket.remote_address}")
         return player_id
 
-    async def unregister_client(self, player_id):
-        self.clients.pop(player_id, None)
-        self.players.pop(player_id, None)
-        await self.broadcast_player_list()
-        print(f"Player {player_id} disconnected")
+    async def unregister_client(self, player_id: str):
+        """Unregister a client connection and clean up."""
+        if player_id in self.clients:
+            self.clients.pop(player_id, None)
+            player = self.players.pop(player_id, None)
+            if player:
+                self.logger.info(f"Player {player.name} ({player_id}) disconnected")
+                await self.broadcast_player_list()
 
     async def broadcast_message(self, message: Message, exclude_player: Optional[str] = None):
+        """Broadcast a message to all connected clients."""
         if not self.clients:
             return
+            
         json_msg = message.to_json()
         disconnected = []
+        
         for pid, ws in list(self.clients.items()):
             if exclude_player == pid:
                 continue
+                
             try:
                 await ws.send(json_msg)
             except websockets.exceptions.ConnectionClosed:
                 disconnected.append(pid)
+            except Exception as e:
+                self.logger.error(f"Error sending message to {pid}: {e}")
+                disconnected.append(pid)
+        
+        # Clean up disconnected clients
         for pid in disconnected:
             await self.unregister_client(pid)
 
     async def send_to_client(self, player_id: str, message: Message):
+        """Send a message to a specific client."""
         if player_id not in self.clients:
+            self.logger.warning(f"Attempted to send message to non-existent client: {player_id}")
             return
+            
         try:
             await self.clients[player_id].send(message.to_json())
         except websockets.exceptions.ConnectionClosed:
             await self.unregister_client(player_id)
+        except Exception as e:
+            self.logger.error(f"Error sending message to {player_id}: {e}")
+            await self.unregister_client(player_id)
 
     async def broadcast_player_list(self):
+        """Broadcast updated player list to all clients."""
         message = create_player_list_message(list(self.players.values()))
         await self.broadcast_message(message)
 
     async def handle_client_message(self, player_id: str, message: Message):
-        if message.type == MessageType.PLAYER_JOIN:
-            self.players[player_id].name = message.data.get("name", f"Player_{player_id[:8]}")
-            await self.send_to_client(player_id, create_world_init_message(self.world.get_world_data()))
-            chunk_size = 16
-            for cx in range(128 // chunk_size):
-                for cz in range(128 // chunk_size):
-                    chunk = self.world.get_world_chunk(cx, cz, chunk_size)
-                    if chunk["blocks"]:
-                        await self.send_to_client(player_id, create_world_chunk_message(chunk))
-            await self.broadcast_player_list()
+        """Handle incoming client messages with proper validation and error handling."""
+        try:
+            if message.type == MessageType.PLAYER_JOIN:
+                await self._handle_player_join(player_id, message)
+                
+            elif message.type == MessageType.PLAYER_MOVE:
+                await self._handle_player_move(player_id, message)
+                
+            elif message.type == MessageType.BLOCK_PLACE:
+                await self._handle_block_place(player_id, message)
+                
+            elif message.type == MessageType.BLOCK_DESTROY:
+                await self._handle_block_destroy(player_id, message)
+                
+            elif message.type == MessageType.CHAT_MESSAGE:
+                await self._handle_chat_message(player_id, message)
+                
+            else:
+                self.logger.warning(f"Unhandled message type: {message.type} from {player_id}")
+                
+        except Exception as e:
+            self.logger.error(f"Error handling message from {player_id}: {e}")
+            await self.send_to_client(player_id, Message(MessageType.ERROR, {"message": str(e)}))
 
-        elif message.type == MessageType.PLAYER_MOVE and player_id in self.players:
-            # On reçoit un delta
-            p = self.players[player_id]
-            dx, dy, dz = message.data["delta"]
-            x, y, z = p.position
-            p.position = (x + dx, y + dy, z + dz)
-            p.rotation = tuple(message.data["rotation"])
+    async def _handle_player_join(self, player_id: str, message: Message):
+        """Handle player join message."""
+        if player_id not in self.players:
+            raise InvalidPlayerDataError(f"Player {player_id} not found")
+            
+        player_name = message.data.get("name", f"Player_{player_id[:8]}")
+        
+        # Validate player name
+        if not isinstance(player_name, str) or len(player_name.strip()) == 0:
+            raise InvalidPlayerDataError("Invalid player name")
+            
+        if len(player_name) > 32:  # Reasonable limit
+            player_name = player_name[:32]
+            
+        self.players[player_id].name = player_name.strip()
+        
+        # Send world initialization
+        await self.send_to_client(player_id, create_world_init_message(self.world.get_world_data()))
+        
+        # Send world chunks
+        chunks_sent = 0
+        for cx in range(WORLD_SIZE // DEFAULT_CHUNK_SIZE):
+            for cz in range(WORLD_SIZE // DEFAULT_CHUNK_SIZE):
+                chunk = self.world.get_world_chunk(cx, cz, DEFAULT_CHUNK_SIZE)
+                if chunk["blocks"]:
+                    await self.send_to_client(player_id, create_world_chunk_message(chunk))
+                    chunks_sent += 1
+                    
+        self.logger.info(f"Sent {chunks_sent} chunks to player {player_name}")
+        await self.broadcast_player_list()
 
-            # Broadcast aux autres joueurs
-            await self.broadcast_message(Message(MessageType.PLAYER_UPDATE, p.to_dict()), exclude_player=player_id)
+    async def _handle_player_move(self, player_id: str, message: Message):
+        """Handle player movement with delta updates."""
+        if player_id not in self.players:
+            raise InvalidPlayerDataError(f"Player {player_id} not found")
+            
+        try:
+            delta = message.data["delta"]
+            rotation = message.data["rotation"]
+            
+            if not isinstance(delta, (list, tuple)) or len(delta) != 3:
+                raise InvalidPlayerDataError("Invalid delta format")
+                
+            if not isinstance(rotation, (list, tuple)) or len(rotation) != 2:
+                raise InvalidPlayerDataError("Invalid rotation format")
+                
+            # Validate movement limits (anti-cheat)
+            dx, dy, dz = delta
+            if abs(dx) > 10 or abs(dy) > 10 or abs(dz) > 10:  # Reasonable movement limits
+                raise InvalidPlayerDataError("Movement delta too large")
+            
+            player = self.players[player_id]
+            x, y, z = player.position
+            new_position = (x + dx, y + dy, z + dz)
+            
+            if not validate_position(new_position):
+                raise InvalidPlayerDataError("Invalid target position")
+                
+            player.position = new_position
+            player.rotation = tuple(rotation)
 
-            # Renvoyer la position recalculée au joueur
-            await self.send_to_client(player_id, Message(MessageType.PLAYER_UPDATE, p.to_dict()))
+            # Broadcast to other players
+            await self.broadcast_message(
+                Message(MessageType.PLAYER_UPDATE, player.to_dict()), 
+                exclude_player=player_id
+            )
 
-        elif message.type == MessageType.BLOCK_PLACE:
-            pos = tuple(message.data["position"])
+            # Send updated position back to player
+            await self.send_to_client(player_id, Message(MessageType.PLAYER_UPDATE, player.to_dict()))
+            
+        except KeyError as e:
+            raise InvalidPlayerDataError(f"Missing required field: {e}")
+
+    async def _handle_block_place(self, player_id: str, message: Message):
+        """Handle block placement with validation."""
+        try:
+            position = tuple(message.data["position"])
             block_type = message.data["block_type"]
-            if self.world.add_block(pos, block_type):
-                await self.broadcast_message(create_world_update_message([BlockUpdate(pos, block_type, player_id)]))
+            
+            if not isinstance(position, (list, tuple)) or len(position) != 3:
+                raise InvalidWorldDataError("Invalid position format")
+                
+            if not validate_block_type(block_type):
+                raise InvalidWorldDataError(f"Invalid block type: {block_type}")
+                
+            if self.world.add_block(position, block_type):
+                update_message = create_world_update_message([
+                    BlockUpdate(position, block_type, player_id)
+                ])
+                await self.broadcast_message(update_message)
+                self.logger.info(f"Player {player_id} placed {block_type} at {position}")
+            else:
+                await self.send_to_client(player_id, Message(
+                    MessageType.ERROR, 
+                    {"message": "Cannot place block at this position"}
+                ))
+                
+        except KeyError as e:
+            raise InvalidWorldDataError(f"Missing required field: {e}")
 
-        elif message.type == MessageType.BLOCK_DESTROY:
-            pos = tuple(message.data["position"])
-            if self.world.remove_block(pos):
-                await self.broadcast_message(create_world_update_message([BlockUpdate(pos, BlockType.AIR, player_id)]))
+    async def _handle_block_destroy(self, player_id: str, message: Message):
+        """Handle block destruction with validation."""
+        try:
+            position = tuple(message.data["position"])
+            
+            if not isinstance(position, (list, tuple)) or len(position) != 3:
+                raise InvalidWorldDataError("Invalid position format")
+                
+            if self.world.remove_block(position):
+                update_message = create_world_update_message([
+                    BlockUpdate(position, BlockType.AIR, player_id)
+                ])
+                await self.broadcast_message(update_message)
+                self.logger.info(f"Player {player_id} destroyed block at {position}")
+            else:
+                await self.send_to_client(player_id, Message(
+                    MessageType.ERROR, 
+                    {"message": "Cannot destroy block at this position"}
+                ))
+                
+        except KeyError as e:
+            raise InvalidWorldDataError(f"Missing required field: {e}")
 
-        elif message.type == MessageType.CHAT_MESSAGE:
-            name = self.players[player_id].name if player_id in self.players else "Unknown"
-            await self.broadcast_message(Message(MessageType.CHAT_BROADCAST, {"text": f"{name}: {message.data['text']}"}))
+    async def _handle_chat_message(self, player_id: str, message: Message):
+        """Handle chat messages with filtering."""
+        try:
+            text = message.data["text"]
+            
+            if not isinstance(text, str):
+                raise InvalidPlayerDataError("Chat message must be a string")
+                
+            text = text.strip()
+            if not text:
+                return  # Ignore empty messages
+                
+            if len(text) > 256:  # Reasonable message limit
+                text = text[:256]
+                
+            player_name = self.players.get(player_id, {}).name if player_id in self.players else "Unknown"
+            
+            chat_message = Message(MessageType.CHAT_BROADCAST, {
+                "text": f"{player_name}: {text}"
+            })
+            await self.broadcast_message(chat_message)
+            self.logger.info(f"Chat from {player_name}: {text}")
+            
+        except KeyError as e:
+            raise InvalidPlayerDataError(f"Missing required field: {e}")
 
-    async def handle_client(self, websocket, path):
+    async def handle_client(self, websocket: websockets.WebSocketServerProtocol, path: str):
+        """Handle a client WebSocket connection."""
         player_id = await self.register_client(websocket)
         try:
             async for msg_str in websocket:
                 try:
-                    msg = Message.from_json(msg_str)
-                    msg.player_id = player_id
-                    await self.handle_client_message(player_id, msg)
+                    message = Message.from_json(msg_str)
+                    message.player_id = player_id
+                    await self.handle_client_message(player_id, message)
                 except Exception as e:
-                    print(f"Error from {player_id}: {e}")
-                    await self.send_to_client(player_id, Message(MessageType.ERROR, {"message": str(e)}))
+                    self.logger.error(f"Error processing message from {player_id}: {e}")
+                    await self.send_to_client(player_id, Message(
+                        MessageType.ERROR, 
+                        {"message": f"Message processing error: {str(e)}"}
+                    ))
+        except websockets.exceptions.ConnectionClosed:
+            self.logger.info(f"Client {player_id} connection closed")
+        except Exception as e:
+            self.logger.error(f"Unexpected error with client {player_id}: {e}")
         finally:
             await self.unregister_client(player_id)
 
     async def start_server(self):
+        """Start the WebSocket server."""
         self.running = True
-        print(f"Server starting on {self.host}:{self.port}")
-        server = await websockets.serve(self.handle_client, self.host, self.port)
-        await server.wait_closed()
+        self.logger.info(f"Starting Minecraft server on {self.host}:{self.port}")
+        
+        try:
+            server = await websockets.serve(self.handle_client, self.host, self.port)
+            self.logger.info(f"Server started! Connect clients to ws://{self.host}:{self.port}")
+            await server.wait_closed()
+        except Exception as e:
+            self.logger.error(f"Server error: {e}")
+            raise
 
     def stop_server(self):
+        """Stop the server."""
         self.running = False
+        self.logger.info("Server stop requested")
+
 
 def main():
+    """Main entry point for the server."""
     server = MinecraftServer()
     try:
         asyncio.run(server.start_server())
     except KeyboardInterrupt:
         server.stop_server()
-        print("Server stopped")
+        logging.info("Server stopped by user")
+    except Exception as e:
+        logging.error(f"Server crashed: {e}")
+        raise
+
 
 if __name__ == "__main__":
     main()
