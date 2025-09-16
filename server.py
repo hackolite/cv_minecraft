@@ -1,210 +1,193 @@
 """
-Minecraft Server - Manages game world and client connections.
-Extracted from the monolithic minecraft.py to handle server-side logic.
+Minecraft Server - Server-side game world and client connections
 """
 
 import asyncio
 import websockets
-import json
 import uuid
-import time
-from typing import Dict, Set, List, Tuple, Optional
-from collections import deque
+from typing import Dict, Tuple, Optional, List, Any
 
-from protocol import *
 from noise_gen import NoiseGen
 
-# Import block texture mappings from original minecraft.py
-def tex_coord(x, y, n=4):
-    """ Return the bounding vertices of the texture square. """
-    m = 1.0 / n
-    dx = x * m
-    dy = y * m
-    return dx, dy, dx + m, dy, dx + m, dy + m, dx, dy + m
-
-def tex_coords(top, bottom, side):
-    """ Return a list of the texture squares for the top, bottom and side. """
-    top = tex_coord(*top)
-    bottom = tex_coord(*bottom)
-    side = tex_coord(*side)
-    result = []
-    result.extend(top)
-    result.extend(bottom)
-    result.extend(side * 4)
-    return result
-
-# Block texture definitions
-GRASS = tex_coords((1, 0), (0, 1), (0, 0))
-SAND = tex_coords((1, 1), (1, 1), (1, 1))
-BRICK = tex_coords((2, 0), (2, 0), (2, 0))
-STONE = tex_coords((2, 1), (2, 1), (2, 1))
-WOOD = tex_coords((3, 1), (3, 1), (3, 1))
-LEAF = tex_coords((3, 0), (3, 0), (3, 0))
-WATER = tex_coords((0, 2), (0, 2), (0, 2))
-
-# Block type to texture mapping
-BLOCK_TEXTURES = {
-    BlockType.GRASS: GRASS,
-    BlockType.SAND: SAND,
-    BlockType.BRICK: BRICK,
-    BlockType.STONE: STONE,
-    BlockType.WOOD: WOOD,
-    BlockType.LEAF: LEAF,
-    BlockType.WATER: WATER
-}
-
-# Texture to block type mapping (reverse lookup)
-TEXTURE_TO_BLOCK = {tuple(v): k for k, v in BLOCK_TEXTURES.items()}
-
-# Size of sectors used to ease block loading.
 SECTOR_SIZE = 16
 
+# ---------- Protocol Definitions ----------
+
+import json
+from enum import Enum
+
+class MessageType(Enum):
+    # Client → Server
+    PLAYER_JOIN = "player_join"
+    PLAYER_MOVE = "player_move"  # maintenant avec delta
+    PLAYER_LOOK = "player_look"
+    BLOCK_PLACE = "block_place"
+    BLOCK_DESTROY = "block_destroy"
+    CHAT_MESSAGE = "chat_message"
+    PLAYER_DISCONNECT = "player_disconnect"
+
+    # Server → Client
+    WORLD_INIT = "world_init"
+    WORLD_CHUNK = "world_chunk"
+    WORLD_UPDATE = "world_update"
+    PLAYER_UPDATE = "player_update"
+    BLOCK_UPDATE = "block_update"
+    CHAT_BROADCAST = "chat_broadcast"
+    PLAYER_LIST = "player_list"
+    ERROR = "error"
+
+class BlockType:
+    GRASS = "grass"
+    SAND = "sand"
+    BRICK = "brick"
+    STONE = "stone"
+    WOOD = "wood"
+    LEAF = "leaf"
+    WATER = "water"
+    AIR = "air"
+
+class Message:
+    def __init__(self, msg_type: MessageType, data: Dict[str, Any], player_id: Optional[str] = None):
+        self.type = msg_type
+        self.data = data
+        self.player_id = player_id
+        self.timestamp = None
+
+    def to_json(self) -> str:
+        return json.dumps({
+            "type": self.type.value,
+            "data": self.data,
+            "player_id": self.player_id
+        })
+
+    @classmethod
+    def from_json(cls, json_str: str) -> 'Message':
+        data = json.loads(json_str)
+        msg_type = MessageType(data["type"])
+        return cls(msg_type, data["data"], data.get("player_id"))
+
+class PlayerState:
+    def __init__(self, player_id: str, position: Tuple[float, float, float],
+                 rotation: Tuple[float, float], name: Optional[str] = None):
+        self.id = player_id
+        self.position = position
+        self.rotation = rotation
+        self.name = name or f"Player_{player_id[:8]}"
+        self.flying = False
+        self.sprinting = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "position": self.position,
+            "rotation": self.rotation,
+            "name": self.name,
+            "flying": self.flying,
+            "sprinting": self.sprinting
+        }
+
+class BlockUpdate:
+    def __init__(self, position: Tuple[int, int, int], block_type: str, player_id: Optional[str] = None):
+        self.position = position
+        self.block_type = block_type
+        self.player_id = player_id
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "position": self.position,
+            "block_type": self.block_type,
+            "player_id": self.player_id
+        }
+
+# ---------- Message creators ----------
+
+def create_player_join_message(player_name: str) -> Message:
+    return Message(MessageType.PLAYER_JOIN, {"name": player_name})
+
+def create_world_init_message(world_data: Dict[str, Any]) -> Message:
+    return Message(MessageType.WORLD_INIT, world_data)
+
+def create_world_chunk_message(chunk_data: Dict[str, Any]) -> Message:
+    return Message(MessageType.WORLD_CHUNK, chunk_data)
+
+def create_world_update_message(blocks: List[BlockUpdate]) -> Message:
+    return Message(MessageType.WORLD_UPDATE, {"blocks": [b.to_dict() for b in blocks]})
+
+def create_player_list_message(players: List[PlayerState]) -> Message:
+    return Message(MessageType.PLAYER_LIST, {"players": [p.to_dict() for p in players]})
+
+# ---------- Utility functions ----------
+
 def normalize(position):
-    """Accepts position of arbitrary precision and returns the block containing that position."""
     x, y, z = position
-    x, y, z = (int(round(x)), int(round(y)), int(round(z)))
-    return (x, y, z)
+    return int(round(x)), int(round(y)), int(round(z))
 
 def sectorize(position):
-    """Returns a tuple representing the sector for the given position."""
     x, y, z = normalize(position)
-    x, y, z = x // SECTOR_SIZE, y // SECTOR_SIZE, z // SECTOR_SIZE
-    return (x, 0, z)
+    return x // SECTOR_SIZE, 0, z // SECTOR_SIZE
+
+# ---------- Game World ----------
 
 class GameWorld:
-    """Manages the game world state on the server side."""
-    
     def __init__(self):
-        # A mapping from position to the block type at that position
-        self.world = {}
-        # Mapping from sector to a list of positions inside that sector
-        self.sectors = {}
+        self.world = {}       # position -> block type
+        self.sectors = {}     # sector -> list of positions
         self._initialize_world()
-    
+
     def _initialize_world(self):
-        """Initialize the world by placing all the blocks."""
         gen = NoiseGen(452692)
-        n = 128  # size of the world
-        s = 1    # step size
-        
-        # Generate height map
-        height_map = []
-        for x in range(0, n, s):
-            for z in range(0, n, s):
-                height_map.append(0)
-        
+        n = 128
+        s = 1
+        height_map = [0] * (n * n)
         for x in range(0, n, s):
             for z in range(0, n, s):
                 height_map[z + x * n] = int(gen.getHeight(x, z))
-        
-        # Generate the world
+
         for x in range(0, n, s):
             for z in range(0, n, s):
                 h = height_map[z + x * n]
-                
                 if h < 15:
                     self.add_block((x, h, z), BlockType.SAND)
                     for y in range(h, 15):
                         self.add_block((x, y, z), BlockType.WATER)
                     continue
-                
-                if h < 18:
-                    self.add_block((x, h, z), BlockType.SAND)
-                else:
-                    self.add_block((x, h, z), BlockType.GRASS)
-                
-                # Add stone layers below surface
+                self.add_block((x, h, z), BlockType.SAND if h < 18 else BlockType.GRASS)
                 for y in range(h - 1, 0, -1):
                     self.add_block((x, y, z), BlockType.STONE)
-                
-                # Maybe add tree at this (x, z)
-                if h > 20:
-                    import random
-                    if random.randrange(0, 1000) > 990:
-                        tree_height = random.randrange(5, 7)
-                        # Tree trunk
-                        for y in range(h + 1, h + tree_height):
-                            self.add_block((x, y, z), BlockType.WOOD)
-                        # Tree leaves
-                        leaf_h = h + tree_height
-                        for lz in range(z - 2, z + 3):
-                            for lx in range(x - 2, x + 3):
-                                for ly in range(3):
-                                    self.add_block((lx, leaf_h + ly, lz), BlockType.LEAF)
-    
+
     def add_block(self, position: Tuple[int, int, int], block_type: str) -> bool:
-        """Add a block to the world."""
         if position in self.world:
-            return False  # Block already exists
-        
+            return False
         self.world[position] = block_type
         self.sectors.setdefault(sectorize(position), []).append(position)
         return True
-    
+
     def remove_block(self, position: Tuple[int, int, int]) -> bool:
-        """Remove a block from the world."""
-        if position not in self.world:
-            return False  # Block doesn't exist
-        
-        # Don't allow removing stone blocks (like in original)
-        if self.world[position] == BlockType.STONE:
+        if position not in self.world or self.world[position] == BlockType.STONE:
             return False
-        
         del self.world[position]
         self.sectors[sectorize(position)].remove(position)
         return True
-    
+
     def get_block(self, position: Tuple[int, int, int]) -> Optional[str]:
-        """Get the block type at a position."""
         return self.world.get(position)
-    
-    def get_world_data(self) -> Dict[str, Any]:
-        """Get world data for client initialization."""
-        return {
-            "world_size": 128,
-            "spawn_position": [30, 50, 80]
-        }
-    
-    def get_world_chunk(self, chunk_x: int, chunk_z: int, chunk_size: int = 16) -> Dict[str, Any]:
-        """Get a chunk of world data."""
-        world_blocks = {}
-        start_x = chunk_x * chunk_size
-        start_z = chunk_z * chunk_size
-        end_x = start_x + chunk_size
-        end_z = start_z + chunk_size
-        
+
+    def get_world_data(self) -> Dict:
+        return {"world_size": 128, "spawn_position": [30, 50, 80]}
+
+    def get_world_chunk(self, chunk_x: int, chunk_z: int, chunk_size: int = 16) -> Dict:
+        blocks = {}
+        start_x, start_z = chunk_x * chunk_size, chunk_z * chunk_size
+        end_x, end_z = start_x + chunk_size, start_z + chunk_size
         for pos, block_type in self.world.items():
             x, y, z = pos
             if start_x <= x < end_x and start_z <= z < end_z:
-                key = f"{x},{y},{z}"
-                world_blocks[key] = block_type
-        
-        return {
-            "chunk_x": chunk_x,
-            "chunk_z": chunk_z,
-            "blocks": world_blocks
-        }
-    
-    def hit_test(self, position: Tuple[float, float, float], 
-                 vector: Tuple[float, float, float], max_distance: int = 8) -> Tuple[Optional[Tuple[int, int, int]], Optional[Tuple[int, int, int]]]:
-        """Line of sight search from current position. Returns hit block and previous block."""
-        m = 8
-        x, y, z = position
-        dx, dy, dz = vector
-        previous = None
-        
-        for _ in range(max_distance * m):
-            key = normalize((x, y, z))
-            if key != previous and key in self.world:
-                return key, previous
-            previous = key
-            x, y, z = x + dx / m, y + dy / m, z + dz / m
-        
-        return None, None
+                blocks[f"{x},{y},{z}"] = block_type
+        return {"chunk_x": chunk_x, "chunk_z": chunk_z, "blocks": blocks}
+
+# ---------- Minecraft Server ----------
 
 class MinecraftServer:
-    """Main server class handling client connections and game logic."""
-    
     def __init__(self, host='localhost', port=8765):
         self.host = host
         self.port = port
@@ -212,179 +195,118 @@ class MinecraftServer:
         self.clients: Dict[str, websockets.WebSocketServerProtocol] = {}
         self.players: Dict[str, PlayerState] = {}
         self.running = False
-    
-    async def register_client(self, websocket: websockets.WebSocketServerProtocol) -> str:
-        """Register a new client and return player ID."""
+
+    async def register_client(self, websocket):
         player_id = str(uuid.uuid4())
         self.clients[player_id] = websocket
-        
-        # Default spawn position
-        spawn_position = (30.0, 50.0, 80.0)
-        spawn_rotation = (0.0, 0.0)
-        
-        player = PlayerState(player_id, spawn_position, spawn_rotation)
-        self.players[player_id] = player
-        
-        print(f"Player {player_id} connected from {websocket.remote_address}")
+        self.players[player_id] = PlayerState(player_id, (30,50,80), (0,0))
+        print(f"Player {player_id} connected")
         return player_id
-    
-    async def unregister_client(self, player_id: str):
-        """Unregister a client."""
-        if player_id in self.clients:
-            del self.clients[player_id]
-        if player_id in self.players:
-            del self.players[player_id]
-        
-        # Notify other players
+
+    async def unregister_client(self, player_id):
+        self.clients.pop(player_id, None)
+        self.players.pop(player_id, None)
         await self.broadcast_player_list()
         print(f"Player {player_id} disconnected")
-    
+
     async def broadcast_message(self, message: Message, exclude_player: Optional[str] = None):
-        """Broadcast a message to all connected clients."""
         if not self.clients:
             return
-        
         json_msg = message.to_json()
         disconnected = []
-        
-        # Create a copy of the items to avoid dictionary change during iteration
-        clients_copy = list(self.clients.items())
-        
-        for player_id, websocket in clients_copy:
-            if exclude_player and player_id == exclude_player:
+        for pid, ws in list(self.clients.items()):
+            if exclude_player == pid:
                 continue
-            
             try:
-                await websocket.send(json_msg)
+                await ws.send(json_msg)
             except websockets.exceptions.ConnectionClosed:
-                disconnected.append(player_id)
-        
-        # Clean up disconnected clients
-        for player_id in disconnected:
-            await self.unregister_client(player_id)
-    
+                disconnected.append(pid)
+        for pid in disconnected:
+            await self.unregister_client(pid)
+
     async def send_to_client(self, player_id: str, message: Message):
-        """Send a message to a specific client."""
         if player_id not in self.clients:
             return
-        
         try:
             await self.clients[player_id].send(message.to_json())
         except websockets.exceptions.ConnectionClosed:
             await self.unregister_client(player_id)
-    
+
     async def broadcast_player_list(self):
-        """Broadcast the current player list to all clients."""
         message = create_player_list_message(list(self.players.values()))
         await self.broadcast_message(message)
-    
+
     async def handle_client_message(self, player_id: str, message: Message):
-        """Handle a message from a client."""
         if message.type == MessageType.PLAYER_JOIN:
-            # Update player name
-            if player_id in self.players:
-                self.players[player_id].name = message.data.get("name", f"Player_{player_id[:8]}")
-            
-            # Send basic world info to new player
-            world_data = self.world.get_world_data()
-            init_message = create_world_init_message(world_data)
-            await self.send_to_client(player_id, init_message)
-            
-            # Send world chunks (8x8 chunks for 128x128 world)
+            self.players[player_id].name = message.data.get("name", f"Player_{player_id[:8]}")
+            await self.send_to_client(player_id, create_world_init_message(self.world.get_world_data()))
             chunk_size = 16
-            world_size = 128
-            chunks_per_side = world_size // chunk_size
-            
-            for chunk_x in range(chunks_per_side):
-                for chunk_z in range(chunks_per_side):
-                    chunk_data = self.world.get_world_chunk(chunk_x, chunk_z, chunk_size)
-                    if chunk_data["blocks"]:  # Only send non-empty chunks
-                        chunk_message = create_world_chunk_message(chunk_data)
-                        await self.send_to_client(player_id, chunk_message)
-            
-            # Send player list to new player and broadcast updated list
+            for cx in range(128 // chunk_size):
+                for cz in range(128 // chunk_size):
+                    chunk = self.world.get_world_chunk(cx, cz, chunk_size)
+                    if chunk["blocks"]:
+                        await self.send_to_client(player_id, create_world_chunk_message(chunk))
             await self.broadcast_player_list()
-        
-        elif message.type == MessageType.PLAYER_MOVE:
-            if player_id in self.players:
-                player = self.players[player_id]
-                player.position = tuple(message.data["position"])
-                player.rotation = tuple(message.data["rotation"])
-                
-                # Broadcast player update to other clients
-                player_message = Message(MessageType.PLAYER_UPDATE, player.to_dict())
-                await self.broadcast_message(player_message, exclude_player=player_id)
-        
+
+        elif message.type == MessageType.PLAYER_MOVE and player_id in self.players:
+            # On reçoit un delta
+            p = self.players[player_id]
+            dx, dy, dz = message.data["delta"]
+            x, y, z = p.position
+            p.position = (x + dx, y + dy, z + dz)
+            p.rotation = tuple(message.data["rotation"])
+
+            # Broadcast aux autres joueurs
+            await self.broadcast_message(Message(MessageType.PLAYER_UPDATE, p.to_dict()), exclude_player=player_id)
+
+            # Renvoyer la position recalculée au joueur
+            await self.send_to_client(player_id, Message(MessageType.PLAYER_UPDATE, p.to_dict()))
+
         elif message.type == MessageType.BLOCK_PLACE:
-            position = tuple(message.data["position"])
+            pos = tuple(message.data["position"])
             block_type = message.data["block_type"]
-            
-            if self.world.add_block(position, block_type):
-                # Broadcast block update
-                block_update = BlockUpdate(position, block_type, player_id)
-                update_message = create_world_update_message([block_update])
-                await self.broadcast_message(update_message)
-        
+            if self.world.add_block(pos, block_type):
+                await self.broadcast_message(create_world_update_message([BlockUpdate(pos, block_type, player_id)]))
+
         elif message.type == MessageType.BLOCK_DESTROY:
-            position = tuple(message.data["position"])
-            
-            if self.world.remove_block(position):
-                # Broadcast block removal (air block)
-                block_update = BlockUpdate(position, BlockType.AIR, player_id)
-                update_message = create_world_update_message([block_update])
-                await self.broadcast_message(update_message)
-        
+            pos = tuple(message.data["position"])
+            if self.world.remove_block(pos):
+                await self.broadcast_message(create_world_update_message([BlockUpdate(pos, BlockType.AIR, player_id)]))
+
         elif message.type == MessageType.CHAT_MESSAGE:
-            # Broadcast chat message with player name
-            player_name = self.players[player_id].name if player_id in self.players else "Unknown"
-            chat_text = f"{player_name}: {message.data['text']}"
-            
-            chat_message = Message(MessageType.CHAT_BROADCAST, {"text": chat_text})
-            await self.broadcast_message(chat_message)
-    
-    async def handle_client(self, websocket: websockets.WebSocketServerProtocol, path: str):
-        """Handle a client connection."""
+            name = self.players[player_id].name if player_id in self.players else "Unknown"
+            await self.broadcast_message(Message(MessageType.CHAT_BROADCAST, {"text": f"{name}: {message.data['text']}"}))
+
+    async def handle_client(self, websocket, path):
         player_id = await self.register_client(websocket)
-        
         try:
-            async for message_str in websocket:
+            async for msg_str in websocket:
                 try:
-                    message = Message.from_json(message_str)
-                    message.player_id = player_id
-                    await self.handle_client_message(player_id, message)
+                    msg = Message.from_json(msg_str)
+                    msg.player_id = player_id
+                    await self.handle_client_message(player_id, msg)
                 except Exception as e:
-                    print(f"Error handling message from {player_id}: {e}")
-                    error_msg = Message(MessageType.ERROR, {"message": str(e)})
-                    await self.send_to_client(player_id, error_msg)
-        
-        except websockets.exceptions.ConnectionClosed:
-            pass
+                    print(f"Error from {player_id}: {e}")
+                    await self.send_to_client(player_id, Message(MessageType.ERROR, {"message": str(e)}))
         finally:
             await self.unregister_client(player_id)
-    
+
     async def start_server(self):
-        """Start the WebSocket server."""
         self.running = True
-        print(f"Starting Minecraft server on {self.host}:{self.port}")
-        
+        print(f"Server starting on {self.host}:{self.port}")
         server = await websockets.serve(self.handle_client, self.host, self.port)
-        print(f"Server started! Connect clients to ws://{self.host}:{self.port}")
-        
         await server.wait_closed()
-    
+
     def stop_server(self):
-        """Stop the server."""
         self.running = False
 
 def main():
-    """Main entry point for the server."""
     server = MinecraftServer()
-    
     try:
         asyncio.run(server.start_server())
     except KeyboardInterrupt:
-        print("\nShutting down server...")
         server.stop_server()
+        print("Server stopped")
 
 if __name__ == "__main__":
     main()
