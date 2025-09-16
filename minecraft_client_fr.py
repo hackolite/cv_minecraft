@@ -556,22 +556,26 @@ class EnhancedClientModel:
 
 def block_texture_data(block_type):
     """Retourne les coordonnées de texture pour un type de bloc."""
-    # Coordonnées de texture pour une grille 3x3 dans texture.png
-    # Chaque texture fait 1/3 de la largeur et hauteur totale
-    def tex_coord_3x3(x, y):
-        """Retourne les coordonnées d'une texture dans une grille 3x3."""
-        m = 1.0 / 3.0
-        dx = x * m
-        dy = y * m
-        return [dx, dy, dx + m, dy, dx + m, dy + m, dx, dy + m]
+    # Coordonnées de texture pour une grille 4x3 dans texture.png
+    # Chaque texture fait 1/4 de la largeur et 1/3 de la hauteur totale
+    def tex_coord_4x3(x, y):
+        """Retourne les coordonnées d'une texture dans une grille 4x3."""
+        m_x = 1.0 / 4.0  # 4 colonnes
+        m_y = 1.0 / 3.0  # 3 rangées
+        dx = x * m_x
+        dy = y * m_y
+        return [dx, dy, dx + m_x, dy, dx + m_x, dy + m_y, dx, dy + m_y]
     
     textures = {
-        BlockType.GRASS: tex_coord_3x3(0, 0) * 6,  # Position (0,0) - coin supérieur gauche
-        BlockType.SAND: tex_coord_3x3(1, 0) * 6,   # Position (1,0) - haut milieu
-        BlockType.BRICK: tex_coord_3x3(2, 0) * 6,  # Position (2,0) - coin supérieur droit
-        BlockType.STONE: tex_coord_3x3(0, 1) * 6,  # Position (0,1) - milieu gauche
+        BlockType.GRASS: tex_coord_4x3(0, 0) * 6,  # Position (0,0) - coin supérieur gauche
+        BlockType.SAND: tex_coord_4x3(1, 1) * 6,   # Position (1,1) - milieu centre-gauche
+        BlockType.BRICK: tex_coord_4x3(2, 0) * 6,  # Position (2,0) - haut centre-droit
+        BlockType.STONE: tex_coord_4x3(2, 1) * 6,  # Position (2,1) - milieu centre-droit
+        BlockType.WOOD: tex_coord_4x3(3, 1) * 6,   # Position (3,1) - milieu droite
+        BlockType.LEAF: tex_coord_4x3(3, 0) * 6,   # Position (3,0) - haut droite
+        BlockType.WATER: tex_coord_4x3(0, 2) * 6,  # Position (0,2) - bas gauche
     }
-    return textures.get(block_type, tex_coord_3x3(0, 0) * 6)
+    return textures.get(block_type, tex_coord_4x3(0, 0) * 6)
 
 
 class MinecraftWindow(pyglet.window.Window):
