@@ -457,7 +457,7 @@ class EnhancedClientModel:
             return
             
         x, y, z = position
-        vertex_data = cube_vertices(x, y, z, 0.125)  # Reduced from 0.5 to 0.125 (divided by 4)
+        vertex_data = cube_vertices(x, y, z, 0.5)
         texture_data = list(block_texture_data(block_type))
         
         # Crée la liste de vertices pour le rendu
@@ -1060,7 +1060,7 @@ Statut: {connection_status}"""
         block = self.model.hit_test(self.position, vector)[0]
         if block:
             x, y, z = block
-            vertex_data = cube_vertices(x, y, z, 0.1275)  # Reduced from 0.51 to 0.1275 (divided by 4)
+            vertex_data = cube_vertices(x, y, z, 0.51)
             glColor3d(0, 0, 0)
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
             pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))
