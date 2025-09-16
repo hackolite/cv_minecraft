@@ -47,3 +47,9 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Test files (temporary for this implementation)
+test_new_features.py
+test_client_config.py
+test_integration.py
+run_all_tests.py
