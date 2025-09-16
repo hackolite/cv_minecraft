@@ -123,11 +123,11 @@ def create_player_join_message(player_name: str) -> Message:
     """Create a player join message."""
     return Message(MessageType.PLAYER_JOIN, {"name": player_name})
 
-def create_player_move_message(position: Tuple[float, float, float],
+def create_player_move_message(delta: Tuple[float, float, float],
                              rotation: Tuple[float, float]) -> Message:
-    """Create a player movement message."""
+    """Create a player movement message with delta updates."""
     return Message(MessageType.PLAYER_MOVE, {
-        "position": position,
+        "delta": delta,
         "rotation": rotation
     })
 
