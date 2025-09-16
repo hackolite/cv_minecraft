@@ -4,6 +4,7 @@ Minecraft Server - Server-side game world and client connections
 
 import asyncio
 import logging
+import random
 import time
 import uuid
 import websockets
@@ -78,33 +79,76 @@ class GameWorld:
         self._initialize_world()
 
     def _initialize_world(self):
-        """Initialize world with terrain generation."""
-        logging.info("Initializing world with terrain generation...")
+        """Initialize world with enhanced terrain generation including water, sand, grass, stone, and trees."""
+        logging.info("Initializing world with enhanced terrain generation...")
         gen = NoiseGen(452692)
-        height_map = [0] * (WORLD_SIZE * WORLD_SIZE)
         
-        # Generate height map with minimum height of 1
-        for x in range(0, WORLD_SIZE, 1):
-            for z in range(0, WORLD_SIZE, 1):
-                height = max(1, int(gen.getHeight(x, z)))  # Ensure minimum height of 1
-                height_map[z + x * WORLD_SIZE] = height
+        n = WORLD_SIZE  # size of the world
+        s = 1  # step size
+        
+        # Generate height map
+        height_map = []
+        for x in range(0, n, s):
+            for z in range(0, n, s):
+                height_map.append(0)
+        
+        for x in range(0, n, s):
+            for z in range(0, n, s):
+                height_map[z + x * n] = int(gen.getHeight(x, z))
 
-        # Generate terrain based on height map (grass and stone only)
+        # Generate the world based on height map
         blocks_created = 0
-        for x in range(0, WORLD_SIZE, 1):
-            for z in range(0, WORLD_SIZE, 1):
-                h = height_map[z + x * WORLD_SIZE]
+        for x in range(0, n, s):
+            for z in range(0, n, s):
+                h = height_map[z + x * n]
                 
-                # Surface block - always grass (no water or sand, as requested)
-                if self._add_block_internal((x, h, z), BlockType.GRASS):
-                    blocks_created += 1
+                # Water level generation (below 15)
+                if h < WATER_LEVEL:
+                    # Add sand at the bottom
+                    if self._add_block_internal((x, h, z), BlockType.SAND):
+                        blocks_created += 1
+                    # Fill with water up to water level
+                    for y in range(h + 1, WATER_LEVEL + 1):
+                        if self._add_block_internal((x, y, z), BlockType.WATER):
+                            blocks_created += 1
+                    continue
                 
-                # Underground layers - only stone (only create blocks with Y >= 1)
+                # Sand at water edges (15-18)
+                if h < GRASS_LEVEL:
+                    if self._add_block_internal((x, h, z), BlockType.SAND):
+                        blocks_created += 1
+                else:
+                    # Grass surface for higher terrain
+                    if self._add_block_internal((x, h, z), BlockType.GRASS):
+                        blocks_created += 1
+                
+                # Underground stone layers
                 for y in range(h - 1, 0, -1):
                     if self._add_block_internal((x, y, z), BlockType.STONE):
                         blocks_created += 1
+                
+                # Tree generation for higher terrain
+                if h > 20:
+                    if random.randrange(0, 1000) > 990:  # 1% chance
+                        tree_height = random.randrange(5, 7)
+                        
+                        # Tree trunk
+                        for y in range(h + 1, h + tree_height + 1):
+                            if self._add_block_internal((x, y, z), BlockType.WOOD):
+                                blocks_created += 1
+                        
+                        # Tree leaves
+                        leaf_h = h + tree_height
+                        for lz in range(z - 2, z + 3):
+                            for lx in range(x - 2, x + 3):
+                                for ly in range(3):
+                                    # Check bounds before adding leaves
+                                    if (0 <= lx < WORLD_SIZE and 0 <= lz < WORLD_SIZE and 
+                                        leaf_h + ly < 256):
+                                        if self._add_block_internal((lx, leaf_h + ly, lz), BlockType.LEAF):
+                                            blocks_created += 1
         
-        logging.info(f"World initialized with {blocks_created} blocks")
+        logging.info(f"Enhanced world initialized with {blocks_created} blocks including water, sand, grass, stone, and trees")
 
     def _add_block_internal(self, position: Tuple[int, int, int], block_type: str) -> bool:
         """Internal method to add blocks without validation (for world generation)."""
@@ -292,7 +336,7 @@ class MinecraftServer:
                 update_msg = Message(MessageType.PLAYER_UPDATE, player.to_dict())
                 await self.send_to_client(player.id, update_msg)
 
-    async def register_client(self, websocket: websockets.WebSocketServerProtocol) -> str:
+    async def register_client(self, websocket) -> str:
         """Register a new client connection."""
         player_id = str(uuid.uuid4())
         self.clients[player_id] = websocket
@@ -526,7 +570,7 @@ class MinecraftServer:
         except KeyError as e:
             raise InvalidPlayerDataError(f"Missing required field: {e}")
 
-    async def handle_client(self, websocket: websockets.WebSocketServerProtocol, path: str):
+    async def handle_client(self, websocket):
         """Handle a client WebSocket connection."""
         player_id = await self.register_client(websocket)
         try:
