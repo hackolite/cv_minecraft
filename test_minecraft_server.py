@@ -36,19 +36,39 @@ async def test_block_create_destroy():
         resp = await recv_json(ws)  # WORLD_INIT
         assert resp["type"] == "world_init"
         logging.info("✅ Test de renvoie de chunk reussi")
+        
+        # Wait for all chunk messages and player_list to complete
+        # We expect 64 chunks (8x8 grid, each 16x16) plus 1 player_list message
+        expected_chunks = 64
+        chunks_received = 0
+        
+        while chunks_received < expected_chunks:
+            msg = await ws.recv()
+            data = json.loads(msg)
+            logging.info(f"Reçu <- {msg}")
+            if data["type"] == "world_chunk":
+                chunks_received += 1
+            elif data["type"] == "player_list":
+                logging.info(f"Received player_list after {chunks_received} chunks - initialization complete")
+                break
+            else:
+                logging.info(f"Unexpected message during init: {data['type']}")
+                break
+        
         # Place block
         await send_json(ws, "block_place", {
-            "position": [40, 50, 40],
+            "position": [40, 80, 40],  # Use higher position to avoid terrain
             "block_type": "stone"
         })
         resp = await recv_json(ws)
 
+        logging.info(f"Expected world_update, got: {resp['type']}")
         assert resp["type"] == "world_update"
         logging.info("✅ Test création de bloc réussi")
 
         # Destroy block
         await send_json(ws, "block_destroy", {
-            "position": [40, 50, 40]
+            "position": [40, 80, 40]  # Use same position as placement
         })
         resp = await recv_json(ws)
         logging.info("✅ Test destruction de bloc réussi")
