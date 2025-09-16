@@ -165,6 +165,15 @@ class ClientModel:
         
         # Other players in the world
         self.other_players = {}
+        
+        # Cache for exposure calculations to improve performance
+        self.exposure_cache = {}
+    
+    def invalidate_exposure_cache(self, position):
+        """Invalidate exposure cache for a position and its neighbors."""
+        positions_to_clear = [position] + list(self.neighbors(position))
+        for pos in positions_to_clear:
+            self.exposure_cache.pop(pos, None)
     
     def load_world_data(self, world_data):
         """Load initial world data from server."""
@@ -184,11 +193,51 @@ class ClientModel:
     
     def exposed(self, position):
         """Returns False if given position is surrounded on all 6 sides by blocks, True otherwise."""
+        # Check cache first
+        if position in self.exposure_cache:
+            return self.exposure_cache[position]
+        
+        # Calculate exposure status
         x, y, z = position
+        exposed = False
         for dx, dy, dz in FACES:
             if (x + dx, y + dy, z + dz) not in self.world:
-                return True
-        return False
+                exposed = True
+                break
+        
+        # Cache the result
+        self.exposure_cache[position] = exposed
+        return exposed
+    
+    def face_exposed(self, position, face_direction):
+        """Check if a specific face of a block is exposed.
+        
+        Args:
+            position: (x, y, z) position of the block
+            face_direction: tuple (dx, dy, dz) representing the face direction
+            
+        Returns:
+            True if the face is exposed (no neighboring block), False otherwise
+        """
+        x, y, z = position
+        dx, dy, dz = face_direction
+        neighbor_pos = (x + dx, y + dy, z + dz)
+        return neighbor_pos not in self.world
+    
+    def get_exposed_faces(self, position):
+        """Get all exposed faces of a block.
+        
+        Args:
+            position: (x, y, z) position of the block
+            
+        Returns:
+            List of face directions (dx, dy, dz) that are exposed
+        """
+        exposed_faces = []
+        for face in FACES:
+            if self.face_exposed(position, face):
+                exposed_faces.append(face)
+        return exposed_faces
     
     def add_block(self, position, block_type, immediate=True):
         """Add a block with the given block_type and position to the world."""
@@ -197,6 +246,9 @@ class ClientModel:
         
         self.world[position] = block_type
         self.sectors.setdefault(sectorize(position), []).append(position)
+        
+        # Invalidate exposure cache for this position and neighbors
+        self.invalidate_exposure_cache(position)
         
         if immediate:
             if self.exposed(position):
@@ -213,24 +265,49 @@ class ClientModel:
         if sector in self.sectors and position in self.sectors[sector]:
             self.sectors[sector].remove(position)
         
+        # Invalidate exposure cache for this position and neighbors
+        self.invalidate_exposure_cache(position)
+        
         if immediate:
             if position in self.shown:
                 self.hide_block(position)
             self.check_neighbors(position)
     
-    def check_neighbors(self, position):
-        """Check all blocks surrounding position and ensure their visual state is current."""
+    def neighbors(self, position):
+        """Generate all neighboring positions for a given position."""
         x, y, z = position
         for dx, dy, dz in FACES:
-            key = (x + dx, y + dy, z + dz)
-            if key not in self.world:
+            yield (x + dx, y + dy, z + dz)
+    
+    def check_neighbors(self, position):
+        """Check all blocks surrounding position and ensure their visual state is current."""
+        for neighbor in self.neighbors(position):
+            if neighbor not in self.world:
                 continue
-            if self.exposed(key):
-                if key not in self.shown:
-                    self.show_block(key)
+            if self.exposed(neighbor):
+                if neighbor not in self.shown:
+                    self.show_block(neighbor)
             else:
-                if key in self.shown:
-                    self.hide_block(key)
+                if neighbor in self.shown:
+                    self.hide_block(neighbor)
+    
+    def check_neighbors_batch(self, positions):
+        """Check neighbors for multiple positions efficiently."""
+        # Collect all unique neighbors to avoid duplicate processing
+        neighbors_to_check = set()
+        for position in positions:
+            neighbors_to_check.update(self.neighbors(position))
+        
+        # Process each unique neighbor once
+        for neighbor in neighbors_to_check:
+            if neighbor not in self.world:
+                continue
+            if self.exposed(neighbor):
+                if neighbor not in self.shown:
+                    self.show_block(neighbor)
+            else:
+                if neighbor in self.shown:
+                    self.hide_block(neighbor)
     
     def show_block(self, position, immediate=True):
         """Show the block at the given position."""
