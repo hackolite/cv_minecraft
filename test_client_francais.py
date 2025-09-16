@@ -207,9 +207,10 @@ async def test_protocol_compatibility():
     assert join_msg.type == MessageType.PLAYER_JOIN
     assert join_msg.data["name"] == "TestPlayer"
     
-    move_msg = create_player_move_message((10, 20, 30), (45, 0))
+    move_msg = create_player_move_message((1, 0, -1), (45, 0))  # Delta movement, not absolute position
     assert move_msg.type == MessageType.PLAYER_MOVE
-    assert move_msg.data["position"] == (10, 20, 30)
+    assert move_msg.data["delta"] == (1, 0, -1)  # Now using delta instead of position
+    assert move_msg.data["rotation"] == (45, 0)
     
     # Test de sérialisation/désérialisation
     json_str = join_msg.to_json()

@@ -457,7 +457,7 @@ class EnhancedClientModel:
             return
             
         x, y, z = position
-        vertex_data = cube_vertices(x, y, z, 0.5)
+        vertex_data = cube_vertices(x, y, z, 0.125)  # Reduced from 0.5 to 0.125 (divided by 4)
         texture_data = list(block_texture_data(block_type))
         
         # Crée la liste de vertices pour le rendu
@@ -629,6 +629,7 @@ class MinecraftWindow(pyglet.window.Window):
         self.sector = None
         self._last_position_update = 0
         self._position_update_interval = 1.0 / 20  # 20 FPS pour les updates de position
+        self._previous_position = self.position  # Track previous position for delta calculation
         
         # Initialisation
         pyglet.clock.schedule_interval(self.update, 1.0 / TICKS_PER_SEC)
@@ -829,8 +830,17 @@ class MinecraftWindow(pyglet.window.Window):
     def _send_position_update(self):
         """Envoie la mise à jour de position au serveur."""
         if self.network.connected:
-            move_msg = create_player_move_message(self.position, self.rotation)
+            # Calculate delta from previous position
+            current_pos = self.position
+            delta = (
+                current_pos[0] - self._previous_position[0],
+                current_pos[1] - self._previous_position[1], 
+                current_pos[2] - self._previous_position[2]
+            )
+            move_msg = create_player_move_message(delta, self.rotation)
             self.network.send_message(move_msg)
+            # Update previous position for next delta calculation
+            self._previous_position = current_pos
     
     def update_ui(self):
         """Met à jour l'interface utilisateur."""
@@ -1050,7 +1060,7 @@ Statut: {connection_status}"""
         block = self.model.hit_test(self.position, vector)[0]
         if block:
             x, y, z = block
-            vertex_data = cube_vertices(x, y, z, 0.51)
+            vertex_data = cube_vertices(x, y, z, 0.1275)  # Reduced from 0.51 to 0.1275 (divided by 4)
             glColor3d(0, 0, 0)
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
             pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))
