@@ -1,0 +1,57 @@
+{
+    "server": {
+        "host": "localhost",
+        "port": 8765,
+        "auto_reconnect": true,
+        "connection_timeout": 10
+    },
+    "graphics": {
+        "window_width": 1280,
+        "window_height": 720,
+        "fullscreen": false,
+        "vsync": true,
+        "fov": 70.0,
+        "render_distance": 60.0,
+        "show_fps": true
+    },
+    "controls": {
+        "keyboard_layout": "azerty",
+        "mouse_sensitivity": 0.15,
+        "invert_mouse_y": false,
+        "sprint_key": "R",
+        "crouch_key": "LSHIFT",
+        "jump_key": "SPACE",
+        "fly_toggle": "TAB",
+        "chat_key": "T",
+        "inventory_key": "E"
+    },
+    "interface": {
+        "language": "fr",
+        "show_debug_info": true,
+        "show_coordinates": true,
+        "show_block_info": true,
+        "crosshair_color": [
+            255,
+            255,
+            255
+        ],
+        "ui_scale": 1.0
+    },
+    "audio": {
+        "master_volume": 0.5,
+        "music_volume": 0.3,
+        "effects_volume": 0.7,
+        "muted": false
+    },
+    "player": {
+        "name": "Joueur",
+        "preferred_spawn": [
+            30,
+            50,
+            80
+        ],
+        "movement_speed": 5.0,
+        "jump_speed": 8.0,
+        "flying_speed": 15.0
+    }
+}
