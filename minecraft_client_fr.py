@@ -283,7 +283,12 @@ class AdvancedNetworkClient:
                 player_data = message.data
                 player_id = player_data["id"]
                 
-                if player_id != self.player_id:
+                if player_id == self.player_id:
+                    # Server is sending physics updates for our own player
+                    self.window.position = tuple(player_data["position"])
+                    self.window.dy = player_data["velocity"][1]  # Update Y velocity from server
+                    self.window.on_ground = player_data.get("on_ground", False)
+                else:
                     self.window.model.other_players[player_id] = PlayerState.from_dict(player_data)
                     
             elif message.type == MessageType.PLAYER_LIST:
@@ -591,6 +596,7 @@ class MinecraftWindow(pyglet.window.Window):
         # Mouvement
         self.strafe = [0, 0]
         self.dy = 0
+        self.on_ground = False  # For server-side physics
         self.collision_types = {"top": False, "bottom": False, "right": False, "left": False}
         
         # FOV et vitesses
@@ -775,9 +781,10 @@ class MinecraftWindow(pyglet.window.Window):
         dx, dy, dz = self.get_motion_vector()
         dx, dy, dz = dx * d, dy * d, dz * d
         
-        # Gravité
+        # Gravité (reduced since server handles physics)
         if not self.flying:
-            self.dy -= dt * GRAVITY
+            # Apply minimal client-side gravity for responsiveness
+            self.dy -= dt * (GRAVITY * 0.3)  # Reduced to 30% of original
             self.dy = max(self.dy, -TERMINAL_VELOCITY)
             dy += self.dy * dt
         
