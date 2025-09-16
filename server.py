@@ -4,6 +4,7 @@ Minecraft Server - Server-side game world and client connections
 
 import asyncio
 import logging
+import time
 import uuid
 import websockets
 from typing import Dict, Tuple, Optional, List, Any
@@ -19,9 +20,15 @@ from protocol import (
 SECTOR_SIZE = 16
 WORLD_SIZE = 128
 DEFAULT_CHUNK_SIZE = 16
-DEFAULT_SPAWN_POSITION = (30, 50, 80)
+DEFAULT_SPAWN_POSITION = (64, 100, 64)  # High spawn position for gravity testing
 WATER_LEVEL = 15
 GRASS_LEVEL = 18
+
+# Physics constants
+GRAVITY = 20.0
+TERMINAL_VELOCITY = 50.0
+PLAYER_HEIGHT = 1.8
+PHYSICS_TICK_RATE = 20  # Updates per second
 
 # Configure logging
 logging.basicConfig(
@@ -82,27 +89,17 @@ class GameWorld:
                 height = max(1, int(gen.getHeight(x, z)))  # Ensure minimum height of 1
                 height_map[z + x * WORLD_SIZE] = height
 
-        # Generate terrain based on height map
+        # Generate terrain based on height map (grass and stone only)
         blocks_created = 0
         for x in range(0, WORLD_SIZE, 1):
             for z in range(0, WORLD_SIZE, 1):
                 h = height_map[z + x * WORLD_SIZE]
                 
-                # Water level handling
-                if h < WATER_LEVEL:
-                    if self._add_block_internal((x, h, z), BlockType.SAND):
-                        blocks_created += 1
-                    for y in range(h + 1, WATER_LEVEL):  # Start from h+1 to avoid duplication
-                        if self._add_block_internal((x, y, z), BlockType.WATER):
-                            blocks_created += 1
-                    continue
-                
-                # Surface block type based on height
-                surface_block = BlockType.SAND if h < GRASS_LEVEL else BlockType.GRASS
-                if self._add_block_internal((x, h, z), surface_block):
+                # Surface block - always grass (no water or sand, as requested)
+                if self._add_block_internal((x, h, z), BlockType.GRASS):
                     blocks_created += 1
                 
-                # Underground layers (only create blocks with Y >= 1)
+                # Underground layers - only stone (only create blocks with Y >= 1)
                 for y in range(h - 1, 0, -1):
                     if self._add_block_internal((x, y, z), BlockType.STONE):
                         blocks_created += 1
@@ -217,6 +214,83 @@ class MinecraftServer:
         self.players: Dict[str, PlayerState] = {}
         self.running = False
         self.logger = logging.getLogger(__name__)
+        # Physics tick timing
+        self.last_physics_update = time.time()
+
+    def _check_ground_collision(self, position: Tuple[float, float, float]) -> bool:
+        """Check if a position would collide with the ground/blocks."""
+        x, y, z = position
+        # Check block positions below the player
+        for dy in range(int(PLAYER_HEIGHT) + 1):
+            check_pos = (int(x), int(y - dy), int(z))
+            if check_pos in self.world.world:
+                return True
+        return False
+
+    def _apply_physics(self, player: PlayerState, dt: float) -> None:
+        """Apply server-side physics to a player."""
+        if player.flying:
+            return  # No gravity when flying
+        
+        # Apply gravity
+        player.velocity[1] -= GRAVITY * dt
+        # Apply terminal velocity
+        if player.velocity[1] < -TERMINAL_VELOCITY:
+            player.velocity[1] = -TERMINAL_VELOCITY
+        
+        # Calculate new position
+        new_x = player.position[0] + player.velocity[0] * dt
+        new_y = player.position[1] + player.velocity[1] * dt  
+        new_z = player.position[2] + player.velocity[2] * dt
+        
+        # Check collision with ground
+        test_position = (new_x, new_y, new_z)
+        if self._check_ground_collision(test_position):
+            if player.velocity[1] < 0:  # Falling down
+                # Find the highest block at this x,z position
+                max_y = 0
+                for check_y in range(256):
+                    check_pos = (int(new_x), check_y, int(new_z))
+                    if check_pos in self.world.world:
+                        max_y = max(max_y, check_y)
+                
+                # Place player on top of the highest block
+                new_y = max_y + 1
+                player.velocity[1] = 0  # Stop falling
+                player.on_ground = True
+            else:
+                # Hitting something while going up, stop vertical movement
+                player.velocity[1] = 0
+        else:
+            player.on_ground = False
+        
+        # Update player position
+        player.position = (new_x, new_y, new_z)
+
+    async def _physics_update_loop(self):
+        """Main physics update loop running at PHYSICS_TICK_RATE."""
+        while self.running:
+            current_time = time.time()
+            dt = current_time - self.last_physics_update
+            
+            # Update physics for all players
+            for player in self.players.values():
+                self._apply_physics(player, dt)
+            
+            # Broadcast player updates
+            await self._broadcast_physics_updates()
+            
+            self.last_physics_update = current_time
+            
+            # Sleep to maintain physics tick rate
+            await asyncio.sleep(1.0 / PHYSICS_TICK_RATE)
+
+    async def _broadcast_physics_updates(self):
+        """Broadcast physics updates for all players."""
+        for player in self.players.values():
+            if player.id in self.clients:
+                update_msg = Message(MessageType.PLAYER_UPDATE, player.to_dict())
+                await self.send_to_client(player.id, update_msg)
 
     async def register_client(self, websocket: websockets.WebSocketServerProtocol) -> str:
         """Register a new client connection."""
@@ -480,11 +554,19 @@ class MinecraftServer:
         self.logger.info(f"Starting Minecraft server on {self.host}:{self.port}")
         
         try:
+            # Start physics update loop
+            physics_task = asyncio.create_task(self._physics_update_loop())
+            
             server = await websockets.serve(self.handle_client, self.host, self.port)
             self.logger.info(f"Server started! Connect clients to ws://{self.host}:{self.port}")
+            
+            # Wait for the server to close
             await server.wait_closed()
+            
         except Exception as e:
             self.logger.error(f"Server error: {e}")
+        finally:
+            self.running = False
             raise
 
     def stop_server(self):

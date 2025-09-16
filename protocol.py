@@ -74,6 +74,8 @@ class PlayerState:
         self.name = name or f"Player_{player_id[:8]}"
         self.flying = False
         self.sprinting = False
+        self.velocity = [0.0, 0.0, 0.0]  # For server-side physics (dx, dy, dz)
+        self.on_ground = False
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -83,7 +85,9 @@ class PlayerState:
             "rotation": self.rotation,
             "name": self.name,
             "flying": self.flying,
-            "sprinting": self.sprinting
+            "sprinting": self.sprinting,
+            "velocity": self.velocity,
+            "on_ground": self.on_ground
         }
 
     @classmethod
