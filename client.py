@@ -171,6 +171,38 @@ def normalize(position):
     x, y, z = (int(round(x)), int(round(y)), int(round(z)))
     return (x, y, z)
 
+def check_player_collision(position, player_size, other_players):
+    """Check if a player at given position and size collides with other players.
+    
+    Args:
+        position: Tuple (x, y, z) of the player's position
+        player_size: Size of the player's bounding box (half-size)
+        other_players: List of other player cubes to check collision against
+        
+    Returns:
+        True if collision detected, False otherwise
+    """
+    px, py, pz = position
+    
+    for other_player in other_players:
+        if not isinstance(other_player, PlayerState):
+            continue
+            
+        # Get other player's position and size
+        ox, oy, oz = other_player.position
+        other_size = other_player.size
+        
+        # Check 3D bounding box collision
+        # Two boxes collide if they overlap in all three dimensions
+        x_overlap = (px - player_size) < (ox + other_size) and (px + player_size) >= (ox - other_size)
+        y_overlap = (py - player_size) < (oy + other_size) and (py + player_size) >= (oy - other_size)
+        z_overlap = (pz - player_size) < (oz + other_size) and (pz + player_size) >= (oz - other_size)
+        
+        if x_overlap and y_overlap and z_overlap:
+            return True
+    
+    return False
+
 def sectorize(position):
     """Returns a tuple representing the sector for the given position."""
     SECTOR_SIZE = 16
@@ -944,6 +976,7 @@ class Window(pyglet.window.Window):
         np = normalize(position)
         self.collision_types = {"top":False,"bottom":False,"right":False,"left":False}
         
+        # Check collision with blocks
         for face in FACES:  # check all surrounding blocks
             for i in xrange(3):  # check each dimension independently
                 if not face[i]:
@@ -965,6 +998,17 @@ class Window(pyglet.window.Window):
                         self.collision_types["bottom"] = True
                         self.dy = 0
                     break
+        
+        # Check collision with other players
+        other_players = self.model.get_other_cubes()
+        player_size = 0.4  # Same size as PlayerState
+        
+        # Try the position after block collision adjustments
+        if check_player_collision(tuple(p), player_size, other_players):
+            # If we collide with another player, revert to original position
+            # This prevents players from moving through each other
+            return position
+            
         return tuple(p)
     
     def on_mouse_press(self, x, y, button, modifiers):

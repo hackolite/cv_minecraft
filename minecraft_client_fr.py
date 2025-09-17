@@ -109,6 +109,38 @@ def normalize(position):
     x, y, z = (int(round(x)), int(round(y)), int(round(z)))
     return (x, y, z)
 
+def check_player_collision(position, player_size, other_players):
+    """Vérifie si un joueur à la position donnée entre en collision avec d'autres joueurs.
+    
+    Args:
+        position: Tuple (x, y, z) de la position du joueur
+        player_size: Taille de la boîte de collision du joueur (demi-taille)
+        other_players: Liste des autres cubes de joueurs à vérifier
+        
+    Returns:
+        True si collision détectée, False sinon
+    """
+    px, py, pz = position
+    
+    for other_player in other_players:
+        if not isinstance(other_player, PlayerState):
+            continue
+            
+        # Obtenir la position et taille de l'autre joueur
+        ox, oy, oz = other_player.position
+        other_size = other_player.size
+        
+        # Vérifier la collision des boîtes englobantes 3D
+        # Deux boîtes entrent en collision si elles se chevauchent dans les trois dimensions
+        x_overlap = (px - player_size) < (ox + other_size) and (px + player_size) >= (ox - other_size)
+        y_overlap = (py - player_size) < (oy + other_size) and (py + player_size) >= (oy - other_size)
+        z_overlap = (pz - player_size) < (oz + other_size) and (pz + player_size) >= (oz - other_size)
+        
+        if x_overlap and y_overlap and z_overlap:
+            return True
+    
+    return False
+
 def sectorize(position):
     """Return sector that contains the given position."""
     x, y, z = normalize(position)
@@ -585,6 +617,10 @@ class EnhancedClientModel:
         if position in self.world and position not in self.shown:
             if self.exposed(position):
                 self.show_block(position)
+    
+    def get_other_cubes(self):
+        """Obtient tous les cubes des autres joueurs."""
+        return list(self.other_players.values())
 
 
 def block_texture_data(block_type):
@@ -845,6 +881,7 @@ class MinecraftWindow(pyglet.window.Window):
         np = normalize(position)
         self.collision_types = {"top": False, "bottom": False, "right": False, "left": False}
         
+        # Vérifier les collisions avec les blocs
         for face in FACES:
             for i in xrange(3):
                 if not face[i]:
@@ -869,6 +906,16 @@ class MinecraftWindow(pyglet.window.Window):
                         self.dy = 0
                     break
         
+        # Vérifier les collisions avec les autres joueurs
+        other_players = self.model.get_other_cubes()
+        player_size = 0.4  # Même taille que PlayerState
+        
+        # Tester la position après les ajustements de collision avec les blocs
+        if check_player_collision(tuple(p), player_size, other_players):
+            # Si on entre en collision avec un autre joueur, revenir à la position d'origine
+            # Cela empêche les joueurs de se traverser mutuellement
+            return position
+            
         return tuple(p)
     
     def _send_position_update(self):
