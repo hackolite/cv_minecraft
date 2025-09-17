@@ -820,9 +820,24 @@ class MinecraftWindow(pyglet.window.Window):
                     
                     # COLLISION FIX: For downward collision, check the block the player is standing on
                     if face == (0, -1, 0) and i == 1:
-                        # For downward collision, we need to check the block below the player's feet
-                        # Instead of adding face[i] (-1), we check the floor of the current position
-                        op[1] = int(p[1]) - dy
+                        # For downward collision, check blocks the player might be colliding with
+                        # This prevents falling through blocks during rapid movement
+                        floor_y = int(p[1]) - dy
+                        if p[1] < 0:
+                            # If player is underground, check blocks at ground level and above
+                            # This ensures underground players get pushed back to surface
+                            for check_y in range(max(floor_y, -2), 2):
+                                test_op = list(np)
+                                test_op[0] = op[0]
+                                test_op[1] = check_y
+                                test_op[2] = op[2] 
+                                if tuple(test_op) in self.model.world:
+                                    op[1] = check_y
+                                    break
+                            else:
+                                op[1] = floor_y
+                        else:
+                            op[1] = floor_y
                     else:
                         op[i] += face[i]
                     
