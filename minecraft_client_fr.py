@@ -250,32 +250,21 @@ class AdvancedNetworkClient:
 
 
 class EnhancedClientModel:
-    """Modèle client amélioré avec gestion optimisée des blocs."""
+    """Modèle client simplifié avec gestion optimisée des blocs."""
     
     def __init__(self):
-        # Batch pour le rendu groupé
         self.batch = pyglet.graphics.Batch()
-        
-        # Gestionnaire de texture
         try:
             self.group = TextureGroup(image.load(TEXTURE_PATH).get_texture())
         except Exception as e:
-            print(f"Erreur lors du chargement de la texture: {e}")
+            print(f"Erreur texture: {e}")
             self.group = None
         
         # Données du monde
-        self.world = {}
-        self.shown = {}
-        self._shown = {}
-        self.sectors = {}
+        self.world, self.shown, self._shown, self.sectors = {}, {}, {}, {}
         self.queue = deque()
-        
-        # Autres joueurs
         self.other_players = {}
-        
-        # Informations du monde
-        self.world_size = 128
-        self.spawn_position = [30, 50, 80]
+        self.world_size, self.spawn_position = 128, [30, 50, 80]
     
     def load_world_data(self, world_data):
         """Charge les données initiales du monde depuis le serveur."""
@@ -284,12 +273,9 @@ class EnhancedClientModel:
     
     def load_world_chunk(self, chunk_data):
         """Charge un chunk de données du monde."""
-        blocks = chunk_data.get("blocks", {})
-        
-        for pos_str, block_type in blocks.items():
+        for pos_str, block_type in chunk_data.get("blocks", {}).items():
             try:
-                x, y, z = map(int, pos_str.split(','))
-                position = (x, y, z)
+                position = tuple(map(int, pos_str.split(',')))
                 self.add_block(position, block_type, immediate=False)
             except ValueError:
                 continue
@@ -298,45 +284,35 @@ class EnhancedClientModel:
         """Ajoute un bloc au monde."""
         self.world[position] = block_type
         self.sectors.setdefault(sectorize(position), []).append(position)
-        
-        if immediate:
-            if self.exposed(position):
-                self.show_block(position)
-        else:
-            self.enqueue(self.show_block, position)
+        action = self.show_block if self.exposed(position) else lambda p: None
+        (action(position) if immediate else self.enqueue(action, position))
     
     def remove_block(self, position, immediate=True):
         """Retire un bloc du monde."""
         del self.world[position]
         self.hide_block(position)
-        
+        neighbors = [n for n in self.neighbors(position) if n in self.world and n not in self.shown and self.exposed(n)]
         if immediate:
-            for neighbor in self.neighbors(position):
-                if neighbor in self.world and neighbor not in self.shown:
-                    if self.exposed(neighbor):
-                        self.show_block(neighbor)
+            for neighbor in neighbors:
+                self.show_block(neighbor)
         else:
-            for neighbor in self.neighbors(position):
-                self.enqueue(self.check_if_exposed, neighbor)
+            for neighbor in neighbors:
+                self.enqueue(self.show_block, neighbor)
     
     def neighbors(self, position):
         """Retourne les voisins d'un bloc."""
         x, y, z = position
-        for dx, dy, dz in FACES:
-            yield (x + dx, y + dy, z + dz)
+        return [(x + dx, y + dy, z + dz) for dx, dy, dz in FACES]
     
     def exposed(self, position):
         """Vérifie si un bloc est exposé (visible)."""
         x, y, z = position
-        for dx, dy, dz in FACES:
-            if (x + dx, y + dy, z + dz) not in self.world:
-                return True
-        return False
+        return any((x + dx, y + dy, z + dz) not in self.world for dx, dy, dz in FACES)
     
     def show_block(self, position, immediate=True):
         """Affiche un bloc."""
         block_type = self.world.get(position)
-        if not block_type or position in self.shown or not self.group:
+        if not (block_type and position not in self.shown and self.group):
             return
             
         x, y, z = position
@@ -344,14 +320,11 @@ class EnhancedClientModel:
         texture_data = list(block_texture_data(block_type))
         
         try:
-            self._shown[position] = self.batch.add(
-                24, GL_QUADS, self.group,
-                ('v3f/static', vertex_data),
-                ('t2f/static', texture_data)
-            )
+            self._shown[position] = self.batch.add(24, GL_QUADS, self.group,
+                                                  ('v3f/static', vertex_data), ('t2f/static', texture_data))
             self.shown[position] = block_type
         except Exception:
-            pass  # Skip rendering errors
+            pass
     
     def hide_block(self, position):
         """Cache un bloc."""
@@ -380,10 +353,10 @@ class EnhancedClientModel:
     
     def hit_test(self, position, vector, max_distance=8):
         """Test de collision pour la visée."""
-        m = 8
         x, y, z = position
         dx, dy, dz = vector
         previous = None
+        m = 8
         
         for _ in xrange(max_distance * m):
             key = normalize((x, y, z))
@@ -391,30 +364,24 @@ class EnhancedClientModel:
                 return key, previous
             previous = key
             x, y, z = x + dx / m, y + dy / m, z + dz / m
-        
         return None, None
     
     def change_sectors(self, before, after):
         """Change les secteurs visibles."""
+        pad = 4
         before_set = set()
         after_set = set()
-        pad = 4
         
-        for dx in xrange(-pad, pad + 1):
-            for dz in xrange(-pad, pad + 1):
-                if before:
-                    x, _, z = before
-                    before_set.add((x + dx, 0, z + dz))
-                if after:
-                    x, _, z = after
-                    after_set.add((x + dx, 0, z + dz))
+        if before:
+            x, _, z = before
+            before_set = {(x + dx, 0, z + dz) for dx in xrange(-pad, pad + 1) for dz in xrange(-pad, pad + 1)}
+        if after:
+            x, _, z = after  
+            after_set = {(x + dx, 0, z + dz) for dx in xrange(-pad, pad + 1) for dz in xrange(-pad, pad + 1)}
         
-        show = after_set - before_set
-        hide = before_set - after_set
-        
-        for sector in show:
+        for sector in after_set - before_set:
             self.show_sector(sector)
-        for sector in hide:
+        for sector in before_set - after_set:
             self.hide_sector(sector)
     
     def show_sector(self, sector):
@@ -428,12 +395,6 @@ class EnhancedClientModel:
         for position in self.sectors.get(sector, []):
             if position in self.shown:
                 self.enqueue(self.hide_block, position)
-    
-    def check_if_exposed(self, position):
-        """Vérifie et affiche un bloc s'il est exposé."""
-        if position in self.world and position not in self.shown:
-            if self.exposed(position):
-                self.show_block(position)
     
     def get_other_cubes(self):
         """Obtient tous les cubes des autres joueurs."""
@@ -1065,74 +1026,57 @@ def setup_opengl():
 def parse_args():
     """Parse les arguments de ligne de commande."""
     parser = argparse.ArgumentParser(description="Client Minecraft amélioré avec support français")
-    
-    parser.add_argument('--server', '-s', default=None, 
-                       help='Adresse du serveur (format: host:port)')
-    parser.add_argument('--config', '-c', default='client_config.json',
-                       help='Fichier de configuration')
-    parser.add_argument('--fullscreen', '-f', action='store_true',
-                       help='Démarrer en plein écran')
-    parser.add_argument('--debug', '-d', action='store_true',
-                       help='Activer le mode debug')
-    parser.add_argument('--lang', choices=['fr', 'en'], default='fr',
-                       help='Langue de l\'interface')
-    
+    parser.add_argument('--server', '-s', help='Adresse du serveur (format: host:port)')
+    parser.add_argument('--config', '-c', default='client_config.json', help='Fichier de configuration')
+    parser.add_argument('--fullscreen', '-f', action='store_true', help='Démarrer en plein écran')
+    parser.add_argument('--debug', '-d', action='store_true', help='Activer le mode debug')
+    parser.add_argument('--lang', choices=['fr', 'en'], default='fr', help='Langue de l\'interface')
     return parser.parse_args()
 
 
 def main():
     """Point d'entrée principal du client."""
     print("🎮 Client Minecraft Français - Démarrage...")
-    
     args = parse_args()
     
-    # Charge la configuration
+    # Charge la configuration si différente
     if args.config != 'client_config.json':
         global config
         from client_config import ClientConfig
         config = ClientConfig(args.config)
     
-    # Applique les paramètres des arguments
+    # Applique les arguments
     if args.server:
         try:
+            host, port = (args.server.split(':', 1) if ':' in args.server else (args.server, 8765))
+            config.set("server", "host", host)
             if ':' in args.server:
-                host, port = args.server.split(':', 1)
-                config.set("server", "host", host)
                 config.set("server", "port", int(port))
-            else:
-                config.set("server", "host", args.server)
         except ValueError:
-            print(f"⚠️  Format d'adresse serveur invalide: {args.server}")
+            print(f"⚠️  Format serveur invalide: {args.server}")
             return 1
     
-    if args.fullscreen:
-        config.set("graphics", "fullscreen", True)
-    if args.debug:
-        config.set("interface", "show_debug_info", True)
-    if args.lang:
-        config.set("interface", "language", args.lang)
+    # Applique les autres options
+    for key, setting in [("fullscreen", ("graphics", "fullscreen")), 
+                        ("debug", ("interface", "show_debug_info")), 
+                        ("lang", ("interface", "language"))]:
+        if getattr(args, key):
+            config.set(setting[0], setting[1], getattr(args, key))
     
     print(f"🌐 Serveur: {config.get_server_url()}")
     print(f"⌨️  Layout: {'AZERTY' if config.is_azerty_layout() else 'QWERTY'}")
     
     try:
         window = MinecraftWindow()
-        
         if config.get("graphics", "fullscreen", False):
             window.set_fullscreen(True)
-        
         setup_opengl()
-        
-        welcome_msg = config.get_localized_text("welcome")
-        window.show_message(welcome_msg, 5.0)
-        
+        window.show_message(config.get_localized_text("welcome"), 5.0)
         print("✅ Client démarré avec succès!")
         pyglet.app.run()
-        
     except Exception as e:
         print(f"❌ Erreur: {e}")
         return 1
-    
     return 0
 
 
