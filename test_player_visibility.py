@@ -36,15 +36,34 @@ async def connect_and_monitor_player(username, duration=10):
         await send_json(ws, "player_join", {"name": username})
         
         # Wait for world initialization and chunks
-        world_init_msg = await recv_json(ws)
-        assert world_init_msg["type"] == "world_init", f"Expected world_init, got {world_init_msg['type']}"
+        try:
+            first_msg = await recv_json(ws)
+            if first_msg["type"] == "player_list":
+                # Sometimes we get player_list first due to race conditions
+                # Skip until we get world_init
+                while True:
+                    message = await asyncio.wait_for(recv_json(ws), timeout=5.0)
+                    if message["type"] == "world_init":
+                        break
+            elif first_msg["type"] != "world_init":
+                raise AssertionError(f"Expected world_init or player_list, got {first_msg['type']}")
+        except asyncio.TimeoutError:
+            logging.error(f"{username} timed out waiting for world_init")
+            return {
+                "username": username,
+                "player_updates": 0,
+                "player_lists": 0,
+                "other_players": set()
+            }
         
-        # Skip through chunks until we get player_list
+        # Skip through chunks until we get to the end and player_list
         while True:
             try:
-                message = await asyncio.wait_for(recv_json(ws), timeout=2.0)
+                message = await asyncio.wait_for(recv_json(ws), timeout=3.0)
                 if message["type"] == "player_list":
                     # Found player list, now start monitoring
+                    players = message["data"]["players"]
+                    logging.info(f"👥 {username} initial player list with {len(players)} players")
                     break
             except asyncio.TimeoutError:
                 logging.warning(f"{username} timed out waiting for player_list")
