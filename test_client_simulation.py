@@ -117,7 +117,7 @@ async def test_client_simulation():
                 if time.time() - start_time > 5:  # After 5 seconds, send movement
                     move_msg = {
                         "type": "player_move",
-                        "data": {"delta": [1.0, 0.0, 0.0], "rotation": [45.0, 0.0]}
+                        "data": {"position": [65.0, 100.0, 64.0], "rotation": [45.0, 0.0]}
                     }
                     await ws.send(json.dumps(move_msg))
                     logging.info("🏃 Sent movement update")
