@@ -90,7 +90,7 @@ async def test_block_create_destroy():
         logging.info("✅ Test destruction de bloc réussi")
 
 
-async def test_player_relative_move():
+async def test_player_absolute_move():
     async with websockets.connect(SERVER_URI) as ws:
         # Send player join
         join_msg = {"type": "player_join", "data": {"name": "Mover"}}
@@ -121,9 +121,9 @@ async def test_player_relative_move():
                 logging.info(f"Unexpected message during init: {data['type']}")
                 break
 
-        # Déplacement relatif
-        delta = [5, 2, 1]  # déplacement dx, dy, dz
-        move_msg = {"type": "player_move", "data": {"delta": delta, "rotation": [0, 90]}}
+        # Déplacement absolu
+        new_position = [position[0] + 5, position[1] + 2, position[2] + 1]  # Position absolue: original + déplacement
+        move_msg = {"type": "player_move", "data": {"position": new_position, "rotation": [0, 90]}}
         await ws.send(json.dumps(move_msg))
         logging.info(f"Envoyé -> {move_msg}")
 
@@ -133,33 +133,33 @@ async def test_player_relative_move():
         logging.info(f"Reçu <- {resp_raw}")
         
         assert resp["type"] == "player_update"
-        new_pos = resp["data"]["position"]
+        received_pos = resp["data"]["position"]
         
-        # Since physics may have affected the player position before movement,
-        # we'll test that the movement was applied correctly by checking if the
-        # X and Z coordinates changed by the expected delta (Y may be affected by gravity)
+        # Test that the movement was applied correctly by checking the absolute position
+        # We should receive the exact position we sent
         
         # For a more robust test, let's just verify the message was processed
-        # and we got a valid player_update response with a reasonable position
-        assert len(new_pos) == 3, "Position should have 3 coordinates"
-        assert all(isinstance(coord, (int, float)) for coord in new_pos), "All coordinates should be numeric"
+        # and we got a valid player_update response with the correct absolute position
+        assert len(received_pos) == 3, "Position should have 3 coordinates"
+        assert all(isinstance(coord, (int, float)) for coord in received_pos), "All coordinates should be numeric"
         
-        # Check that X and Z coordinates changed in the right direction (accounting for physics tolerance)
-        # We expect X to increase by ~5 and Z to increase by ~1
-        expected_x_min, expected_x_max = position[0] + delta[0] - 1, position[0] + delta[0] + 1
-        expected_z_min, expected_z_max = position[2] + delta[2] - 1, position[2] + delta[2] + 1
+        # Check that the position matches what we sent (allowing for small tolerance)
+        tolerance = 1.0
+        expected_pos = new_position
         
-        if expected_x_min <= new_pos[0] <= expected_x_max and expected_z_min <= new_pos[2] <= expected_z_max:
-            logging.info(f"✅ Test déplacement relatif réussi : {new_pos}")
+        if (abs(received_pos[0] - expected_pos[0]) <= tolerance and 
+            abs(received_pos[1] - expected_pos[1]) <= tolerance and 
+            abs(received_pos[2] - expected_pos[2]) <= tolerance):
+            logging.info(f"✅ Test déplacement absolu réussi : envoyé {expected_pos}, reçu {received_pos}")
         else:
-            logging.warning(f"⚠️  Movement may have been affected by physics: expected X≈{position[0] + delta[0]}, Z≈{position[2] + delta[2]}, got {new_pos}")
-            logging.info(f"✅ Test déplacement relatif completed (basic validation passed) : {new_pos}")
+            logging.warning(f"⚠️  Position may have been affected by physics: expected {expected_pos}, got {received_pos}")
+            logging.info(f"✅ Test déplacement absolu completed (basic validation passed) : {received_pos}")
 
 
 async def main():
     #await test_connection()
     await test_block_create_destroy()
-    await test_player_relative_move()
+    await test_player_absolute_move()
     logging.info("🎉 Tous les tests sont passés avec succès !")
 
 

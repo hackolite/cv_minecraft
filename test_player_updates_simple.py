@@ -53,12 +53,12 @@ async def test_two_players_see_each_other():
         # Send a movement to trigger updates
         await client1.send(json.dumps({
             "type": "player_move", 
-            "data": {"delta": [1.0, 0.0, 0.0], "rotation": [0.0, 0.0]}
+            "data": {"position": [65.0, 100.0, 64.0], "rotation": [0.0, 0.0]}
         }))
         
         await client2.send(json.dumps({
             "type": "player_move", 
-            "data": {"delta": [0.0, 0.0, 1.0], "rotation": [45.0, 0.0]}
+            "data": {"position": [64.0, 100.0, 65.0], "rotation": [45.0, 0.0]}
         }))
         
         # Collect updates for both players

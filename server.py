@@ -496,7 +496,7 @@ class MinecraftServer:
         await self.broadcast_player_list()
 
     async def _handle_player_move(self, player_id: str, message: Message):
-        """Handle player movement with delta or position updates."""
+        """Handle player movement with absolute position updates only."""
         if player_id not in self.players:
             raise InvalidPlayerDataError(f"Player {player_id} not found")
             
@@ -508,44 +508,25 @@ class MinecraftServer:
             
             player = self.players[player_id]
             
-            # Handle both delta-based and position-based movement messages
-            if "delta" in message.data:
-                # Delta-based movement (relative)
-                delta = message.data["delta"]
+            # Only handle absolute position-based movement
+            if "position" not in message.data:
+                raise InvalidPlayerDataError("Missing required field: 'position' must be provided")
                 
-                if not isinstance(delta, (list, tuple)) or len(delta) != 3:
-                    raise InvalidPlayerDataError("Invalid delta format")
-                    
-                # Validate movement limits (anti-cheat)
-                dx, dy, dz = delta
-                if abs(dx) > 10 or abs(dy) > 10 or abs(dz) > 10:  # Reasonable movement limits
-                    raise InvalidPlayerDataError("Movement delta too large")
+            position = message.data["position"]
+            
+            if not isinstance(position, (list, tuple)) or len(position) != 3:
+                raise InvalidPlayerDataError("Invalid position format")
                 
-                x, y, z = player.position
-                new_position = (x + dx, y + dy, z + dz)
-                
-            elif "position" in message.data:
-                # Position-based movement (absolute)
-                position = message.data["position"]
-                
-                if not isinstance(position, (list, tuple)) or len(position) != 3:
-                    raise InvalidPlayerDataError("Invalid position format")
-                    
-                new_position = tuple(position)
-                
-                # Anti-cheat: validate reasonable movement distance from current position
-                # Note: For position-based movement, we're more lenient since the player
-                # might have physics applied or be teleporting to a reasonable location
-                old_x, old_y, old_z = player.position
-                new_x, new_y, new_z = new_position
-                dx, dy, dz = new_x - old_x, new_y - old_y, new_z - old_z
-                
-                # Allow larger movement for position-based updates (e.g., teleporting, respawning)
-                if abs(dx) > 50 or abs(dy) > 50 or abs(dz) > 50:  # More generous limits
-                    raise InvalidPlayerDataError("Movement distance too large")
-                    
-            else:
-                raise InvalidPlayerDataError("Missing required field: either 'delta' or 'position' must be provided")
+            new_position = tuple(position)
+            
+            # Anti-cheat: validate reasonable movement distance from current position
+            old_x, old_y, old_z = player.position
+            new_x, new_y, new_z = new_position
+            dx, dy, dz = new_x - old_x, new_y - old_y, new_z - old_z
+            
+            # Allow reasonable movement for position-based updates
+            if abs(dx) > 50 or abs(dy) > 50 or abs(dz) > 50:
+                raise InvalidPlayerDataError("Movement distance too large")
             
             if not validate_position(new_position):
                 raise InvalidPlayerDataError("Invalid target position")

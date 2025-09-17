@@ -53,14 +53,14 @@ async def demonstration():
         print("\n🕹️ Testing AZERTY controls (Z/Q/S/D):")
         
         movements = [
-            ("Z (forward)", [0, 0, -1]),
-            ("Q (left)", [-1, 0, 0]),  
-            ("S (backward)", [0, 0, 1]),
-            ("D (right)", [1, 0, 0])
+            ("Z (forward)", [64, 100, 63]),  # Move forward
+            ("Q (left)", [63, 100, 63]),     # Move left
+            ("S (backward)", [63, 100, 64]), # Move backward  
+            ("D (right)", [64, 100, 64])     # Move right
         ]
         
-        for control, delta in movements:
-            move_msg = {"type": "player_move", "data": {"delta": delta, "rotation": [0, 0]}}
+        for control, position in movements:
+            move_msg = {"type": "player_move", "data": {"position": position, "rotation": [0, 0]}}
             await ws.send(json.dumps(move_msg))
             
             response = json.loads(await ws.recv())

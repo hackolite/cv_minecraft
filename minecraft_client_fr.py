@@ -641,7 +641,6 @@ class MinecraftWindow(pyglet.window.Window):
         self.sector = None
         self._last_position_update = 0
         self._position_update_interval = 1.0 / 20  # 20 FPS pour les updates de position
-        self._previous_position = self.position  # Track previous position for delta calculation
         
         # Initialisation
         pyglet.clock.schedule_interval(self.update, 1.0 / TICKS_PER_SEC)
@@ -842,17 +841,9 @@ class MinecraftWindow(pyglet.window.Window):
     def _send_position_update(self):
         """Envoie la mise à jour de position au serveur."""
         if self.network.connected:
-            # Calculate delta from previous position
-            current_pos = self.position
-            delta = (
-                current_pos[0] - self._previous_position[0],
-                current_pos[1] - self._previous_position[1], 
-                current_pos[2] - self._previous_position[2]
-            )
-            move_msg = create_player_move_message(delta, self.rotation)
+            # Send absolute position instead of delta
+            move_msg = create_player_move_message(self.position, self.rotation)
             self.network.send_message(move_msg)
-            # Update previous position for next delta calculation
-            self._previous_position = current_pos
     
     def update_ui(self):
         """Met à jour l'interface utilisateur."""

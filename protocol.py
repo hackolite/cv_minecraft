@@ -151,17 +151,9 @@ def create_player_join_message(player_name: str) -> Message:
 
 def create_player_move_message(position: Tuple[float, float, float],
                              rotation: Tuple[float, float]) -> Message:
-    """Create a player movement message with position updates."""
+    """Create a player movement message with absolute position updates."""
     return Message(MessageType.PLAYER_MOVE, {
         "position": position,
-        "rotation": rotation
-    })
-
-def create_player_move_delta_message(delta: Tuple[float, float, float],
-                                   rotation: Tuple[float, float]) -> Message:
-    """Create a player movement message with delta updates."""
-    return Message(MessageType.PLAYER_MOVE, {
-        "delta": delta,
         "rotation": rotation
     })
 
