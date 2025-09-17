@@ -312,6 +312,10 @@ class MinecraftServer:
         if player.flying:
             return  # No gravity when flying
         
+        # Don't apply physics immediately after a voluntary movement to prevent interference
+        if time.time() - player.last_move_time < 0.5:  # 500ms grace period (longer)
+            return
+        
         # Apply gravity
         player.velocity[1] -= GRAVITY * dt
         # Apply terminal velocity
@@ -492,34 +496,68 @@ class MinecraftServer:
         await self.broadcast_player_list()
 
     async def _handle_player_move(self, player_id: str, message: Message):
-        """Handle player movement with delta updates."""
+        """Handle player movement with delta or position updates."""
         if player_id not in self.players:
             raise InvalidPlayerDataError(f"Player {player_id} not found")
             
         try:
-            delta = message.data["delta"]
             rotation = message.data["rotation"]
             
-            if not isinstance(delta, (list, tuple)) or len(delta) != 3:
-                raise InvalidPlayerDataError("Invalid delta format")
-                
             if not isinstance(rotation, (list, tuple)) or len(rotation) != 2:
                 raise InvalidPlayerDataError("Invalid rotation format")
-                
-            # Validate movement limits (anti-cheat)
-            dx, dy, dz = delta
-            if abs(dx) > 10 or abs(dy) > 10 or abs(dz) > 10:  # Reasonable movement limits
-                raise InvalidPlayerDataError("Movement delta too large")
             
             player = self.players[player_id]
-            x, y, z = player.position
-            new_position = (x + dx, y + dy, z + dz)
+            
+            # Handle both delta-based and position-based movement messages
+            if "delta" in message.data:
+                # Delta-based movement (relative)
+                delta = message.data["delta"]
+                
+                if not isinstance(delta, (list, tuple)) or len(delta) != 3:
+                    raise InvalidPlayerDataError("Invalid delta format")
+                    
+                # Validate movement limits (anti-cheat)
+                dx, dy, dz = delta
+                if abs(dx) > 10 or abs(dy) > 10 or abs(dz) > 10:  # Reasonable movement limits
+                    raise InvalidPlayerDataError("Movement delta too large")
+                
+                x, y, z = player.position
+                new_position = (x + dx, y + dy, z + dz)
+                
+            elif "position" in message.data:
+                # Position-based movement (absolute)
+                position = message.data["position"]
+                
+                if not isinstance(position, (list, tuple)) or len(position) != 3:
+                    raise InvalidPlayerDataError("Invalid position format")
+                    
+                new_position = tuple(position)
+                
+                # Anti-cheat: validate reasonable movement distance from current position
+                # Note: For position-based movement, we're more lenient since the player
+                # might have physics applied or be teleporting to a reasonable location
+                old_x, old_y, old_z = player.position
+                new_x, new_y, new_z = new_position
+                dx, dy, dz = new_x - old_x, new_y - old_y, new_z - old_z
+                
+                # Allow larger movement for position-based updates (e.g., teleporting, respawning)
+                if abs(dx) > 50 or abs(dy) > 50 or abs(dz) > 50:  # More generous limits
+                    raise InvalidPlayerDataError("Movement distance too large")
+                    
+            else:
+                raise InvalidPlayerDataError("Missing required field: either 'delta' or 'position' must be provided")
             
             if not validate_position(new_position):
                 raise InvalidPlayerDataError("Invalid target position")
                 
             player.position = new_position
             player.rotation = tuple(rotation)
+            
+            # Reset velocity when player makes deliberate movement to prevent physics interference
+            # This prevents gravity from immediately affecting the player's intended position
+            player.velocity = [0.0, 0.0, 0.0]
+            player.on_ground = True  # Assume player is on ground after movement
+            player.last_move_time = time.time()  # Mark when player last moved voluntarily
 
             # Broadcast to other players
             await self.broadcast_message(
