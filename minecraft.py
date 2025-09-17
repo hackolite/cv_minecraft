@@ -40,6 +40,7 @@ except ImportError:
     get_default_shader = None
 
 from noise_gen import NoiseGen
+from protocol import PlayerState
 
 TICKS_PER_SEC = 60
 
@@ -165,6 +166,39 @@ def sectorize(position):
     return (x, 0, z)
 
 
+def check_player_collision(position, player_size, other_players):
+    """Check if a player at given position and size collides with other players.
+    
+    Args:
+        position: Tuple (x, y, z) of the player's position
+        player_size: Size of the player's bounding box (half-size)
+        other_players: List of other player cubes to check collision against
+        
+    Returns:
+        True if collision detected, False otherwise
+    """
+    px, py, pz = position
+    
+    for other_player in other_players:
+        if not isinstance(other_player, PlayerState):
+            continue
+            
+        # Get other player's position and size
+        ox, oy, oz = other_player.position
+        other_size = other_player.size
+        
+        # Check 3D bounding box collision
+        # Two boxes collide if they overlap in all three dimensions
+        x_overlap = (px - player_size) < (ox + other_size) and (px + player_size) >= (ox - other_size)
+        y_overlap = (py - player_size) < (oy + other_size) and (py + player_size) >= (oy - other_size)
+        z_overlap = (pz - player_size) < (oz + other_size) and (pz + player_size) >= (oz - other_size)
+        
+        if x_overlap and y_overlap and z_overlap:
+            return True
+    
+    return False
+
+
 class Model(object):
 
     def __init__(self):
@@ -191,6 +225,9 @@ class Model(object):
         # Simple function queue implementation. The queue is populated with
         # _show_block() and _hide_block() calls
         self.queue = deque()
+        
+        # Dictionary of other players for collision detection
+        self.players = {}
 
         self._initialize()
 
@@ -557,6 +594,19 @@ class Model(object):
         """
         while self.queue:
             self._dequeue()
+    
+    def get_other_players(self):
+        """Get all other players for collision detection."""
+        return list(self.players.values())
+    
+    def add_player(self, player):
+        """Add a player to the model."""
+        if isinstance(player, PlayerState):
+            self.players[player.id] = player
+    
+    def remove_player(self, player_id):
+        """Remove a player from the model."""
+        self.players.pop(player_id, None)
 
 
 class Window(pyglet.window.Window):
@@ -833,6 +883,17 @@ class Window(pyglet.window.Window):
                         self.collision_types["bottom"] = True
                         self.dy = 0
                     break
+        
+        # Check collision with other players
+        other_players = self.model.get_other_players()
+        player_size = 0.4  # Same size as PlayerState
+        
+        # Try the position after block collision adjustments
+        if check_player_collision(tuple(p), player_size, other_players):
+            # If we collide with another player, revert to original position
+            # This prevents players from moving through each other
+            return position
+            
         return tuple(p)
 
     def on_mouse_press(self, x, y, button, modifiers):
