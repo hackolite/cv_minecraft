@@ -217,6 +217,20 @@ class ClientModel:
         self.local_player.is_local = True
         self.add_cube(self.local_player)
         return self.local_player
+    
+    def update_all_cubes(self, dt):
+        """Update all cubes in the universe with unified logic."""
+        # For now, only the local player has physics and movement
+        # Remote players are updated through network messages
+        # This method provides a hook for future agent-based logic
+        
+        for cube in self.cubes.values():
+            if isinstance(cube, PlayerState):
+                # Apply any cube-wide updates here
+                # For example, future agent behaviors could be applied to all cubes
+                pass
+    
+    def invalidate_exposure_cache(self, position):
         """Invalidate exposure cache for a position and its neighbors."""
         positions_to_clear = [position] + list(self.neighbors(position))
         for pos in positions_to_clear:
@@ -758,6 +772,9 @@ class Window(pyglet.window.Window):
         dt = min(dt, 0.2)
         for _ in xrange(m):
             self._update(dt / m)
+        
+        # Update all cubes with unified logic
+        self.model.update_all_cubes(dt)
         
         # Send position update to server (throttled)
         if hasattr(self, '_last_position_update'):
