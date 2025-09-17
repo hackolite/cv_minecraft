@@ -14,7 +14,8 @@ from noise_gen import NoiseGen
 from protocol import (
     MessageType, BlockType, Message, PlayerState, BlockUpdate,
     create_world_init_message, create_world_chunk_message, 
-    create_world_update_message, create_player_list_message
+    create_world_update_message, create_player_list_message,
+    create_player_update_message
 )
 
 # ---------- Constants ----------
@@ -373,7 +374,7 @@ class MinecraftServer:
         """Broadcast physics updates for all players."""
         for player in self.players.values():
             if player.id in self.clients:
-                update_msg = Message(MessageType.PLAYER_UPDATE, player.to_dict())
+                update_msg = create_player_update_message(player)
                 # Send this player's position to all OTHER players (not to themselves)
                 await self.broadcast_message(update_msg, exclude_player=player.id)
 
@@ -542,12 +543,12 @@ class MinecraftServer:
 
             # Broadcast to other players
             await self.broadcast_message(
-                Message(MessageType.PLAYER_UPDATE, player.to_dict()), 
+                create_player_update_message(player), 
                 exclude_player=player_id
             )
 
             # Send updated position back to player
-            await self.send_to_client(player_id, Message(MessageType.PLAYER_UPDATE, player.to_dict()))
+            await self.send_to_client(player_id, create_player_update_message(player))
             
         except KeyError as e:
             raise InvalidPlayerDataError(f"Missing required field: {e}")
