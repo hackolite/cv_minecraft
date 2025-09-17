@@ -165,74 +165,34 @@ class ClientConfig:
     
     def get_movement_keys(self) -> Dict[str, str]:
         """Retourne les touches de mouvement selon le layout clavier."""
-        if self.is_azerty_layout():
-            return {
-                "forward": "Z",
-                "backward": "S", 
-                "left": "Q",
-                "right": "D"
-            }
-        else:
-            return {
-                "forward": "W",
-                "backward": "S",
-                "left": "A", 
-                "right": "D"
-            }
+        keys = {"forward": "Z", "backward": "S", "left": "Q", "right": "D"}
+        if not self.is_azerty_layout():
+            keys.update({"forward": "W", "left": "A"})
+        return keys
     
     def get_localized_text(self, key: str, default: str = "") -> str:
         """Retourne le texte localisé selon la langue configurée."""
-        language = self.get("interface", "language", "fr")
+        fr_texts = {
+            "connecting": "Connexion au serveur...", "connected": "Connecté", "disconnected": "Déconnecté", 
+            "connection_failed": "Échec de connexion", "blocks_visible": "Blocs visibles", "blocks_total": "Blocs total",
+            "position": "Position", "fps": "FPS", "ping": "Ping", "players_online": "Joueurs en ligne",
+            "flying": "Vol activé", "sprinting": "Course activée", "crouch": "Accroupi",
+            "block_placed": "Bloc placé", "block_destroyed": "Bloc détruit", "inventory_full": "Inventaire plein",
+            "server_error": "Erreur serveur", "reconnecting": "Reconnexion...", 
+            "welcome": "Bienvenue sur le serveur Minecraft!", "controls_help": "Utilisez ZQSD pour vous déplacer"
+        }
         
-        # Textes français
-        if language == "fr":
-            texts = {
-                "connecting": "Connexion au serveur...",
-                "connected": "Connecté",
-                "disconnected": "Déconnecté", 
-                "connection_failed": "Échec de connexion",
-                "blocks_visible": "Blocs visibles",
-                "blocks_total": "Blocs total",
-                "position": "Position",
-                "fps": "FPS",
-                "ping": "Ping",
-                "players_online": "Joueurs en ligne",
-                "flying": "Vol activé",
-                "sprinting": "Course activée",
-                "crouch": "Accroupi",
-                "block_placed": "Bloc placé",
-                "block_destroyed": "Bloc détruit",
-                "inventory_full": "Inventaire plein",
-                "server_error": "Erreur serveur",
-                "reconnecting": "Reconnexion...",
-                "welcome": "Bienvenue sur le serveur Minecraft!",
-                "controls_help": "Utilisez ZQSD pour vous déplacer"
-            }
-        else:
-            # Textes anglais par défaut
-            texts = {
-                "connecting": "Connecting to server...",
-                "connected": "Connected",
-                "disconnected": "Disconnected",
-                "connection_failed": "Connection failed", 
-                "blocks_visible": "Blocks visible",
-                "blocks_total": "Blocks total",
-                "position": "Position",
-                "fps": "FPS",
-                "ping": "Ping",
-                "players_online": "Players online",
-                "flying": "Flying enabled",
-                "sprinting": "Sprinting enabled", 
-                "crouch": "Crouching",
-                "block_placed": "Block placed",
-                "block_destroyed": "Block destroyed",
-                "inventory_full": "Inventory full",
-                "server_error": "Server error",
-                "reconnecting": "Reconnecting...",
-                "welcome": "Welcome to Minecraft server!",
-                "controls_help": "Use WASD to move"
-            }
+        en_texts = {
+            "connecting": "Connecting to server...", "connected": "Connected", "disconnected": "Disconnected",
+            "connection_failed": "Connection failed", "blocks_visible": "Blocks visible", "blocks_total": "Blocks total",
+            "position": "Position", "fps": "FPS", "ping": "Ping", "players_online": "Players online",
+            "flying": "Flying enabled", "sprinting": "Sprinting enabled", "crouch": "Crouching",
+            "block_placed": "Block placed", "block_destroyed": "Block destroyed", "inventory_full": "Inventory full",
+            "server_error": "Server error", "reconnecting": "Reconnecting...",
+            "welcome": "Welcome to Minecraft server!", "controls_help": "Use WASD to move"
+        }
         
+        texts = fr_texts if self.get("interface", "language", "fr") == "fr" else en_texts
         return texts.get(key, default)
 
 
