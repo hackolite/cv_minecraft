@@ -77,7 +77,15 @@ def collide_fixed(position, height, world):
             for dy in xrange(height):
                 op = list(np)
                 op[1] -= dy
-                op[i] += face[i]
+                
+                # COLLISION FIX: For downward collision, check the block the player is standing on
+                if face == (0, -1, 0) and i == 1:
+                    # For downward collision, we need to check the block below the player's feet
+                    # Instead of adding face[i] (-1), we check the floor of the current position
+                    op[1] = int(p[1]) - dy
+                else:
+                    op[i] += face[i]
+                
                 if tuple(op) not in world:
                     continue
                     
