@@ -723,7 +723,7 @@ class Window(pyglet.window.Window):
         # Start network connection
         self.network.start_connection()
         
-        # Position tracking for delta updates
+        # Position tracking for updates
         self._last_sent_position = self.position
         self._last_sent_rotation = self.rotation
         self._last_position_update = 0
@@ -834,33 +834,26 @@ class Window(pyglet.window.Window):
             self._send_position_update()
     
     def _send_position_update(self):
-        """Send player position update to server using delta updates."""
+        """Send player position update to server using absolute positions."""
         if self.network.connected:
             current_position = self.position
             current_rotation = self.rotation
-            
-            # Calculate deltas
-            last_pos = self._last_sent_position
-            delta = (
-                current_position[0] - last_pos[0],
-                current_position[1] - last_pos[1], 
-                current_position[2] - last_pos[2]
-            )
             
             # Only send if there's meaningful movement or rotation change
             movement_threshold = 0.01
             rotation_threshold = 0.1
             
-            pos_changed = (abs(delta[0]) > movement_threshold or 
-                          abs(delta[1]) > movement_threshold or 
-                          abs(delta[2]) > movement_threshold)
+            last_pos = self._last_sent_position
+            pos_changed = (abs(current_position[0] - last_pos[0]) > movement_threshold or 
+                          abs(current_position[1] - last_pos[1]) > movement_threshold or 
+                          abs(current_position[2] - last_pos[2]) > movement_threshold)
             
             rot_changed = (abs(current_rotation[0] - self._last_sent_rotation[0]) > rotation_threshold or
                           abs(current_rotation[1] - self._last_sent_rotation[1]) > rotation_threshold)
             
             if pos_changed or rot_changed:
-                # Send delta update using the new function  
-                move_msg = create_player_move_delta_message(delta, current_rotation)
+                # Send absolute position instead of delta  
+                move_msg = create_player_move_message(current_position, current_rotation)
                 self.network.send_message(move_msg)
                 
                 # Update tracking
