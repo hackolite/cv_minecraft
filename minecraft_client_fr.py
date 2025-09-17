@@ -1086,6 +1086,10 @@ Statut: {connection_status}"""
         # Rendu du bloc visé
         self.draw_focused_block()
         
+        # Rendu des joueurs
+        self.draw_players()  # Affiche les autres joueurs comme des cubes colorés
+        self.draw_player_labels()  # Affiche les noms des joueurs
+        
         # Interface 2D
         self.set_2d()
         self.draw_ui()
@@ -1101,6 +1105,105 @@ Statut: {connection_status}"""
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
             pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+    
+    def draw_players(self):
+        """Dessine tous les cubes des joueurs (sauf le joueur local depuis sa propre perspective)."""
+        for player_id, player in self.model.other_players.items():
+            if isinstance(player, PlayerState):
+                # Obtenir ou créer une couleur pour ce joueur
+                color = getattr(player, 'color', None) or self._get_player_color(player_id)
+                
+                # Positionner le cube du joueur
+                x, y, z = player.position
+                # Élever légèrement le joueur au-dessus du sol pour une meilleure visibilité
+                render_y = y + 1.0
+                
+                # Créer les vertices du cube pour ce joueur
+                vertex_data = cube_vertices(x, render_y, z, 0.8)  # Taille légèrement plus petite que les blocs
+                
+                # Définir la couleur du joueur
+                glColor3d(*color)
+                
+                # Dessiner le cube du joueur
+                pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))
+    
+    def draw_player_labels(self):
+        """Dessine les noms des joueurs en 2D au-dessus de leurs positions 3D."""
+        # Obtenir les dimensions de la fenêtre
+        width, height = self.get_size()
+        
+        # Configurer le rendu 2D pour les labels
+        self.set_2d()
+        
+        for player_id, player in self.model.other_players.items():
+            if isinstance(player, PlayerState) and hasattr(player, 'name') and player.name:
+                # Obtenir la position du joueur
+                x, y, z = player.position
+                render_y = y + 2.0  # Au-dessus du cube du joueur
+                
+                # Projection 3D vers 2D (projection simplifiée)
+                player_distance = math.sqrt((x - self.position[0])**2 + 
+                                          (render_y - self.position[1])**2 + 
+                                          (z - self.position[2])**2)
+                
+                # Afficher les labels seulement pour les joueurs à distance raisonnable
+                if player_distance < 20.0:
+                    # Projection 3D vers 2D simple
+                    # Calculer la position relative à la vue du joueur
+                    dx = x - self.position[0]
+                    dy = render_y - self.position[1]
+                    dz = z - self.position[2]
+                    
+                    # Transformer vers l'espace écran (approche simplifiée)
+                    screen_x = width // 2 + int(dx * 50 / max(abs(dz), 1))
+                    screen_y = height // 2 + int(dy * 50 / max(abs(dz), 1))
+                    
+                    # Dessiner seulement si à l'écran et devant le joueur
+                    if (0 <= screen_x <= width and 0 <= screen_y <= height and dz > 0):
+                        # Créer le label pour ce joueur
+                        label = pyglet.text.Label(
+                            player.name,
+                            font_name='Arial',
+                            font_size=12,
+                            x=screen_x,
+                            y=screen_y,
+                            anchor_x='center',
+                            anchor_y='center',
+                            color=(255, 255, 255, 255)
+                        )
+                        label.draw()
+        
+        # Restaurer le rendu 3D
+        self.set_3d()
+    
+    def _get_player_color(self, player_id):
+        """Obtient ou crée une couleur unique pour un joueur."""
+        # Cache des couleurs des joueurs
+        if not hasattr(self, '_player_colors'):
+            self._player_colors = {}
+        
+        if player_id not in self._player_colors:
+            # Générer une couleur basée sur l'ID du joueur pour la cohérence
+            import hashlib
+            hash_object = hashlib.md5(player_id.encode())
+            hash_hex = hash_object.hexdigest()
+            
+            # Convertir les premiers 6 caractères en couleur RGB
+            r = int(hash_hex[0:2], 16) / 255.0
+            g = int(hash_hex[2:4], 16) / 255.0  
+            b = int(hash_hex[4:6], 16) / 255.0
+            
+            # Assurer que la couleur est assez vive
+            brightness = (r + g + b) / 3
+            if brightness < 0.5:
+                factor = 0.7 / brightness
+                r = min(1.0, r * factor)
+                g = min(1.0, g * factor)
+                b = min(1.0, b * factor)
+            
+            self._player_colors[player_id] = (r, g, b)
+            
+        return self._player_colors[player_id]
     
     def draw_ui(self):
         """Dessine l'interface utilisateur."""
