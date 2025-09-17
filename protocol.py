@@ -63,19 +63,42 @@ class Message:
         msg_type = MessageType(data["type"])
         return cls(msg_type, data["data"], data.get("player_id"))
 
-class PlayerState:
-    """Represents a player's state in the game world."""
+class Cube:
+    """Base class representing a cube in the game world."""
+    
+    def __init__(self, cube_id: str, position: Tuple[float, float, float],
+                 rotation: Tuple[float, float] = (0, 0), size: float = 0.4):
+        self.id = cube_id
+        self.position = position  # (x, y, z)
+        self.rotation = rotation  # (horizontal, vertical)
+        self.size = size  # Half-size of the cube (cube extends from -size to +size)
+        self.velocity = [0.0, 0.0, 0.0]  # (dx, dy, dz)
+        self.color = None  # Will be set by the model
+    
+    def update_position(self, position: Tuple[float, float, float]):
+        """Update the cube's position."""
+        self.position = position
+    
+    def update_rotation(self, rotation: Tuple[float, float]):
+        """Update the cube's rotation."""
+        self.rotation = rotation
+    
+    def get_render_position(self) -> Tuple[float, float, float]:
+        """Get the position for rendering (slightly elevated for players)."""
+        x, y, z = self.position
+        return (x, y + 1.0, z)  # Elevate cubes above ground
+
+class PlayerState(Cube):
+    """Represents a player's state in the game world. Extends Cube for unified handling."""
 
     def __init__(self, player_id: str, position: Tuple[float, float, float],
                  rotation: Tuple[float, float], name: Optional[str] = None):
-        self.id = player_id
-        self.position = position  # (x, y, z)
-        self.rotation = rotation  # (horizontal, vertical)
+        super().__init__(player_id, position, rotation, size=0.4)
         self.name = name or f"Player_{player_id[:8]}"
         self.flying = False
         self.sprinting = False
-        self.velocity = [0.0, 0.0, 0.0]  # For server-side physics (dx, dy, dz)
         self.on_ground = False
+        self.is_local = False  # Flag to identify local player
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -87,7 +110,8 @@ class PlayerState:
             "flying": self.flying,
             "sprinting": self.sprinting,
             "velocity": self.velocity,
-            "on_ground": self.on_ground
+            "on_ground": self.on_ground,
+            "size": self.size
         }
 
     @classmethod
@@ -96,6 +120,7 @@ class PlayerState:
         player = cls(data["id"], tuple(data["position"]), tuple(data["rotation"]), data.get("name"))
         player.flying = data.get("flying", False)
         player.sprinting = data.get("sprinting", False)
+        player.size = data.get("size", 0.4)
         return player
 
 class BlockUpdate:
@@ -123,11 +148,11 @@ def create_player_join_message(player_name: str) -> Message:
     """Create a player join message."""
     return Message(MessageType.PLAYER_JOIN, {"name": player_name})
 
-def create_player_move_message(delta: Tuple[float, float, float],
+def create_player_move_message(position: Tuple[float, float, float],
                              rotation: Tuple[float, float]) -> Message:
-    """Create a player movement message with delta updates."""
+    """Create a player movement message with position updates."""
     return Message(MessageType.PLAYER_MOVE, {
-        "delta": delta,
+        "position": position,
         "rotation": rotation
     })
 

@@ -164,8 +164,8 @@ class ClientModel:
         # Simple function queue for rendering operations
         self.queue = deque()
         
-        # Other players in the world
-        self.other_players = {}
+        # All cubes (players) in the world - unified storage
+        self.cubes = {}  # Maps cube_id to Cube/PlayerState objects
         
         # Player cube colors and rendering
         self.player_colors = {}  # Maps player_id to (r, g, b) color
@@ -173,6 +173,62 @@ class ClientModel:
         
         # Cache for exposure calculations to improve performance
         self.exposure_cache = {}
+        
+        # Local player reference for easy access
+        self.local_player = None
+    
+    @property
+    def other_players(self):
+        """Backward compatibility: return non-local players as a dict."""
+        return {cube.id: cube for cube in self.cubes.values() 
+                if isinstance(cube, PlayerState) and not cube.is_local}
+    
+    def add_cube(self, cube):
+        """Add a cube to the world."""
+        self.cubes[cube.id] = cube
+        # Assign a color if it's a player
+        if isinstance(cube, PlayerState):
+            cube.color = self.get_or_create_player_color(cube.id)
+    
+    def remove_cube(self, cube_id):
+        """Remove a cube from the world."""
+        cube = self.cubes.pop(cube_id, None)
+        if cube and isinstance(cube, PlayerState):
+            self.remove_player(cube_id)
+        return cube
+    
+    def get_cube(self, cube_id):
+        """Get a cube by ID."""
+        return self.cubes.get(cube_id)
+    
+    def get_all_cubes(self):
+        """Get all cubes in the world."""
+        return list(self.cubes.values())
+    
+    def get_other_cubes(self):
+        """Get all cubes except the local player."""
+        return [cube for cube in self.cubes.values() 
+                if not (isinstance(cube, PlayerState) and cube.is_local)]
+    
+    def create_local_player(self, player_id: str, position: Tuple[float, float, float], 
+                           rotation: Tuple[float, float] = (0, 0), name: str = None):
+        """Create and add the local player cube."""
+        self.local_player = PlayerState(player_id, position, rotation, name)
+        self.local_player.is_local = True
+        self.add_cube(self.local_player)
+        return self.local_player
+    
+    def update_all_cubes(self, dt):
+        """Update all cubes in the universe with unified logic."""
+        # For now, only the local player has physics and movement
+        # Remote players are updated through network messages
+        # This method provides a hook for future agent-based logic
+        
+        for cube in self.cubes.values():
+            if isinstance(cube, PlayerState):
+                # Apply any cube-wide updates here
+                # For example, future agent behaviors could be applied to all cubes
+                pass
     
     def invalidate_exposure_cache(self, position):
         """Invalidate exposure cache for a position and its neighbors."""
@@ -193,8 +249,8 @@ class ClientModel:
     
     def remove_player(self, player_id):
         """Remove a player and clean up their visual representation."""
-        # Remove from other_players
-        self.other_players.pop(player_id, None)
+        # Remove from cubes
+        self.cubes.pop(player_id, None)
         
         # Clean up color (optional - could keep for consistency if they reconnect)
         self.player_colors.pop(player_id, None)
@@ -498,7 +554,8 @@ class NetworkClient:
             player_id = player_data["id"]
             
             if player_id != self.player_id:  # Don't update our own position
-                self.window.model.other_players[player_id] = PlayerState.from_dict(player_data)
+                player = PlayerState.from_dict(player_data)
+                self.window.model.add_cube(player)
         
         elif message.type == MessageType.PLAYER_LIST:
             # Update player list
@@ -509,15 +566,17 @@ class NetworkClient:
                                 if player_data["id"] != self.player_id}
             
             # Remove players that are no longer in the list
-            for player_id in list(self.window.model.other_players.keys()):
-                if player_id not in current_player_ids:
-                    self.window.model.remove_player(player_id)
+            for cube_id in list(self.window.model.cubes.keys()):
+                cube = self.window.model.cubes[cube_id]
+                if (isinstance(cube, PlayerState) and not cube.is_local and 
+                    cube_id not in current_player_ids):
+                    self.window.model.remove_cube(cube_id)
             
             # Update/add current players
             for player_data in players:
                 player = PlayerState.from_dict(player_data)
                 if player.id != self.player_id:
-                    self.window.model.other_players[player.id] = player
+                    self.window.model.add_cube(player)
         
         elif message.type == MessageType.CHAT_BROADCAST:
             # Show chat message
@@ -560,18 +619,12 @@ class Window(pyglet.window.Window):
         # Whether or not the window exclusively captures the mouse.
         self.exclusive = False
         
-        # When flying gravity has no effect and speed is increased.
-        self.flying = False
-        
         # Used for constant jumping.
         self.jumping = False
         self.jumped = False
         
         # If this is true, a crouch offset is added to the final glTranslate
         self.crouch = False
-        
-        # Player sprint
-        self.sprinting = False
         
         # This is an offset value so stuff like speed potions can also be easily added
         self.fov_offset = 0
@@ -581,13 +634,13 @@ class Window(pyglet.window.Window):
         # Strafing is moving lateral to the direction you are facing
         self.strafe = [0, 0]
         
-        # Current (x, y, z) position in the world, specified with floats.
-        self.position = (30, 50, 80)
+        # Instance of the model that handles the world.
+        self.model = ClientModel()
         
-        # First element is rotation of the player in the x-z plane (ground
-        # plane) measured from the z-axis down. The second is the rotation
-        # angle from the ground plane up. Rotation is in degrees.
-        self.rotation = (0, 0)
+        # Create local player cube
+        import uuid
+        local_player_id = str(uuid.uuid4())
+        self.player_cube = self.model.create_local_player(local_player_id, (30, 50, 80), (0, 0))
         
         # Which sector the player is currently in.
         self.sector = None
@@ -608,8 +661,6 @@ class Window(pyglet.window.Window):
         self.num_keys = [
             key._1, key._2, key._3, key._4, key._5,
             key._6, key._7, key._8, key._9, key._0]
-        
-        # Instance of the model that handles the world.
         self.model = ClientModel()
         
         # Network client for server communication
@@ -626,6 +677,46 @@ class Window(pyglet.window.Window):
         
         # Start network connection
         self.network.start_connection()
+    
+    @property
+    def position(self):
+        """Get the local player's position."""
+        return self.player_cube.position
+    
+    @position.setter
+    def position(self, value):
+        """Set the local player's position."""
+        self.player_cube.update_position(value)
+    
+    @property
+    def rotation(self):
+        """Get the local player's rotation."""
+        return self.player_cube.rotation
+    
+    @rotation.setter 
+    def rotation(self, value):
+        """Set the local player's rotation."""
+        self.player_cube.update_rotation(value)
+    
+    @property
+    def flying(self):
+        """Get the local player's flying state."""
+        return self.player_cube.flying
+    
+    @flying.setter
+    def flying(self, value):
+        """Set the local player's flying state."""
+        self.player_cube.flying = value
+        
+    @property
+    def sprinting(self):
+        """Get the local player's sprinting state."""
+        return self.player_cube.sprinting
+    
+    @sprinting.setter
+    def sprinting(self, value):
+        """Set the local player's sprinting state."""
+        self.player_cube.sprinting = value
     
     def set_exclusive_mouse(self, exclusive):
         """If exclusive is True, the game will capture the mouse."""
@@ -681,6 +772,9 @@ class Window(pyglet.window.Window):
         dt = min(dt, 0.2)
         for _ in xrange(m):
             self._update(dt / m)
+        
+        # Update all cubes with unified logic
+        self.model.update_all_cubes(dt)
         
         # Send position update to server (throttled)
         if hasattr(self, '_last_position_update'):
@@ -939,23 +1033,23 @@ class Window(pyglet.window.Window):
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
     
     def draw_players(self):
-        """Draw other players as colored cubes."""
-        for player_id, player in self.model.other_players.items():
-            # Get or create a color for this player
-            color = self.model.get_or_create_player_color(player_id)
-            
-            # Position the player cube slightly above ground
-            x, y, z = player.position
-            y += 1.0  # Raise the cube above ground level
-            
-            # Create cube vertices for this player
-            vertex_data = cube_vertices(x, y, z, 0.4)  # Slightly smaller than blocks
-            
-            # Set the player's color
-            glColor3d(*color)
-            
-            # Draw the player cube
-            pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))
+        """Draw all player cubes (except local player from their own perspective)."""
+        for cube in self.model.get_other_cubes():
+            if isinstance(cube, PlayerState):
+                # Get or create a color for this player
+                color = cube.color or self.model.get_or_create_player_color(cube.id)
+                
+                # Position the player cube using the cube's render position
+                x, y, z = cube.get_render_position()
+                
+                # Create cube vertices for this player
+                vertex_data = cube_vertices(x, y, z, cube.size)
+                
+                # Set the player's color
+                glColor3d(*color)
+                
+                # Draw the player cube
+                pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))
     
     def draw_label(self):
         """Draw the label in the top left of the screen."""

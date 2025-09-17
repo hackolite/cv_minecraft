@@ -55,7 +55,7 @@ def test_player_cube_rendering():
                     
                     # Test 2: Player management
                     player = PlayerState(player_id, (10, 20, 30), (0, 0), "TestPlayer")
-                    model.other_players[player_id] = player
+                    model.add_cube(player)
                     
                     assert player_id in model.other_players, "Player should be tracked"
                     assert player_id in model.player_colors, "Player should have color"
