@@ -242,6 +242,17 @@ class AdvancedNetworkClient:
             except Exception as e:
                 print(f"Erreur envoi: {e}")
     
+    def get_connection_stats(self):
+        """Retourne les statistiques de connexion."""
+        return {
+            "connected": self.connected,
+            "ping_ms": self.ping_ms,
+            "messages_sent": self.messages_sent,
+            "messages_received": self.messages_received,
+            "connection_attempts": self.connection_attempts,
+            "server_url": self.server_url
+        }
+    
     def disconnect(self):
         """Se déconnecte du serveur."""
         if self.websocket and self.loop:
