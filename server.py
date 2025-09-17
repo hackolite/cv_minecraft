@@ -305,19 +305,42 @@ class MinecraftServer:
         # Check a more comprehensive area around the player
         # Player occupies roughly 0.8x0.8x1.8 space (size 0.4 means half-size)
         player_size = 0.4
-        player_height = int(PLAYER_HEIGHT)
+        player_height = PLAYER_HEIGHT  # Use float, not int
         
-        # Check all blocks that the player's bounding box would intersect
-        min_x, max_x = int(x - player_size), int(x + player_size) + 1
-        min_y, max_y = int(y), int(y + player_height) + 1  
-        min_z, max_z = int(z - player_size), int(z + player_size) + 1
+        # Player bounding box: from (x-size, y, z-size) to (x+size, y+height, z+size)
+        # Check all block positions that intersect with this bounding box
+        min_x = int(x - player_size)
+        max_x = int(x + player_size) + 1
+        min_y = int(y)  # Player's feet level
+        max_y = int(y + player_height) + 1  # Player's head level
+        min_z = int(z - player_size)  
+        max_z = int(z + player_size) + 1
         
         for check_x in range(min_x, max_x):
             for check_y in range(min_y, max_y):
                 for check_z in range(min_z, max_z):
                     check_pos = (check_x, check_y, check_z)
                     if check_pos in self.world.world:
-                        return True
+                        # Additional check: ensure the player's actual bounding box intersects the block
+                        # Block occupies space from (check_x, check_y, check_z) to (check_x+1, check_y+1, check_z+1)
+                        # Player occupies space from (x-size, y, z-size) to (x+size, y+height, z+size)
+                        
+                        # Check if bounding boxes actually overlap
+                        block_x_min, block_x_max = check_x, check_x + 1
+                        block_y_min, block_y_max = check_y, check_y + 1  
+                        block_z_min, block_z_max = check_z, check_z + 1
+                        
+                        player_x_min, player_x_max = x - player_size, x + player_size
+                        player_y_min, player_y_max = y, y + player_height
+                        player_z_min, player_z_max = z - player_size, z + player_size
+                        
+                        # Check overlap in all three dimensions
+                        x_overlap = (player_x_min < block_x_max) and (player_x_max > block_x_min)
+                        y_overlap = (player_y_min < block_y_max) and (player_y_max > block_y_min)
+                        z_overlap = (player_z_min < block_z_max) and (player_z_max > block_z_min)
+                        
+                        if x_overlap and y_overlap and z_overlap:
+                            return True
         return False
 
     def _check_player_collision(self, player_id: str, position: Tuple[float, float, float]) -> bool:
