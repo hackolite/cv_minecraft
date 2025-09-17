@@ -188,6 +188,10 @@ def create_world_update_message(blocks: List[BlockUpdate]) -> Message:
         "blocks": [block.to_dict() for block in blocks]
     })
 
+def create_player_update_message(player: PlayerState) -> Message:
+    """Create a player update message."""
+    return Message(MessageType.PLAYER_UPDATE, player.to_dict())
+
 def create_player_list_message(players: List[PlayerState]) -> Message:
     """Create a player list message."""
     return Message(MessageType.PLAYER_LIST, {
