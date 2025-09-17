@@ -663,16 +663,21 @@ class MinecraftWindow(pyglet.window.Window):
         )
         
         # Viseur simple
+        self.setup_crosshair()
+    
+    def setup_crosshair(self):
+        """Configure le viseur (crosshair) au centre de l'écran."""
         x, y, n = self.width // 2, self.height // 2, 10
         try:
             color = config.get("interface", "crosshair_color", [255, 255, 255])
             self.reticle = pyglet.graphics.vertex_list(4,
-                ('v2f/static', (x - n, y, x + n, y, x, y - n, x, y + n)),
+                ('v2f/static', (float(x - n), float(y), float(x + n), float(y), float(x), float(y - n), float(x), float(y + n))),
                 ('c3B/static', color * 4)
             )
         except:
+            # Fallback without color if there's an issue
             self.reticle = pyglet.graphics.vertex_list(4,
-                ('v2f/static', (x - n, y, x + n, y, x, y - n, x, y + n))
+                ('v2f/static', (float(x - n), float(y), float(x + n), float(y), float(x), float(y - n), float(x), float(y + n)))
             )
     
     def show_message(self, text: str, duration: float = 3.0):
