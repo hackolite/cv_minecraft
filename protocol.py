@@ -156,6 +156,14 @@ def create_player_move_message(position: Tuple[float, float, float],
         "rotation": rotation
     })
 
+def create_player_move_delta_message(delta: Tuple[float, float, float],
+                                   rotation: Tuple[float, float]) -> Message:
+    """Create a player movement message with delta updates."""
+    return Message(MessageType.PLAYER_MOVE, {
+        "delta": delta,
+        "rotation": rotation
+    })
+
 def create_block_place_message(position: Tuple[int, int, int], block_type: str) -> Message:
     """Create a block placement message."""
     return Message(MessageType.BLOCK_PLACE, {

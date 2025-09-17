@@ -13,6 +13,8 @@ import asyncio
 import threading
 import websockets
 import json
+import os
+import platform
 from collections import deque
 
 import pyglet
@@ -44,6 +46,43 @@ except ImportError:
     get_default_shader = None
 
 from protocol import *
+
+def get_username():
+    """Get username from user with platform-specific optimizations."""
+    # Try to get username from environment variables first
+    current_user = None
+    
+    if platform.system() == "Windows":
+        current_user = os.environ.get("USERNAME")
+    else:
+        current_user = os.environ.get("USER") or os.environ.get("LOGNAME")
+    
+    if current_user:
+        # Prompt with current username as default
+        try:
+            username = input(f"Enter your username (default: {current_user}): ").strip()
+            if not username:
+                username = current_user
+        except (KeyboardInterrupt, EOFError):
+            print(f"\nUsing default username: {current_user}")
+            username = current_user
+    else:
+        # Fallback prompt
+        try:
+            username = input("Enter your username: ").strip()
+            if not username:
+                username = "Player"
+        except (KeyboardInterrupt, EOFError):
+            print("\nUsing default username: Player")
+            username = "Player"
+    
+    # Validate and clean username
+    username = username.replace(" ", "_")[:32]  # Replace spaces, limit length
+    if not username:
+        username = "Player"
+    
+    print(f"Playing as: {username}")
+    return username
 
 TICKS_PER_SEC = 60
 
@@ -472,8 +511,9 @@ class ClientModel:
 class NetworkClient:
     """Handles network communication with the server."""
     
-    def __init__(self, window, server_url="ws://localhost:8765"):
+    def __init__(self, window, username="Player", server_url="ws://localhost:8765"):
         self.window = window
+        self.username = username
         self.server_url = server_url
         self.websocket = None
         self.connected = False
@@ -506,7 +546,7 @@ class NetworkClient:
             print(f"Connected to server at {self.server_url}")
             
             # Send join message
-            join_msg = create_player_join_message("Player")
+            join_msg = create_player_join_message(self.username)
             await self.websocket.send(join_msg.to_json())
             
             # Listen for messages
@@ -527,8 +567,10 @@ class NetworkClient:
     def _handle_server_message(self, message: Message):
         """Handle a message from the server (called on main thread)."""
         if message.type == MessageType.WORLD_INIT:
-            # Load initial world info
+            # Load initial world info and extract player ID
+            self.player_id = message.data.get("player_id")
             self.window.model.load_world_data(message.data)
+            print(f"Connected as player ID: {self.player_id}")
         
         elif message.type == MessageType.WORLD_CHUNK:
             # Load world chunk
@@ -613,8 +655,11 @@ class NetworkClient:
 class Window(pyglet.window.Window):
     """Main game window - handles rendering and input."""
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, username="Player", *args, **kwargs):
         super(Window, self).__init__(*args, **kwargs)
+        
+        # Store username for display and networking
+        self.username = username
         
         # Whether or not the window exclusively captures the mouse.
         self.exclusive = False
@@ -637,10 +682,10 @@ class Window(pyglet.window.Window):
         # Instance of the model that handles the world.
         self.model = ClientModel()
         
-        # Create local player cube
+        # Create local player cube  
         import uuid
         local_player_id = str(uuid.uuid4())
-        self.player_cube = self.model.create_local_player(local_player_id, (30, 50, 80), (0, 0))
+        self.player_cube = self.model.create_local_player(local_player_id, (30, 50, 80), (0, 0), self.username)
         
         # Which sector the player is currently in.
         self.sector = None
@@ -664,7 +709,7 @@ class Window(pyglet.window.Window):
         self.model = ClientModel()
         
         # Network client for server communication
-        self.network = NetworkClient(self)
+        self.network = NetworkClient(self, self.username)
         
         # The label that is displayed in the top left of the canvas.
         self.label = pyglet.text.Label('', font_name='Arial', font_size=18,
@@ -677,6 +722,11 @@ class Window(pyglet.window.Window):
         
         # Start network connection
         self.network.start_connection()
+        
+        # Position tracking for delta updates
+        self._last_sent_position = self.position
+        self._last_sent_rotation = self.rotation
+        self._last_position_update = 0
     
     @property
     def position(self):
@@ -784,11 +834,39 @@ class Window(pyglet.window.Window):
             self._send_position_update()
     
     def _send_position_update(self):
-        """Send player position update to server."""
+        """Send player position update to server using delta updates."""
         if self.network.connected:
-            move_msg = create_player_move_message(self.position, self.rotation)
-            self.network.send_message(move_msg)
-            self._last_position_update = time.time()
+            current_position = self.position
+            current_rotation = self.rotation
+            
+            # Calculate deltas
+            last_pos = self._last_sent_position
+            delta = (
+                current_position[0] - last_pos[0],
+                current_position[1] - last_pos[1], 
+                current_position[2] - last_pos[2]
+            )
+            
+            # Only send if there's meaningful movement or rotation change
+            movement_threshold = 0.01
+            rotation_threshold = 0.1
+            
+            pos_changed = (abs(delta[0]) > movement_threshold or 
+                          abs(delta[1]) > movement_threshold or 
+                          abs(delta[2]) > movement_threshold)
+            
+            rot_changed = (abs(current_rotation[0] - self._last_sent_rotation[0]) > rotation_threshold or
+                          abs(current_rotation[1] - self._last_sent_rotation[1]) > rotation_threshold)
+            
+            if pos_changed or rot_changed:
+                # Send delta update using the new function  
+                move_msg = create_player_move_delta_message(delta, current_rotation)
+                self.network.send_message(move_msg)
+                
+                # Update tracking
+                self._last_sent_position = current_position
+                self._last_sent_rotation = current_rotation
+                self._last_position_update = time.time()
     
     def _update(self, dt):
         """Private implementation of the update() method."""
@@ -1016,6 +1094,7 @@ class Window(pyglet.window.Window):
         self.model.batch.draw()
         self.draw_focused_block()
         self.draw_players()  # Draw other players as colored cubes
+        self.draw_player_labels()  # Draw player names above cubes
         self.set_2d()
         self.draw_label()
         self.draw_reticle()
@@ -1050,6 +1129,62 @@ class Window(pyglet.window.Window):
                 
                 # Draw the player cube
                 pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))
+    
+    def draw_player_labels(self):
+        """Draw player name labels in 2D over their 3D positions."""
+        # Get window dimensions
+        width, height = self.get_size()
+        
+        # Set up 2D rendering for labels
+        self.set_2d()
+        
+        for cube in self.model.get_other_cubes():
+            if isinstance(cube, PlayerState) and cube.name:
+                # Get player position
+                x, y, z = cube.get_render_position()
+                
+                # Project 3D position to screen coordinates (simplified projection)
+                # This is a basic projection - could be improved with proper matrix math
+                player_distance = math.sqrt((x - self.position[0])**2 + 
+                                          (y - self.position[1])**2 + 
+                                          (z - self.position[2])**2)
+                
+                # Only show labels for players within reasonable distance
+                if player_distance < 20.0:
+                    # Simple 3D to 2D projection (basic approach)
+                    # Calculate relative position to player view
+                    dx = x - self.position[0]
+                    dy = y - self.position[1] + 1.0  # Offset above cube
+                    dz = z - self.position[2]
+                    
+                    # Rotate based on player rotation
+                    rotation_x, rotation_y = self.rotation
+                    cos_x = math.cos(math.radians(rotation_x))
+                    sin_x = math.sin(math.radians(rotation_x))
+                    cos_y = math.cos(math.radians(rotation_y))
+                    sin_y = math.sin(math.radians(rotation_y))
+                    
+                    # Transform to screen space (simplified)
+                    screen_x = width // 2 + int(dx * 50 / max(abs(dz), 1))
+                    screen_y = height // 2 + int(dy * 50 / max(abs(dz), 1))
+                    
+                    # Only draw if on screen and in front of player
+                    if (0 <= screen_x <= width and 0 <= screen_y <= height and dz > 0):
+                        # Create label for this player
+                        label = pyglet.text.Label(
+                            cube.name,
+                            font_name='Arial',
+                            font_size=12,
+                            x=screen_x,
+                            y=screen_y,
+                            anchor_x='center',
+                            anchor_y='center',
+                            color=(255, 255, 255, 255)
+                        )
+                        label.draw()
+        
+        # Restore 3D rendering
+        self.set_3d()
     
     def draw_label(self):
         """Draw the label in the top left of the screen."""
@@ -1096,7 +1231,10 @@ def setup():
 
 def main():
     """Main entry point for the client."""
-    window = Window(width=1280, height=720, caption='Minecraft Client', resizable=True)
+    print("=== Minecraft Client ===")
+    username = get_username()
+    
+    window = Window(username, width=1280, height=720, caption='Minecraft Client', resizable=True)
     window.set_exclusive_mouse(True)
     setup()
     pyglet.app.run()

@@ -474,8 +474,10 @@ class MinecraftServer:
             
         self.players[player_id].name = player_name.strip()
         
-        # Send world initialization
-        await self.send_to_client(player_id, create_world_init_message(self.world.get_world_data()))
+        # Send world initialization with player ID
+        world_data = self.world.get_world_data()
+        world_data["player_id"] = player_id  # Include player ID so client knows its own ID
+        await self.send_to_client(player_id, create_world_init_message(world_data))
         
         # Send world chunks
         chunks_sent = 0
