@@ -78,10 +78,10 @@ def test_unified_cube_system():
                     
                     # Test 5: Cube render positions work
                     local_render_pos = local_player.get_render_position()
-                    assert local_render_pos == (10, 20, 30), "Local player render position should be on ground"
+                    assert local_render_pos == (10, 20.4, 30), "Local player render position should be elevated by size"
                     
                     remote_render_pos = remote_player.get_render_position()
-                    assert remote_render_pos == (50, 60, 70), "Remote player render position should be on ground"
+                    assert remote_render_pos == (50, 60.4, 70), "Remote player render position should be elevated by size"
                     
                     print("✅ Cube render positions work correctly")
                     
