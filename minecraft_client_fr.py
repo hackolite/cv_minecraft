@@ -563,7 +563,7 @@ class EnhancedClientModel:
 def block_texture_data(block_type):
     """Retourne les coordonnées de texture pour un type de bloc."""
     def tex_coord_4x3(x, y):
-        m_x, m_y = 1.0 / 4.0, 1.0 / 3.0
+        m_x, m_y = 1.0 / 4.0, 1.0 / 4.0
         dx, dy = x * m_x, y * m_y
         return [dx, dy, dx + m_x, dy, dx + m_x, dy + m_y, dx, dy + m_y]
     
