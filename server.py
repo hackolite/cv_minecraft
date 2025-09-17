@@ -383,6 +383,10 @@ class MinecraftServer:
         if time.time() - player.last_move_time < 0.5:  # 500ms grace period (longer)
             return
         
+        # Don't apply gravity if player is already on the ground (prevents sinking)
+        if player.on_ground:
+            return
+        
         # Apply gravity
         player.velocity[1] -= GRAVITY * dt
         # Apply terminal velocity
