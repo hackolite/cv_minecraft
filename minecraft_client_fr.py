@@ -567,7 +567,7 @@ def block_texture_data(block_type):
         return [dx, dy, dx + m_x, dy, dx + m_x, dy + m_y, dx, dy + m_y]
     
     textures = {
-        BlockType.GRASS: tex_coord_4x3(0, 0) * 6,  # Position (0,0) - coin supérieur gauche
+        BlockType.GRASS: tex_coord_4x3(1, 0) * 6,  # Position (1,0) - texture correcte pour l'herbe
         BlockType.SAND: tex_coord_4x3(1, 1) * 6,   # Position (1,1) - milieu centre-gauche
         BlockType.BRICK: tex_coord_4x3(2, 0) * 6,  # Position (2,0) - haut centre-droit
         BlockType.STONE: tex_coord_4x3(2, 1) * 6,  # Position (2,1) - milieu centre-droit
@@ -575,7 +575,7 @@ def block_texture_data(block_type):
         BlockType.LEAF: tex_coord_4x3(3, 0) * 6,   # Position (3,0) - haut droite
         BlockType.WATER: tex_coord_4x3(0, 2) * 6,  # Position (0,2) - bas gauche
     }
-    return textures.get(block_type, tex_coord_4x3(0, 0) * 6)
+    return textures.get(block_type, tex_coord_4x3(1, 0) * 6)
 
 
 class MinecraftWindow(pyglet.window.Window):
