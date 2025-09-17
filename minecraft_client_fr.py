@@ -206,7 +206,6 @@ class AdvancedNetworkClient:
         while True:
             try:
                 await self._connect_to_server()
-                # Si on arrive ici, la connexion s'est fermée normalement
                 break
             except Exception as e:
                 self.connected = False
@@ -216,12 +215,9 @@ class AdvancedNetworkClient:
                     print(f"Nombre maximum de tentatives de connexion atteint: {self.max_connection_attempts}")
                     break
                 
-                print(f"Tentative de connexion {self.connection_attempts}/{self.max_connection_attempts} échouée: {e}")
-                
                 if config.get("server", "auto_reconnect", True):
-                    print(f"Reconnexion dans {self.reconnect_delay} secondes...")
                     await asyncio.sleep(self.reconnect_delay)
-                    self.reconnect_delay = min(self.reconnect_delay * 1.5, 30)  # Backoff exponentiel
+                    self.reconnect_delay = min(self.reconnect_delay * 1.5, 30)
                 else:
                     break
     
@@ -230,10 +226,8 @@ class AdvancedNetworkClient:
         timeout = config.get("server", "connection_timeout", 10)
         
         try:
-            print(f"Connexion à {self.server_url}...")
             self.websocket = await asyncio.wait_for(
-                websockets.connect(self.server_url), 
-                timeout=timeout
+                websockets.connect(self.server_url), timeout=timeout
             )
             
             self.connected = True
@@ -241,38 +235,30 @@ class AdvancedNetworkClient:
             self.connection_attempts = 0
             self.reconnect_delay = 5
             
-            print(config.get_localized_text("connected"))
-            
             # Envoie le message de connexion
             player_name = config.get("player", "name", "Joueur")
             join_msg = create_player_join_message(player_name)
             await self.websocket.send(join_msg.to_json())
             self.messages_sent += 1
             
-            # Démarre le ping
+            # Démarre le ping et écoute les messages
             ping_task = asyncio.create_task(self._ping_loop())
             
-            # Écoute les messages
             try:
                 async for message_str in self.websocket:
                     try:
                         message = Message.from_json(message_str)
                         self.messages_received += 1
-                        
-                        # Programme la gestion du message sur le thread principal
                         pyglet.clock.schedule_once(
                             lambda dt, msg=message: self._handle_server_message(msg), 0
                         )
-                    except Exception as e:
-                        print(f"Erreur lors du parsing du message: {e}")
-                        
+                    except Exception:
+                        pass  # Skip invalid messages
             finally:
                 ping_task.cancel()
                 
         except asyncio.TimeoutError:
             raise Exception(f"Timeout de connexion après {timeout}s")
-        except Exception as e:
-            raise Exception(f"Erreur de connexion: {e}")
         finally:
             self.connected = False
             self.websocket = None
@@ -306,55 +292,22 @@ class AdvancedNetworkClient:
                     
                     if block_update.block_type == BlockType.AIR:
                         self.window.model.remove_block(position)
-                        self.window.show_message(config.get_localized_text("block_destroyed"))
                     else:
                         self.window.model.add_block(position, block_update.block_type)
-                        self.window.show_message(config.get_localized_text("block_placed"))
                         
             elif message.type == MessageType.PLAYER_UPDATE:
                 player_data = message.data
                 player_id = player_data["id"]
                 
                 if player_id == self.player_id:
-                    # Server is sending physics updates for our own player
-                    old_pos = self.window.position
-                    new_pos = tuple(player_data["position"])
-                    print(f"🎮 CLIENT_FR: Physics update for our player")
-                    print(f"   Old position: {old_pos}")
-                    print(f"   New position: {new_pos}")
-                    
-                    self.window.position = new_pos
-                    self.window.dy = player_data["velocity"][1]  # Update Y velocity from server
+                    # Server physics update for our player
+                    self.window.position = tuple(player_data["position"])
+                    self.window.dy = player_data["velocity"][1]
                     self.window.on_ground = player_data.get("on_ground", False)
                 else:
-                    # Update other player position with debug logging
+                    # Update other player position
                     player = PlayerState.from_dict(player_data)
-                    
-                    # DEBUG: Log player position updates
-                    old_player = self.window.model.other_players.get(player_id)
-                    if old_player:
-                        old_pos = old_player.position
-                        new_pos = player.position
-                        distance = ((new_pos[0] - old_pos[0])**2 + 
-                                  (new_pos[1] - old_pos[1])**2 + 
-                                  (new_pos[2] - old_pos[2])**2)**0.5
-                        print(f"🎮 CLIENT_FR: Updating player {player.name or player_id[:8]}")
-                        print(f"   Old position: {old_pos}")
-                        print(f"   New position: {new_pos}")
-                        print(f"   Movement distance: {distance:.2f}")
-                    else:
-                        print(f"🎮 CLIENT_FR: New player {player.name or player_id[:8]} at {player.position}")
-                    
-                    # Store the updated player position
                     self.window.model.other_players[player_id] = player
-                    
-                    # DEBUG: Verify storage
-                    stored_player = self.window.model.other_players.get(player_id)
-                    if stored_player:
-                        print(f"   ✅ Player stored successfully at {stored_player.position}")
-                        print(f"   📊 Total other players: {len(self.window.model.other_players)}")
-                    else:
-                        print(f"   ❌ Failed to store player!")
                     
             elif message.type == MessageType.PLAYER_LIST:
                 players = message.data.get("players", [])
@@ -457,18 +410,14 @@ class EnhancedClientModel:
     def load_world_chunk(self, chunk_data):
         """Charge un chunk de données du monde."""
         blocks = chunk_data.get("blocks", {})
-        blocks_loaded = 0
         
         for pos_str, block_type in blocks.items():
             try:
                 x, y, z = map(int, pos_str.split(','))
                 position = (x, y, z)
                 self.add_block(position, block_type, immediate=False)
-                blocks_loaded += 1
             except ValueError:
                 continue
-        
-        print(f"Chunk chargé: {blocks_loaded} blocs")
     
     def add_block(self, position, block_type, immediate=True):
         """Ajoute un bloc au monde."""
@@ -512,20 +461,13 @@ class EnhancedClientModel:
     def show_block(self, position, immediate=True):
         """Affiche un bloc."""
         block_type = self.world.get(position)
-        if not block_type:
-            return
-            
-        if position in self.shown:
-            return
-            
-        if not self.group:
+        if not block_type or position in self.shown or not self.group:
             return
             
         x, y, z = position
         vertex_data = cube_vertices(x, y, z, 0.5)
         texture_data = list(block_texture_data(block_type))
         
-        # Crée la liste de vertices pour le rendu
         try:
             self._shown[position] = self.batch.add(
                 24, GL_QUADS, self.group,
@@ -533,8 +475,8 @@ class EnhancedClientModel:
                 ('t2f/static', texture_data)
             )
             self.shown[position] = block_type
-        except Exception as e:
-            print(f"Erreur lors de l'affichage du bloc {position}: {e}")
+        except Exception:
+            pass  # Skip rendering errors
     
     def hide_block(self, position):
         """Cache un bloc."""
@@ -625,24 +567,19 @@ class EnhancedClientModel:
 
 def block_texture_data(block_type):
     """Retourne les coordonnées de texture pour un type de bloc."""
-    # Coordonnées de texture pour une grille 4x3 dans texture.png
-    # Chaque texture fait 1/4 de la largeur et 1/3 de la hauteur totale
     def tex_coord_4x3(x, y):
-        """Retourne les coordonnées d'une texture dans une grille 4x3."""
-        m_x = 1.0 / 4.0  # 4 colonnes
-        m_y = 1.0 / 3.0  # 3 rangées
-        dx = x * m_x
-        dy = y * m_y
+        m_x, m_y = 1.0 / 4.0, 1.0 / 3.0
+        dx, dy = x * m_x, y * m_y
         return [dx, dy, dx + m_x, dy, dx + m_x, dy + m_y, dx, dy + m_y]
     
     textures = {
-        BlockType.GRASS: tex_coord_4x3(0, 0) * 6,  # Position (0,0) - coin supérieur gauche
-        BlockType.SAND: tex_coord_4x3(1, 1) * 6,   # Position (1,1) - milieu centre-gauche
-        BlockType.BRICK: tex_coord_4x3(2, 0) * 6,  # Position (2,0) - haut centre-droit
-        BlockType.STONE: tex_coord_4x3(2, 1) * 6,  # Position (2,1) - milieu centre-droit
-        BlockType.WOOD: tex_coord_4x3(3, 1) * 6,   # Position (3,1) - milieu droite
-        BlockType.LEAF: tex_coord_4x3(3, 0) * 6,   # Position (3,0) - haut droite
-        BlockType.WATER: tex_coord_4x3(0, 2) * 6,  # Position (0,2) - bas gauche
+        BlockType.GRASS: tex_coord_4x3(0, 0) * 6,
+        BlockType.SAND: tex_coord_4x3(1, 1) * 6,
+        BlockType.BRICK: tex_coord_4x3(2, 0) * 6,
+        BlockType.STONE: tex_coord_4x3(2, 1) * 6,
+        BlockType.WOOD: tex_coord_4x3(3, 1) * 6,
+        BlockType.LEAF: tex_coord_4x3(3, 0) * 6,
+        BlockType.WATER: tex_coord_4x3(0, 2) * 6,
     }
     return textures.get(block_type, tex_coord_4x3(0, 0) * 6)
 
@@ -931,45 +868,31 @@ class MinecraftWindow(pyglet.window.Window):
             self.label.text = ""
             return
         
-        # Statistiques de connexion
         stats = self.network.get_connection_stats()
-        
-        # Informations de position
         x, y, z = self.position
-        
-        # Statistiques de rendu
         visible_blocks = len(self.model.shown)
         total_blocks = len(self.model.world)
-        
-        # Statut de connexion
-        connection_status = config.get_localized_text("connected" if stats["connected"] else "disconnected")
+        connection_status = "Connecté" if stats["connected"] else "Déconnecté"
         
         # Indicateurs d'état
         status_indicators = []
-        if self.flying:
-            status_indicators.append(config.get_localized_text("flying"))
-        if self.sprinting:
-            status_indicators.append(config.get_localized_text("sprinting"))
-        if self.crouch:
-            status_indicators.append(config.get_localized_text("crouch"))
+        if self.flying: status_indicators.append("Vol")
+        if self.sprinting: status_indicators.append("Course")
+        if self.crouch: status_indicators.append("Accroupi")
         
-        # Format du texte de debug
         debug_text = f"""Minecraft Client Français v1.0
-{config.get_localized_text("position")}: {x:.1f}, {y:.1f}, {z:.1f}
-{config.get_localized_text("blocks_visible")}: {visible_blocks} | {config.get_localized_text("blocks_total")}: {total_blocks}
+Position: {x:.1f}, {y:.1f}, {z:.1f}
+Blocs: {visible_blocks}/{total_blocks}
 Statut: {connection_status}"""
         
         if stats["connected"]:
-            debug_text += f" | {config.get_localized_text('ping')}: {stats['ping_ms']}ms"
+            debug_text += f" | Ping: {stats['ping_ms']}ms"
         
         if status_indicators:
             debug_text += f"\nÉtat: {', '.join(status_indicators)}"
         
-        debug_text += f"\nJoueurs en ligne: {len(self.model.other_players) + 1}"
-        debug_text += f"\nBloc sélectionné: {self.block}"
-        
-        if config.get("interface", "show_coordinates", True):
-            debug_text += f"\nSecteur: {sectorize(self.position)}"
+        debug_text += f"\nJoueurs: {len(self.model.other_players) + 1}"
+        debug_text += f"\nBloc: {self.block}"
         
         self.label.text = debug_text
     
@@ -983,14 +906,12 @@ Statut: {connection_status}"""
                 # Placer un bloc
                 if previous:
                     place_msg = create_block_place_message(previous, self.block)
-                    if self.network.send_message(place_msg):
-                        self.show_message(f"{config.get_localized_text('block_placed')}: {self.block}")
+                    self.network.send_message(place_msg)
             
             elif button == mouse.LEFT and block:
                 # Détruire un bloc
                 destroy_msg = create_block_destroy_message(block)
-                if self.network.send_message(destroy_msg):
-                    self.show_message(config.get_localized_text("block_destroyed"))
+                self.network.send_message(destroy_msg)
         else:
             self.set_exclusive_mouse(True)
     
@@ -1154,67 +1075,39 @@ Statut: {connection_status}"""
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
     
     def draw_players(self):
-        """Dessine tous les cubes des joueurs (sauf le joueur local depuis sa propre perspective)."""
+        """Dessine tous les cubes des joueurs."""
         for player_id, player in self.model.other_players.items():
             if isinstance(player, PlayerState):
-                # Obtenir ou créer une couleur pour ce joueur
-                color = getattr(player, 'color', None) or self._get_player_color(player_id)
-                
-                # Positionner le cube du joueur en utilisant la position de rendu
+                color = self._get_player_color(player_id)
                 x, y, z = player.get_render_position()
-                
-                # Créer les vertices du cube pour ce joueur
                 vertex_data = cube_vertices(x, y, z, player.size)
                 
-                # Définir la couleur du joueur
                 glColor3d(*color)
-                
-                # Dessiner le cube du joueur
                 pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))
     
     def draw_player_labels(self):
-        """Dessine les noms des joueurs en 2D au-dessus de leurs positions 3D."""
-        # Obtenir les dimensions de la fenêtre
+        """Dessine les noms des joueurs."""
         width, height = self.get_size()
-        
-        # Configurer le rendu 2D pour les labels
         self.set_2d()
         
         for player_id, player in self.model.other_players.items():
-            if isinstance(player, PlayerState) and hasattr(player, 'name') and player.name:
-                # Obtenir la position du joueur
+            if hasattr(player, 'name') and player.name:
                 x, y, z = player.position
-                render_y = y + 2.0  # Au-dessus du cube du joueur
-                
-                # Projection 3D vers 2D (projection simplifiée)
                 player_distance = math.sqrt((x - self.position[0])**2 + 
-                                          (render_y - self.position[1])**2 + 
+                                          (y - self.position[1])**2 + 
                                           (z - self.position[2])**2)
                 
-                # Afficher les labels seulement pour les joueurs à distance raisonnable
                 if player_distance < 20.0:
-                    # Projection 3D vers 2D simple
-                    # Calculer la position relative à la vue du joueur
                     dx = x - self.position[0]
-                    dy = render_y - self.position[1]
                     dz = z - self.position[2]
                     
-                    # Transformer vers l'espace écran (approche simplifiée)
                     screen_x = width // 2 + int(dx * 50 / max(abs(dz), 1))
-                    screen_y = height // 2 + int(dy * 50 / max(abs(dz), 1))
+                    screen_y = height // 2 + int((y - self.position[1]) * 50 / max(abs(dz), 1))
                     
-                    # Dessiner seulement si à l'écran et devant le joueur
                     if (0 <= screen_x <= width and 0 <= screen_y <= height and dz > 0):
-                        # Créer le label pour ce joueur
                         label = pyglet.text.Label(
-                            player.name,
-                            font_name='Arial',
-                            font_size=12,
-                            x=screen_x,
-                            y=screen_y,
-                            anchor_x='center',
-                            anchor_y='center',
-                            color=(255, 255, 255, 255)
+                            player.name, font_size=12, x=screen_x, y=screen_y,
+                            anchor_x='center', anchor_y='center', color=(255, 255, 255, 255)
                         )
                         label.draw()
         
@@ -1223,28 +1116,22 @@ Statut: {connection_status}"""
     
     def _get_player_color(self, player_id):
         """Obtient ou crée une couleur unique pour un joueur."""
-        # Cache des couleurs des joueurs
         if not hasattr(self, '_player_colors'):
             self._player_colors = {}
         
         if player_id not in self._player_colors:
-            # Générer une couleur basée sur l'ID du joueur pour la cohérence
             import hashlib
-            hash_object = hashlib.md5(player_id.encode())
-            hash_hex = hash_object.hexdigest()
+            hash_hex = hashlib.md5(player_id.encode()).hexdigest()
             
-            # Convertir les premiers 6 caractères en couleur RGB
             r = int(hash_hex[0:2], 16) / 255.0
             g = int(hash_hex[2:4], 16) / 255.0  
             b = int(hash_hex[4:6], 16) / 255.0
             
-            # Assurer que la couleur est assez vive
+            # Ensure brightness
             brightness = (r + g + b) / 3
             if brightness < 0.5:
                 factor = 0.7 / brightness
-                r = min(1.0, r * factor)
-                g = min(1.0, g * factor)
-                b = min(1.0, b * factor)
+                r, g, b = min(1.0, r * factor), min(1.0, g * factor), min(1.0, b * factor)
             
             self._player_colors[player_id] = (r, g, b)
             
@@ -1266,13 +1153,12 @@ Statut: {connection_status}"""
 
 def setup_opengl():
     """Configuration OpenGL de base."""
-    # Couleur de fond (ciel bleu)
-    glClearColor(0.5, 0.69, 1.0, 1)
+    glClearColor(0.5, 0.69, 1.0, 1)  # Ciel bleu
     glEnable(GL_CULL_FACE)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
     
-    # Configuration du brouillard
+    # Brouillard optionnel
     try:
         glEnable(GL_FOG)
         glFogfv(GL_FOG_COLOR, (GLfloat * 4)(0.5, 0.69, 1.0, 1))
@@ -1286,48 +1172,18 @@ def setup_opengl():
 
 def parse_args():
     """Parse les arguments de ligne de commande."""
-    parser = argparse.ArgumentParser(
-        description="Client Minecraft amélioré avec support français",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Exemples d'utilisation:
-  python3 minecraft_client_fr.py
-  python3 minecraft_client_fr.py --server localhost:8765
-  python3 minecraft_client_fr.py --config mon_config.json
-  python3 minecraft_client_fr.py --server 192.168.1.100:8765 --fullscreen
-        """
-    )
+    parser = argparse.ArgumentParser(description="Client Minecraft amélioré avec support français")
     
-    parser.add_argument(
-        '--server', '-s',
-        default=None,
-        help='Adresse du serveur (format: host:port, défaut: localhost:8765)'
-    )
-    
-    parser.add_argument(
-        '--config', '-c',
-        default='client_config.json',
-        help='Fichier de configuration (défaut: client_config.json)'
-    )
-    
-    parser.add_argument(
-        '--fullscreen', '-f',
-        action='store_true',
-        help='Démarrer en plein écran'
-    )
-    
-    parser.add_argument(
-        '--debug', '-d',
-        action='store_true',
-        help='Activer le mode debug'
-    )
-    
-    parser.add_argument(
-        '--lang',
-        choices=['fr', 'en'],
-        default='fr',
-        help='Langue de l\'interface (défaut: fr)'
-    )
+    parser.add_argument('--server', '-s', default=None, 
+                       help='Adresse du serveur (format: host:port)')
+    parser.add_argument('--config', '-c', default='client_config.json',
+                       help='Fichier de configuration')
+    parser.add_argument('--fullscreen', '-f', action='store_true',
+                       help='Démarrer en plein écran')
+    parser.add_argument('--debug', '-d', action='store_true',
+                       help='Activer le mode debug')
+    parser.add_argument('--lang', choices=['fr', 'en'], default='fr',
+                       help='Langue de l\'interface')
     
     return parser.parse_args()
 
@@ -1335,11 +1191,7 @@ Exemples d'utilisation:
 def main():
     """Point d'entrée principal du client."""
     print("🎮 Client Minecraft Français - Démarrage...")
-    print("📡 Utilise Pyglet pour le rendu et WebSocket pour le réseau")
-    print("🇫🇷 Interface en français avec support AZERTY")
-    print()
     
-    # Parse les arguments
     args = parse_args()
     
     # Charge la configuration
@@ -1359,73 +1211,36 @@ def main():
                 config.set("server", "host", args.server)
         except ValueError:
             print(f"⚠️  Format d'adresse serveur invalide: {args.server}")
-            print("   Format attendu: host:port (exemple: localhost:8765)")
             return 1
     
     if args.fullscreen:
         config.set("graphics", "fullscreen", True)
-    
     if args.debug:
         config.set("interface", "show_debug_info", True)
-    
     if args.lang:
         config.set("interface", "language", args.lang)
     
-    # Affiche la configuration
-    server_url = config.get_server_url()
-    layout = "AZERTY" if config.is_azerty_layout() else "QWERTY"
-    lang = config.get("interface", "language", "fr").upper()
-    
-    print(f"🌐 Serveur: {server_url}")
-    print(f"⌨️  Layout clavier: {layout}")
-    print(f"🗣️  Langue: {lang}")
-    print(f"📁 Configuration: {config.config_file}")
-    print()
-    
-    # Affiche les contrôles
-    print("🎮 Contrôles:")
-    keys = config.get_movement_keys()
-    print(f"   {keys['forward']}/{keys['left']}/{keys['backward']}/{keys['right']} - Mouvement")
-    print("   Espace - Saut")
-    print("   Maj - S'accroupir")
-    print("   R - Courir")
-    print("   Tab - Voler")
-    print("   F3 - Debug")
-    print("   F11 - Plein écran")
-    print("   Échap - Libérer souris")
-    print("   1-5 - Sélection de bloc")
-    print()
+    print(f"🌐 Serveur: {config.get_server_url()}")
+    print(f"⌨️  Layout: {'AZERTY' if config.is_azerty_layout() else 'QWERTY'}")
     
     try:
-        # Crée la fenêtre
         window = MinecraftWindow()
         
         if config.get("graphics", "fullscreen", False):
             window.set_fullscreen(True)
         
-        # Configure OpenGL
         setup_opengl()
         
-        # Message de bienvenue
         welcome_msg = config.get_localized_text("welcome")
-        controls_msg = config.get_localized_text("controls_help")
-        window.show_message(f"{welcome_msg}\n{controls_msg}", 5.0)
+        window.show_message(welcome_msg, 5.0)
         
         print("✅ Client démarré avec succès!")
-        print("💡 Utilisez F3 pour les informations de debug")
-        print("🚪 Fermez la fenêtre ou Ctrl+C pour quitter")
-        print()
-        
-        # Lance la boucle principale
         pyglet.app.run()
         
     except Exception as e:
-        print(f"❌ Erreur lors du démarrage du client: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ Erreur: {e}")
         return 1
     
-    print("👋 Client fermé proprement")
     return 0
 
 
