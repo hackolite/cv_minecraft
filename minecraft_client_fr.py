@@ -1014,16 +1014,18 @@ Statut: {connection_status}"""
         glRotatef(-y, math.cos(math.radians(x)), 0, math.sin(math.radians(x)))
         x, y, z = self.position
         
-        # Position camera at cube level on front face
-        # Adjust Y position to align with cube/block surfaces
+        # Position camera to align with player cube
+        # The cube is rendered at y + size, so camera should be positioned relative to that
         if self.crouch:
-            # When crouching, position slightly lower but still aligned to cube face
-            glTranslatef(-x, -y + 0.2, -z)
+            # When crouching, position slightly lower within the cube
+            cube_center_y = y + 0.4  # Cube center (y + size)
+            camera_y = cube_center_y - 0.2  # Slightly lower when crouching
+            glTranslatef(-x, -camera_y, -z)
         else:
-            # Position camera at player eye level, aligned with cube face front
-            # Adjust Y to be at cube level (typically at block + 0.5 for front face view)
-            cube_aligned_y = y + 0.8  # Eye level above feet, aligned with cube faces
-            glTranslatef(-x, -cube_aligned_y, -z)
+            # Position camera at the center/top of the player cube for normal stance
+            # This aligns the camera view with where the cube is actually rendered
+            cube_center_y = y + 0.4  # Cube center matches get_render_position logic
+            glTranslatef(-x, -cube_center_y, -z)
     
     def set_2d(self):
         """Configure OpenGL pour le rendu 2D."""
