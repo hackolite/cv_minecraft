@@ -585,10 +585,6 @@ class EnhancedClientModel:
         if position in self.world and position not in self.shown:
             if self.exposed(position):
                 self.show_block(position)
-    
-    def get_other_cubes(self):
-        """Get all other player cubes (excluding local player)."""
-        return list(self.other_players.values())
 
 
 def block_texture_data(block_type):
