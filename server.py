@@ -301,11 +301,54 @@ class MinecraftServer:
     def _check_ground_collision(self, position: Tuple[float, float, float]) -> bool:
         """Check if a position would collide with the ground/blocks."""
         x, y, z = position
-        # Check block positions below the player
-        for dy in range(int(PLAYER_HEIGHT) + 1):
-            check_pos = (int(x), int(y - dy), int(z))
-            if check_pos in self.world.world:
+        
+        # Check a more comprehensive area around the player
+        # Player occupies roughly 0.8x0.8x1.8 space (size 0.4 means half-size)
+        player_size = 0.4
+        player_height = int(PLAYER_HEIGHT)
+        
+        # Check all blocks that the player's bounding box would intersect
+        min_x, max_x = int(x - player_size), int(x + player_size) + 1
+        min_y, max_y = int(y), int(y + player_height) + 1  
+        min_z, max_z = int(z - player_size), int(z + player_size) + 1
+        
+        for check_x in range(min_x, max_x):
+            for check_y in range(min_y, max_y):
+                for check_z in range(min_z, max_z):
+                    check_pos = (check_x, check_y, check_z)
+                    if check_pos in self.world.world:
+                        return True
+        return False
+
+    def _check_player_collision(self, player_id: str, position: Tuple[float, float, float]) -> bool:
+        """Check if a player's new position would collide with other players.
+        
+        Args:
+            player_id: ID of the player to check (excluded from collision)
+            position: New position to test
+            
+        Returns:
+            True if collision would occur, False otherwise
+        """
+        px, py, pz = position
+        player_size = 0.4  # Standard player collision box half-size
+        
+        for other_id, other_player in self.players.items():
+            if other_id == player_id:
+                continue  # Don't check collision with self
+                
+            ox, oy, oz = other_player.position
+            other_size = other_player.size
+            
+            # Check 3D bounding box collision
+            # Two boxes collide if they overlap in all three dimensions
+            x_overlap = (px - player_size) < (ox + other_size) and (px + player_size) >= (ox - other_size)
+            y_overlap = (py - player_size) < (oy + other_size) and (py + player_size) >= (oy - other_size)
+            z_overlap = (pz - player_size) < (oz + other_size) and (pz + player_size) >= (oz - other_size)
+            
+            if x_overlap and y_overlap and z_overlap:
                 return True
+        
         return False
 
     def _apply_physics(self, player: PlayerState, dt: float) -> None:
@@ -348,6 +391,11 @@ class MinecraftServer:
                 player.velocity[1] = 0
         else:
             player.on_ground = False
+        
+        # Check for player-to-player collision during physics updates
+        if self._check_player_collision(player.id, test_position):
+            # If physics would cause a collision, stop the movement
+            return  # Don't update position
         
         # Update player position
         player.position = (new_x, new_y, new_z)
@@ -583,6 +631,16 @@ class MinecraftServer:
             if not validate_position(new_position):
                 self.logger.warning(f"❌ ANTI-CHEAT: Invalid position {new_position} for {player.name}")
                 raise InvalidPlayerDataError("Invalid target position")
+            
+            # Check for collision with blocks
+            if self._check_ground_collision(new_position):
+                self.logger.warning(f"🚫 COLLISION: Player {player.name or player_id[:8]} blocked by blocks at {new_position}")
+                raise InvalidPlayerDataError("Movement blocked by blocks")
+            
+            # Check for player-to-player collision
+            if self._check_player_collision(player_id, new_position):
+                self.logger.warning(f"🚫 COLLISION: Player {player.name or player_id[:8]} blocked by other player at {new_position}")
+                raise InvalidPlayerDataError("Movement blocked by another player")
                 
             player.position = new_position
             player.rotation = tuple(rotation)
