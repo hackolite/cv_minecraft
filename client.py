@@ -591,13 +591,40 @@ class NetworkClient:
                     self.window.model.add_block(position, block_update.block_type)
         
         elif message.type == MessageType.PLAYER_UPDATE:
-            # Update other player positions
+            # Update other player positions with enhanced debugging
             player_data = message.data
             player_id = player_data["id"]
             
             if player_id != self.player_id:  # Don't update our own position
                 player = PlayerState.from_dict(player_data)
+                
+                # DEBUG: Log player position updates
+                old_player = self.window.model.get_cube(player_id)
+                if old_player and isinstance(old_player, PlayerState):
+                    old_pos = old_player.position
+                    new_pos = player.position
+                    distance = ((new_pos[0] - old_pos[0])**2 + 
+                              (new_pos[1] - old_pos[1])**2 + 
+                              (new_pos[2] - old_pos[2])**2)**0.5
+                    print(f"🎮 CLIENT: Updating player {player.name or player_id[:8]}")
+                    print(f"   Old position: {old_pos}")
+                    print(f"   New position: {new_pos}")
+                    print(f"   Movement distance: {distance:.2f}")
+                else:
+                    print(f"🎮 CLIENT: New player {player.name or player_id[:8]} at {player.position}")
+                
+                # Store the updated player position
                 self.window.model.add_cube(player)
+                
+                # DEBUG: Verify storage
+                stored_player = self.window.model.get_cube(player_id)
+                if stored_player:
+                    print(f"   ✅ Player stored successfully at {stored_player.position}")
+                else:
+                    print(f"   ❌ Failed to store player!")
+            else:
+                # Server is sending physics updates for our own player - log this too
+                print(f"🎮 CLIENT: Received our own position update: {player_data['position']}")
         
         elif message.type == MessageType.PLAYER_LIST:
             # Update player list
