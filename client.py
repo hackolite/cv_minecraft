@@ -34,6 +34,7 @@ except NameError:
             GL_CULL_FACE, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
             GL_NEAREST, GL_TEXTURE_MAG_FILTER, GLfloat
         )
+        from OpenGL.GLU import gluPerspective
     except ImportError:
         raise ImportError("OpenGL constants not available. Please install PyOpenGL: pip install PyOpenGL")
 
@@ -166,6 +167,10 @@ class ClientModel:
         # Other players in the world
         self.other_players = {}
         
+        # Player cube colors and rendering
+        self.player_colors = {}  # Maps player_id to (r, g, b) color
+        self.player_cubes = {}   # Maps player_id to vertex list for rendering
+        
         # Cache for exposure calculations to improve performance
         self.exposure_cache = {}
     
@@ -174,6 +179,28 @@ class ClientModel:
         positions_to_clear = [position] + list(self.neighbors(position))
         for pos in positions_to_clear:
             self.exposure_cache.pop(pos, None)
+    
+    def get_or_create_player_color(self, player_id):
+        """Get or create a random color for a player."""
+        if player_id not in self.player_colors:
+            # Generate a bright, saturated random color
+            self.player_colors[player_id] = (
+                random.uniform(0.3, 1.0),  # Red
+                random.uniform(0.3, 1.0),  # Green
+                random.uniform(0.3, 1.0)   # Blue
+            )
+        return self.player_colors[player_id]
+    
+    def remove_player(self, player_id):
+        """Remove a player and clean up their visual representation."""
+        # Remove from other_players
+        self.other_players.pop(player_id, None)
+        
+        # Clean up color (optional - could keep for consistency if they reconnect)
+        self.player_colors.pop(player_id, None)
+        
+        # Clean up any cube rendering data
+        self.player_cubes.pop(player_id, None)
     
     def load_world_data(self, world_data):
         """Load initial world data from server."""
@@ -476,8 +503,17 @@ class NetworkClient:
         elif message.type == MessageType.PLAYER_LIST:
             # Update player list
             players = message.data.get("players", [])
-            self.window.model.other_players = {}
             
+            # Get list of current player IDs from server
+            current_player_ids = {player_data["id"] for player_data in players 
+                                if player_data["id"] != self.player_id}
+            
+            # Remove players that are no longer in the list
+            for player_id in list(self.window.model.other_players.keys()):
+                if player_id not in current_player_ids:
+                    self.window.model.remove_player(player_id)
+            
+            # Update/add current players
             for player_data in players:
                 player = PlayerState.from_dict(player_data)
                 if player.id != self.player_id:
@@ -885,6 +921,7 @@ class Window(pyglet.window.Window):
         glColor3d(1, 1, 1)
         self.model.batch.draw()
         self.draw_focused_block()
+        self.draw_players()  # Draw other players as colored cubes
         self.set_2d()
         self.draw_label()
         self.draw_reticle()
@@ -900,6 +937,25 @@ class Window(pyglet.window.Window):
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
             pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+    
+    def draw_players(self):
+        """Draw other players as colored cubes."""
+        for player_id, player in self.model.other_players.items():
+            # Get or create a color for this player
+            color = self.model.get_or_create_player_color(player_id)
+            
+            # Position the player cube slightly above ground
+            x, y, z = player.position
+            y += 1.0  # Raise the cube above ground level
+            
+            # Create cube vertices for this player
+            vertex_data = cube_vertices(x, y, z, 0.4)  # Slightly smaller than blocks
+            
+            # Set the player's color
+            glColor3d(*color)
+            
+            # Draw the player cube
+            pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))
     
     def draw_label(self):
         """Draw the label in the top left of the screen."""
