@@ -28,138 +28,83 @@ Contrôles par défaut (AZERTY):
 Auteur: Assistant IA pour hackolite/cv_minecraft
 """
 
-from __future__ import division
-
-import sys
-import math
-import random
-import time
-import asyncio
-import threading
-import websockets
-import json
-import argparse
+# Standard library imports
+import sys, math, random, time, json, argparse, asyncio, threading
 from collections import deque
 from typing import Optional, Tuple, Dict, Any
 
-import pyglet
+# Third-party imports  
+import pyglet, websockets
 from pyglet.gl import *
 from pyglet import image
 from pyglet.graphics import TextureGroup
 from pyglet.window import key, mouse
 
-# Import missing GL constants if not available from pyglet
+# OpenGL constants fallback
 try:
     GL_FOG
 except NameError:
-    try:
-        from OpenGL.GL import (
-            GL_FOG, GL_FOG_COLOR, GL_FOG_HINT, GL_DONT_CARE,
-            GL_FOG_MODE, GL_LINEAR, GL_FOG_START, GL_FOG_END,
-            GL_QUADS, GL_DEPTH_TEST, GL_PROJECTION, GL_MODELVIEW,
-            GL_FRONT_AND_BACK, GL_LINE, GL_FILL, GL_LINES,
-            GL_CULL_FACE, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-            GL_NEAREST, GL_TEXTURE_MAG_FILTER, GLfloat
-        )
-    except ImportError:
-        raise ImportError("OpenGL constants not available. Please install PyOpenGL: pip install PyOpenGL")
+    from OpenGL.GL import (GL_FOG, GL_FOG_COLOR, GL_FOG_HINT, GL_DONT_CARE,
+                          GL_FOG_MODE, GL_LINEAR, GL_FOG_START, GL_FOG_END,
+                          GL_QUADS, GL_DEPTH_TEST, GL_PROJECTION, GL_MODELVIEW,
+                          GL_FRONT_AND_BACK, GL_LINE, GL_FILL, GL_LINES,
+                          GL_CULL_FACE, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                          GL_NEAREST, GL_TEXTURE_MAG_FILTER, GLfloat)
 
-try:
-    from pyglet.graphics import get_default_shader
-except ImportError:
-    get_default_shader = None
-
-# Import des modules du projet
+# Project imports
 from protocol import *
 from client_config import config
 
-# Constantes du jeu
-TICKS_PER_SEC = 60
-WALKING_SPEED = 5
-FLYING_SPEED = 15
-JUMP_SPEED = 8.0
-TERMINAL_VELOCITY = 50
-PLAYER_HEIGHT = 2
-GRAVITY = 20.0
-PLAYER_FOV = 70.0
-SPRINT_FOV = 10.0
-
-# Autres constantes depuis l'original
+# Game constants  
+TICKS_PER_SEC, WALKING_SPEED, FLYING_SPEED = 60, 5, 15
+JUMP_SPEED, TERMINAL_VELOCITY, GRAVITY = 8.0, 50, 20.0
+PLAYER_HEIGHT, PLAYER_FOV, SPRINT_FOV = 2, 70.0, 10.0
 TEXTURE_PATH = 'texture.png'
 
-# Compatibility for xrange in Python 3
-try:
-    xrange
-except NameError:
-    xrange = range
+# Python 2/3 compatibility
+xrange = range
 
-# Utilitaires
-FACES = [
-    (0, 1, 0),
-    (0, -1, 0),
-    (-1, 0, 0),
-    (1, 0, 0),
-    (0, 0, 1),
-    (0, 0, -1),
-]
+# Utility constants and functions
+FACES = [(0, 1, 0), (0, -1, 0), (-1, 0, 0), (1, 0, 0), (0, 0, 1), (0, 0, -1)]
 
 def normalize(position):
     """Normalize position to block coordinates."""
-    x, y, z = position
-    x, y, z = (int(round(x)), int(round(y)), int(round(z)))
-    return (x, y, z)
-
-def check_player_collision(position, player_size, other_players):
-    """Vérifie si un joueur à la position donnée entre en collision avec d'autres joueurs.
-    
-    Args:
-        position: Tuple (x, y, z) de la position du joueur
-        player_size: Taille de la boîte de collision du joueur (demi-taille)
-        other_players: Liste des autres cubes de joueurs à vérifier
-        
-    Returns:
-        True si collision détectée, False sinon
-    """
-    px, py, pz = position
-    
-    for other_player in other_players:
-        if not isinstance(other_player, PlayerState):
-            continue
-            
-        # Obtenir la position et taille de l'autre joueur
-        ox, oy, oz = other_player.position
-        other_size = other_player.size
-        
-        # Vérifier la collision des boîtes englobantes 3D
-        # Deux boîtes entrent en collision si elles se chevauchent dans les trois dimensions
-        x_overlap = (px - player_size) < (ox + other_size) and (px + player_size) >= (ox - other_size)
-        y_overlap = (py - player_size) < (oy + other_size) and (py + player_size) >= (oy - other_size)
-        z_overlap = (pz - player_size) < (oz + other_size) and (pz + player_size) >= (oz - other_size)
-        
-        if x_overlap and y_overlap and z_overlap:
-            return True
-    
-    return False
+    return tuple(int(round(x)) for x in position)
 
 def sectorize(position):
     """Return sector that contains the given position."""
     x, y, z = normalize(position)
-    x, y, z = x // 16, y // 16, z // 16
-    return (x, 0, z)
+    return (x // 16, 0, z // 16)
 
 def cube_vertices(x, y, z, n):
     """Return vertices for a cube at position x, y, z with size 2*n."""
     return [
         x-n,y+n,z-n, x-n,y+n,z+n, x+n,y+n,z+n, x+n,y+n,z-n,  # top
-        x-n,y-n,z-n, x+n,y-n,z-n, x+n,y-n,z+n, x-n,y-n,z+n,  # bottom
+        x-n,y-n,z-n, x+n,y-n,z-n, x+n,y-n,z+n, x-n,y-n,z+n,  # bottom  
         x-n,y-n,z-n, x-n,y-n,z+n, x-n,y+n,z+n, x-n,y+n,z-n,  # left
         x+n,y-n,z+n, x+n,y-n,z-n, x+n,y+n,z-n, x+n,y+n,z+n,  # right
         x-n,y-n,z+n, x+n,y-n,z+n, x+n,y+n,z+n, x-n,y+n,z+n,  # front
         x+n,y-n,z-n, x-n,y-n,z-n, x-n,y+n,z-n, x+n,y+n,z-n,  # back
     ]
 
+def check_player_collision(position, player_size, other_players):
+    """Check if player at position collides with other players."""
+    px, py, pz = position
+    for other_player in other_players:
+        if not isinstance(other_player, PlayerState):
+            continue
+        ox, oy, oz = other_player.position
+        other_size = other_player.size
+        # Check 3D bounding box collision
+        if all((px - player_size) < (ox + other_size) and (px + player_size) >= (ox - other_size)
+               for px, ox, player_size, other_size in [(px, ox, player_size, other_size),
+                                                       (py, oy, player_size, other_size), 
+                                                       (pz, oz, player_size, other_size)]):
+            return True
+    return False
+
 class AdvancedNetworkClient:
-    """Client réseau amélioré avec reconnexion automatique et gestion d'erreurs robuste."""
+    """Client réseau simplifié avec reconnexion automatique."""
     
     def __init__(self, window, server_url: str = None):
         self.window = window
@@ -170,96 +115,67 @@ class AdvancedNetworkClient:
         self.thread = None
         self.player_id = None
         self.connection_attempts = 0
-        self.max_connection_attempts = config.get("server", "max_connection_attempts", 5)
+        self.max_attempts = config.get("server", "max_connection_attempts", 5)
         self.reconnect_delay = 5
-        self.last_ping_time = 0
         self.ping_ms = 0
-        
-        # Statistiques de connexion
-        self.messages_sent = 0
-        self.messages_received = 0
-        self.connection_time = 0
+        self.messages_sent = self.messages_received = 0
         
     def start_connection(self):
         """Démarre la connexion réseau dans un thread séparé."""
-        if self.thread and self.thread.is_alive():
-            return
-            
-        self.thread = threading.Thread(target=self._run_network_thread, daemon=True)
-        self.thread.start()
-        print(config.get_localized_text("connecting"))
+        if not (self.thread and self.thread.is_alive()):
+            self.thread = threading.Thread(target=self._run_network_thread, daemon=True)
+            self.thread.start()
+            print(config.get_localized_text("connecting"))
     
     def _run_network_thread(self):
         """Thread principal de gestion réseau."""
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
-        
         try:
             self.loop.run_until_complete(self._connection_manager())
         except Exception as e:
-            print(f"Erreur dans le thread réseau: {e}")
+            print(f"Erreur réseau: {e}")
         finally:
             self.loop.close()
     
     async def _connection_manager(self):
         """Gestionnaire de connexion avec reconnexion automatique."""
-        while True:
+        while self.connection_attempts < self.max_attempts:
             try:
                 await self._connect_to_server()
                 break
-            except Exception as e:
+            except Exception:
                 self.connected = False
                 self.connection_attempts += 1
-                
-                if self.connection_attempts >= self.max_connection_attempts:
-                    print(f"Nombre maximum de tentatives de connexion atteint: {self.max_connection_attempts}")
-                    break
-                
-                if config.get("server", "auto_reconnect", True):
+                if config.get("server", "auto_reconnect", True) and self.connection_attempts < self.max_attempts:
                     await asyncio.sleep(self.reconnect_delay)
                     self.reconnect_delay = min(self.reconnect_delay * 1.5, 30)
-                else:
-                    break
     
     async def _connect_to_server(self):
         """Se connecte au serveur et gère les messages."""
         timeout = config.get("server", "connection_timeout", 10)
+        self.websocket = await asyncio.wait_for(websockets.connect(self.server_url), timeout=timeout)
+        self.connected = True
+        self.connection_attempts = 0
+        self.reconnect_delay = 5
         
+        # Envoi du message de connexion
+        join_msg = create_player_join_message(config.get("player", "name", "Joueur"))
+        await self.websocket.send(join_msg.to_json())
+        self.messages_sent += 1
+        
+        # Gestion des messages et ping
+        ping_task = asyncio.create_task(self._ping_loop())
         try:
-            self.websocket = await asyncio.wait_for(
-                websockets.connect(self.server_url), timeout=timeout
-            )
-            
-            self.connected = True
-            self.connection_time = time.time()
-            self.connection_attempts = 0
-            self.reconnect_delay = 5
-            
-            # Envoie le message de connexion
-            player_name = config.get("player", "name", "Joueur")
-            join_msg = create_player_join_message(player_name)
-            await self.websocket.send(join_msg.to_json())
-            self.messages_sent += 1
-            
-            # Démarre le ping et écoute les messages
-            ping_task = asyncio.create_task(self._ping_loop())
-            
-            try:
-                async for message_str in self.websocket:
-                    try:
-                        message = Message.from_json(message_str)
-                        self.messages_received += 1
-                        pyglet.clock.schedule_once(
-                            lambda dt, msg=message: self._handle_server_message(msg), 0
-                        )
-                    except Exception:
-                        pass  # Skip invalid messages
-            finally:
-                ping_task.cancel()
-                
-        except asyncio.TimeoutError:
-            raise Exception(f"Timeout de connexion après {timeout}s")
+            async for message_str in self.websocket:
+                try:
+                    message = Message.from_json(message_str)
+                    self.messages_received += 1
+                    pyglet.clock.schedule_once(lambda dt, msg=message: self._handle_server_message(msg), 0)
+                except Exception:
+                    pass
         finally:
+            ping_task.cancel()
             self.connected = False
             self.websocket = None
     
@@ -267,11 +183,10 @@ class AdvancedNetworkClient:
         """Boucle de ping pour mesurer la latence."""
         while self.connected and self.websocket:
             try:
-                self.last_ping_time = time.time()
-                pong_waiter = await self.websocket.ping()
-                await pong_waiter
-                self.ping_ms = int((time.time() - self.last_ping_time) * 1000)
-                await asyncio.sleep(5)  # Ping toutes les 5 secondes
+                start = time.time()
+                await self.websocket.ping()
+                self.ping_ms = int((time.time() - start) * 1000)
+                await asyncio.sleep(5)
             except:
                 break
     
@@ -280,64 +195,41 @@ class AdvancedNetworkClient:
         try:
             if message.type == MessageType.WORLD_INIT:
                 self.window.model.load_world_data(message.data)
-                
             elif message.type == MessageType.WORLD_CHUNK:
                 self.window.model.load_world_chunk(message.data)
-                
             elif message.type == MessageType.WORLD_UPDATE:
-                blocks = message.data.get("blocks", [])
-                for block_data in blocks:
+                for block_data in message.data.get("blocks", []):
                     block_update = BlockUpdate.from_dict(block_data)
-                    position = block_update.position
-                    
                     if block_update.block_type == BlockType.AIR:
-                        self.window.model.remove_block(position)
+                        self.window.model.remove_block(block_update.position)
                     else:
-                        self.window.model.add_block(position, block_update.block_type)
-                        
+                        self.window.model.add_block(block_update.position, block_update.block_type)
             elif message.type == MessageType.PLAYER_UPDATE:
                 player_data = message.data
                 player_id = player_data["id"]
-                
                 if player_id == self.player_id:
-                    # Server physics update for our player
                     self.window.position = tuple(player_data["position"])
                     self.window.dy = player_data["velocity"][1]
                     self.window.on_ground = player_data.get("on_ground", False)
                 else:
-                    # Update other player position
-                    player = PlayerState.from_dict(player_data)
-                    self.window.model.other_players[player_id] = player
-                    
+                    self.window.model.other_players[player_id] = PlayerState.from_dict(player_data)
             elif message.type == MessageType.PLAYER_LIST:
-                players = message.data.get("players", [])
                 self.window.model.other_players = {}
-                
-                for player_data in players:
+                for player_data in message.data.get("players", []):
                     player = PlayerState.from_dict(player_data)
                     if player.id != self.player_id:
                         self.window.model.other_players[player.id] = player
-                        
             elif message.type == MessageType.CHAT_BROADCAST:
-                chat_text = message.data.get("text", "")
-                self.window.show_message(f"[CHAT] {chat_text}")
-                
+                self.window.show_message(f"[CHAT] {message.data.get('text', '')}")
             elif message.type == MessageType.ERROR:
-                error_msg = message.data.get("message", "Erreur inconnue")
-                self.window.show_message(f"{config.get_localized_text('server_error')}: {error_msg}")
-                
+                self.window.show_message(f"{config.get_localized_text('server_error')}: {message.data.get('message', 'Erreur inconnue')}")
         except Exception as e:
-            print(f"Erreur lors de la gestion du message {message.type}: {e}")
+            print(f"Erreur message {message.type}: {e}")
     
     def send_message(self, message: Message):
         """Envoie un message au serveur."""
-        if not self.connected or not self.websocket:
-            return False
-            
-        if self.loop:
-            asyncio.run_coroutine_threadsafe(
-                self._send_message_async(message), self.loop
-            )
+        if self.connected and self.websocket and self.loop:
+            asyncio.run_coroutine_threadsafe(self._send_message_async(message), self.loop)
             return True
         return False
     
@@ -348,25 +240,13 @@ class AdvancedNetworkClient:
                 await self.websocket.send(message.to_json())
                 self.messages_sent += 1
             except Exception as e:
-                print(f"Erreur lors de l'envoi du message: {e}")
+                print(f"Erreur envoi: {e}")
     
     def disconnect(self):
         """Se déconnecte du serveur."""
         if self.websocket and self.loop:
             asyncio.run_coroutine_threadsafe(self.websocket.close(), self.loop)
         self.connected = False
-    
-    def get_connection_stats(self) -> Dict[str, Any]:
-        """Retourne les statistiques de connexion."""
-        uptime = time.time() - self.connection_time if self.connected else 0
-        return {
-            "connected": self.connected,
-            "ping_ms": self.ping_ms,
-            "uptime": uptime,
-            "messages_sent": self.messages_sent,
-            "messages_received": self.messages_received,
-            "server_url": self.server_url
-        }
 
 
 class EnhancedClientModel:
