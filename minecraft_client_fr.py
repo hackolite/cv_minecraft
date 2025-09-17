@@ -1113,13 +1113,11 @@ Statut: {connection_status}"""
                 # Obtenir ou créer une couleur pour ce joueur
                 color = getattr(player, 'color', None) or self._get_player_color(player_id)
                 
-                # Positionner le cube du joueur
-                x, y, z = player.position
-                # Élever légèrement le joueur au-dessus du sol pour une meilleure visibilité
-                render_y = y + 1.0
+                # Positionner le cube du joueur en utilisant la position de rendu
+                x, y, z = player.get_render_position()
                 
                 # Créer les vertices du cube pour ce joueur
-                vertex_data = cube_vertices(x, render_y, z, 0.8)  # Taille légèrement plus petite que les blocs
+                vertex_data = cube_vertices(x, y, z, player.size)
                 
                 # Définir la couleur du joueur
                 glColor3d(*color)

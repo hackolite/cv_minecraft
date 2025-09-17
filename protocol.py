@@ -84,9 +84,9 @@ class Cube:
         self.rotation = rotation
     
     def get_render_position(self) -> Tuple[float, float, float]:
-        """Get the position for rendering (slightly elevated for players)."""
+        """Get the position for rendering (positioned on ground with bottom touching surface)."""
         x, y, z = self.position
-        return (x, y + 1.0, z)  # Elevate cubes above ground
+        return (x, y + self.size, z)  # Elevate by half-size so bottom touches ground
 
 class PlayerState(Cube):
     """Represents a player's state in the game world. Extends Cube for unified handling."""
