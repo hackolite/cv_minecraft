@@ -396,16 +396,11 @@ class EnhancedClientModel:
         # Informations du monde
         self.world_size = 128
         self.spawn_position = [30, 50, 80]
-        
-        # Cache pour optimisation
-        self._block_cache = {}
-        self._last_sector_update = 0
     
     def load_world_data(self, world_data):
         """Charge les données initiales du monde depuis le serveur."""
         self.world_size = world_data.get("world_size", 128)
         self.spawn_position = world_data.get("spawn_position", [30, 50, 80])
-        print(f"Monde initialisé: taille {self.world_size}, spawn {self.spawn_position}")
     
     def load_world_chunk(self, chunk_data):
         """Charge un chunk de données du monde."""
@@ -654,57 +649,42 @@ class MinecraftWindow(pyglet.window.Window):
     
     def setup_ui(self):
         """Configure l'interface utilisateur."""
-        # Label principal avec informations de debug
+        # Labels
         self.label = pyglet.text.Label(
             '', font_name='Arial', font_size=12,
             x=10, y=self.height - 10, anchor_x='left', anchor_y='top',
             color=(255, 255, 255, 255)
         )
         
-        # Label pour les messages
         self.message_label = pyglet.text.Label(
             '', font_name='Arial', font_size=14,
             x=self.width // 2, y=self.height - 50, anchor_x='center', anchor_y='top',
             color=(255, 255, 0, 255)
         )
         
-        # Viseur
-        self.setup_crosshair()
-    
-    def setup_crosshair(self):
-        """Configure le viseur."""
-        x, y = self.width // 2, self.height // 2
-        n = 10
-        color = config.get("interface", "crosshair_color", [255, 255, 255])
-        
+        # Viseur simple
+        x, y, n = self.width // 2, self.height // 2, 10
         try:
+            color = config.get("interface", "crosshair_color", [255, 255, 255])
             self.reticle = pyglet.graphics.vertex_list(4,
-                ('v2f/static', (float(x - n), float(y), float(x + n), float(y), 
-                               float(x), float(y - n), float(x), float(y + n))),
+                ('v2f/static', (x - n, y, x + n, y, x, y - n, x, y + n)),
                 ('c3B/static', color * 4)
             )
         except:
             self.reticle = pyglet.graphics.vertex_list(4,
-                ('v2f/static', (float(x - n), float(y), float(x + n), float(y),
-                               float(x), float(y - n), float(x), float(y + n)))
+                ('v2f/static', (x - n, y, x + n, y, x, y - n, x, y + n))
             )
     
     def show_message(self, text: str, duration: float = 3.0):
         """Affiche un message temporaire."""
         self.messages.append((text, time.time() + duration))
-        self.update_message_display()
     
     def update_message_display(self):
         """Met à jour l'affichage des messages."""
         current_time = time.time()
-        # Filtre les messages expirés
         self.messages = [(text, exp_time) for text, exp_time in self.messages if exp_time > current_time]
         
-        if self.messages:
-            # Affiche le message le plus récent
-            self.message_label.text = self.messages[-1][0]
-        else:
-            self.message_label.text = ""
+        self.message_label.text = self.messages[-1][0] if self.messages else ""
     
     def set_exclusive_mouse(self, exclusive):
         """Configure la capture exclusive de la souris."""
@@ -818,7 +798,7 @@ class MinecraftWindow(pyglet.window.Window):
         np = normalize(position)
         self.collision_types = {"top": False, "bottom": False, "right": False, "left": False}
         
-        # Vérifier les collisions avec les blocs
+        # Collision avec les blocs
         for face in FACES:
             for i in xrange(3):
                 if not face[i]:
@@ -843,14 +823,8 @@ class MinecraftWindow(pyglet.window.Window):
                         self.dy = 0
                     break
         
-        # Vérifier les collisions avec les autres joueurs
-        other_players = self.model.get_other_cubes()
-        player_size = 0.4  # Même taille que PlayerState
-        
-        # Tester la position après les ajustements de collision avec les blocs
-        if check_player_collision(tuple(p), player_size, other_players):
-            # Si on entre en collision avec un autre joueur, revenir à la position d'origine
-            # Cela empêche les joueurs de se traverser mutuellement
+        # Collision avec les autres joueurs
+        if check_player_collision(tuple(p), 0.4, self.model.get_other_cubes()):
             return position
             
         return tuple(p)
