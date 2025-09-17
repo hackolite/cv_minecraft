@@ -70,9 +70,20 @@ async def test_multiple_users_same_world():
     user1_world, user1_chunks = await connect_user_and_get_world_data("User1")
     user2_world, user2_chunks = await connect_user_and_get_world_data("User2")
     
-    # Verify world initialization data is the same
-    assert user1_world == user2_world, f"World data differs:\nUser1: {user1_world}\nUser2: {user2_world}"
-    logging.info("✅ Both users received identical world initialization data")
+    # Verify world initialization data is the same (excluding player_id which should be unique)
+    user1_world_copy = user1_world.copy()
+    user2_world_copy = user2_world.copy()
+    
+    # Remove player-specific data for comparison
+    user1_player_id = user1_world_copy.pop("player_id", None)
+    user2_player_id = user2_world_copy.pop("player_id", None)
+    
+    # Verify player IDs are different (each player should have unique ID)
+    assert user1_player_id != user2_player_id, "Players should have different IDs"
+    
+    # Verify world data is the same (excluding player IDs)
+    assert user1_world_copy == user2_world_copy, f"World data differs:\nUser1: {user1_world_copy}\nUser2: {user2_world_copy}"
+    logging.info("✅ Both users received identical world initialization data (excluding unique player IDs)")
     
     # Verify both users got the same chunks
     assert user1_chunks.keys() == user2_chunks.keys(), "Users received different chunk sets"
