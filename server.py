@@ -370,7 +370,8 @@ class MinecraftServer:
         for player in self.players.values():
             if player.id in self.clients:
                 update_msg = Message(MessageType.PLAYER_UPDATE, player.to_dict())
-                await self.send_to_client(player.id, update_msg)
+                # Send this player's position to all OTHER players (not to themselves)
+                await self.broadcast_message(update_msg, exclude_player=player.id)
 
     async def register_client(self, websocket) -> str:
         """Register a new client connection."""
