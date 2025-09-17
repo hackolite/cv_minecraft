@@ -103,6 +103,47 @@ def check_player_collision(position, player_size, other_players):
             return True
     return False
 
+def check_player_collision_with_direction(position, player_size, other_players):
+    """Check if player at position collides with other players and return collision direction.
+    
+    Returns:
+        dict: {
+            'collision': bool,
+            'top': bool,     # True if standing on top of another player
+            'bottom': bool,  # True if another player is on top
+            'side': bool     # True if side collision
+        }
+    """
+    px, py, pz = position
+    result = {'collision': False, 'top': False, 'bottom': False, 'side': False}
+    
+    for other_player in other_players:
+        if not isinstance(other_player, PlayerState):
+            continue
+        ox, oy, oz = other_player.position
+        other_size = other_player.size
+        
+        # Check 3D bounding box collision
+        x_overlap = (px - player_size) < (ox + other_size) and (px + player_size) >= (ox - other_size)
+        y_overlap = (py - player_size) < (oy + other_size) and (py + player_size) >= (oy - other_size)
+        z_overlap = (pz - player_size) < (oz + other_size) and (pz + player_size) >= (oz - other_size)
+        
+        if x_overlap and y_overlap and z_overlap:
+            result['collision'] = True
+            
+            # Determine collision direction based on relative Y positions
+            # Top collision: current player is standing on another player
+            # This happens when the player is above the other player
+            if py > oy:  # Current player center is above other player center
+                result['top'] = True
+            # Bottom collision: another player is on top of current player  
+            elif py < oy:  # Current player center is below other player center
+                result['bottom'] = True
+            else:
+                result['side'] = True
+    
+    return result
+
 class AdvancedNetworkClient:
     """Client réseau simplifié avec reconnexion automatique."""
     
@@ -706,7 +747,17 @@ class MinecraftWindow(pyglet.window.Window):
                     break
         
         # Collision avec les autres joueurs
-        if check_player_collision(tuple(p), 0.4, self.model.get_other_cubes()):
+        player_collision = check_player_collision_with_direction(tuple(p), 0.4, self.model.get_other_cubes())
+        if player_collision['collision']:
+            # Si collision "top" (joueur sur un autre joueur), arrêter la gravité
+            if player_collision['top']:
+                self.collision_types["top"] = True
+                self.dy = 0
+            # Si collision "bottom" (autre joueur sur le joueur actuel), arrêter le mouvement vers le haut  
+            elif player_collision['bottom']:
+                self.collision_types["bottom"] = True
+                self.dy = 0
+            # Pour toute collision avec un joueur, empêcher le mouvement
             return position
             
         return tuple(p)
