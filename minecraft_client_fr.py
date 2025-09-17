@@ -804,7 +804,9 @@ class MinecraftWindow(pyglet.window.Window):
                 if not face[i]:
                     continue
                 d = (p[i] - np[i]) * face[i]
-                if d < pad:
+                # FIX: Allow downward collision detection even with small d values
+                # This enables proper ground collision detection
+                if d < pad and not (face == (0, -1, 0) and i == 1):
                     continue
                     
                 for dy in xrange(height):

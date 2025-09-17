@@ -865,7 +865,9 @@ class Window(pyglet.window.Window):
                     continue
                 # How much overlap you have with this dimension.
                 d = (p[i] - np[i]) * face[i]
-                if d < pad:
+                # FIX: Allow downward collision detection even with small d values
+                # This enables proper ground collision detection
+                if d < pad and not (face == (0, -1, 0) and i == 1):
                     continue
                 for dy in xrange(height):  # check each height
                     op = list(np)
