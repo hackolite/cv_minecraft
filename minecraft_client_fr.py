@@ -838,13 +838,56 @@ class MinecraftWindow(pyglet.window.Window):
         x, y, z = self.collide((x + dx, y + dy, z + dz), PLAYER_HEIGHT)
         self.position = (x, y, z)
     
+    def check_player_collision(self, position, height):
+        """Vérifie les collisions avec les autres joueurs."""
+        pad = 0.25
+        player_size = 0.4  # Taille du cube joueur
+        p = list(position)
+        
+        # Vérifier les collisions avec tous les autres joueurs
+        for other_cube in self.model.get_other_cubes():
+            if isinstance(other_cube, PlayerState):
+                other_x, other_y, other_z = other_cube.position
+                
+                # Calculer la distance dans chaque dimension
+                dx = p[0] - other_x
+                dy = abs(p[1] - other_y)
+                dz = p[2] - other_z
+                
+                # Vérifier si les joueurs entrent en collision
+                collision_distance = player_size * 2 + pad  # Deux rayons de joueur plus padding
+                
+                if (abs(dx) < collision_distance and 
+                    abs(dz) < collision_distance and 
+                    dy < height):  # Vérifier si on est à un niveau de hauteur similaire
+                    
+                    # Calculer de combien séparer pour maintenir la distance minimale
+                    if abs(dx) < collision_distance:
+                        # Séparer en direction X
+                        push_distance = collision_distance - abs(dx)
+                        if dx > 0:  # Le joueur actuel est à droite
+                            p[0] += push_distance
+                        else:  # Le joueur actuel est à gauche
+                            p[0] -= push_distance
+                    
+                    if abs(dz) < collision_distance:
+                        # Séparer en direction Z
+                        push_distance = collision_distance - abs(dz)
+                        if dz > 0:  # Le joueur actuel est devant
+                            p[2] += push_distance
+                        else:  # Le joueur actuel est derrière
+                            p[2] -= push_distance
+                            
+        return tuple(p)
+
     def collide(self, position, height):
-        """Gère les collisions avec les blocs."""
+        """Gère les collisions avec les blocs et les joueurs."""
         pad = 0.25
         p = list(position)
         np = normalize(position)
         self.collision_types = {"top": False, "bottom": False, "right": False, "left": False}
         
+        # D'abord vérifier les collisions avec les blocs
         for face in FACES:
             for i in xrange(3):
                 if not face[i]:
@@ -868,6 +911,9 @@ class MinecraftWindow(pyglet.window.Window):
                         self.collision_types["bottom"] = True
                         self.dy = 0
                     break
+        
+        # Ensuite vérifier les collisions avec les joueurs
+        p = self.check_player_collision(p, height)
         
         return tuple(p)
     

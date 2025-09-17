@@ -937,13 +937,56 @@ class Window(pyglet.window.Window):
             if disablefov:
                 self.fov_offset -= SPRINT_FOV
     
+    def check_player_collision(self, position, height):
+        """Check for collision with other players."""
+        pad = 0.25
+        player_size = 0.4  # Player cube size
+        p = list(position)
+        
+        # Check collision with all other players
+        for other_cube in self.model.get_other_cubes():
+            if isinstance(other_cube, PlayerState):
+                other_x, other_y, other_z = other_cube.position
+                
+                # Calculate distance in each dimension
+                dx = p[0] - other_x
+                dy = abs(p[1] - other_y)
+                dz = p[2] - other_z
+                
+                # Check if players are colliding (considering player size and height)
+                collision_distance = player_size * 2 + pad  # Two player radii plus padding
+                
+                if (abs(dx) < collision_distance and 
+                    abs(dz) < collision_distance and 
+                    dy < height):  # Check if we're at similar height level
+                    
+                    # Calculate how much to push apart to maintain minimum distance
+                    if abs(dx) < collision_distance:
+                        # Push apart in X direction
+                        push_distance = collision_distance - abs(dx)
+                        if dx > 0:  # Current player is to the right
+                            p[0] += push_distance
+                        else:  # Current player is to the left
+                            p[0] -= push_distance
+                    
+                    if abs(dz) < collision_distance:
+                        # Push apart in Z direction
+                        push_distance = collision_distance - abs(dz)
+                        if dz > 0:  # Current player is forward
+                            p[2] += push_distance
+                        else:  # Current player is backward
+                            p[2] -= push_distance
+                            
+        return tuple(p)
+
     def collide(self, position, height):
-        """Checks to see if the player at the given position and height is colliding with any blocks."""
+        """Checks to see if the player at the given position and height is colliding with any blocks or players."""
         pad = 0.25
         p = list(position)
         np = normalize(position)
         self.collision_types = {"top":False,"bottom":False,"right":False,"left":False}
         
+        # First check for block collisions
         for face in FACES:  # check all surrounding blocks
             for i in xrange(3):  # check each dimension independently
                 if not face[i]:
@@ -965,6 +1008,10 @@ class Window(pyglet.window.Window):
                         self.collision_types["bottom"] = True
                         self.dy = 0
                     break
+        
+        # Then check for player collisions
+        p = self.check_player_collision(p, height)
+        
         return tuple(p)
     
     def on_mouse_press(self, x, y, button, modifiers):
