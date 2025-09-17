@@ -354,6 +354,9 @@ class MinecraftServer:
 
     async def _physics_update_loop(self):
         """Main physics update loop running at PHYSICS_TICK_RATE."""
+        last_debug_summary = time.time()
+        debug_summary_interval = 10.0  # Every 10 seconds
+        
         while self.running:
             current_time = time.time()
             dt = current_time - self.last_physics_update
@@ -365,10 +368,28 @@ class MinecraftServer:
             # Broadcast player updates
             await self._broadcast_physics_updates()
             
+            # Periodic debug summary
+            if current_time - last_debug_summary > debug_summary_interval:
+                self._log_player_debug_summary()
+                last_debug_summary = current_time
+            
             self.last_physics_update = current_time
             
             # Sleep to maintain physics tick rate
             await asyncio.sleep(1.0 / PHYSICS_TICK_RATE)
+
+    def _log_player_debug_summary(self):
+        """Log a summary of all connected players and their positions."""
+        if not self.players:
+            self.logger.info("📊 PLAYER DEBUG SUMMARY: No players connected")
+            return
+            
+        self.logger.info(f"📊 PLAYER DEBUG SUMMARY: {len(self.players)} players connected")
+        for player in self.players.values():
+            last_move_ago = time.time() - getattr(player, 'last_move_time', time.time())
+            self.logger.info(f"   🎯 {player.name or player.id[:8]}: pos={player.position}, "
+                           f"vel={player.velocity}, on_ground={player.on_ground}, "
+                           f"last_move={last_move_ago:.1f}s ago")
 
     async def _broadcast_physics_updates(self):
         """Broadcast physics updates for all players."""
@@ -396,12 +417,20 @@ class MinecraftServer:
                 await self.broadcast_player_list()
 
     async def broadcast_message(self, message: Message, exclude_player: Optional[str] = None):
-        """Broadcast a message to all connected clients."""
+        """Broadcast a message to all connected clients with enhanced debugging."""
         if not self.clients:
+            self.logger.debug("📡 No clients connected for broadcast")
             return
             
         json_msg = message.to_json()
         disconnected = []
+        sent_count = 0
+        
+        # Debug log for player updates specifically
+        if message.type == MessageType.PLAYER_UPDATE:
+            player_data = message.data
+            sender_name = self.players.get(player_data.get("id", ""), type('obj', (object,), {'name': 'Unknown'})).name
+            self.logger.debug(f"📡 Broadcasting player update from {sender_name or 'Unknown'}")
         
         for pid, ws in list(self.clients.items()):
             if exclude_player == pid:
@@ -409,11 +438,23 @@ class MinecraftServer:
                 
             try:
                 await ws.send(json_msg)
+                sent_count += 1
+                
+                # Debug log successful sends for player updates
+                if message.type == MessageType.PLAYER_UPDATE:
+                    receiver_name = self.players.get(pid, type('obj', (object,), {'name': 'Unknown'})).name
+                    self.logger.debug(f"   ✅ Sent to {receiver_name or pid[:8]}")
+                    
             except websockets.exceptions.ConnectionClosed:
                 disconnected.append(pid)
+                self.logger.warning(f"   ❌ Connection closed for {pid[:8]}")
             except Exception as e:
-                self.logger.error(f"Error sending message to {pid}: {e}")
+                self.logger.error(f"   ❌ Error sending message to {pid[:8]}: {e}")
                 disconnected.append(pid)
+        
+        # Log broadcast summary
+        if message.type == MessageType.PLAYER_UPDATE:
+            self.logger.info(f"📡 Broadcast complete: {sent_count} players notified, {len(disconnected)} disconnected")
         
         # Clean up disconnected clients
         for pid in disconnected:
@@ -520,16 +561,27 @@ class MinecraftServer:
                 
             new_position = tuple(position)
             
-            # Anti-cheat: validate reasonable movement distance from current position
-            old_x, old_y, old_z = player.position
+            # ENHANCED DEBUG: Log detailed movement information
+            old_position = player.position
+            old_x, old_y, old_z = old_position
             new_x, new_y, new_z = new_position
             dx, dy, dz = new_x - old_x, new_y - old_y, new_z - old_z
+            movement_distance = (dx**2 + dy**2 + dz**2)**0.5
             
-            # Allow reasonable movement for position-based updates
+            self.logger.info(f"🚶 PLAYER_MOVE DEBUG - Player {player.name or player_id[:8]}")
+            self.logger.info(f"   Old position: {old_position}")
+            self.logger.info(f"   New position: {new_position}")
+            self.logger.info(f"   Delta: dx={dx:.2f}, dy={dy:.2f}, dz={dz:.2f}")
+            self.logger.info(f"   Distance: {movement_distance:.2f}")
+            self.logger.info(f"   Rotation: {rotation}")
+            
+            # Anti-cheat: validate reasonable movement distance from current position
             if abs(dx) > 50 or abs(dy) > 50 or abs(dz) > 50:
+                self.logger.warning(f"❌ ANTI-CHEAT: Movement distance too large for {player.name}")
                 raise InvalidPlayerDataError("Movement distance too large")
             
             if not validate_position(new_position):
+                self.logger.warning(f"❌ ANTI-CHEAT: Invalid position {new_position} for {player.name}")
                 raise InvalidPlayerDataError("Invalid target position")
                 
             player.position = new_position
@@ -541,14 +593,16 @@ class MinecraftServer:
             player.on_ground = True  # Assume player is on ground after movement
             player.last_move_time = time.time()  # Mark when player last moved voluntarily
 
-            # Broadcast to other players
-            await self.broadcast_message(
-                create_player_update_message(player), 
-                exclude_player=player_id
-            )
+            # ENHANCED BROADCAST: Send to other players with debug logging
+            other_players_count = len([p for p in self.clients.keys() if p != player_id])
+            self.logger.info(f"📡 Broadcasting position update to {other_players_count} other players")
+            
+            update_message = create_player_update_message(player)
+            await self.broadcast_message(update_message, exclude_player=player_id)
 
-            # Send updated position back to player
-            await self.send_to_client(player_id, create_player_update_message(player))
+            # Send updated position back to player (confirmation)
+            self.logger.debug(f"✅ Sending position confirmation to {player.name}")
+            await self.send_to_client(player_id, update_message)
             
         except KeyError as e:
             raise InvalidPlayerDataError(f"Missing required field: {e}")

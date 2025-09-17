@@ -285,11 +285,44 @@ class AdvancedNetworkClient:
                 
                 if player_id == self.player_id:
                     # Server is sending physics updates for our own player
-                    self.window.position = tuple(player_data["position"])
+                    old_pos = self.window.position
+                    new_pos = tuple(player_data["position"])
+                    print(f"🎮 CLIENT_FR: Physics update for our player")
+                    print(f"   Old position: {old_pos}")
+                    print(f"   New position: {new_pos}")
+                    
+                    self.window.position = new_pos
                     self.window.dy = player_data["velocity"][1]  # Update Y velocity from server
                     self.window.on_ground = player_data.get("on_ground", False)
                 else:
-                    self.window.model.other_players[player_id] = PlayerState.from_dict(player_data)
+                    # Update other player position with debug logging
+                    player = PlayerState.from_dict(player_data)
+                    
+                    # DEBUG: Log player position updates
+                    old_player = self.window.model.other_players.get(player_id)
+                    if old_player:
+                        old_pos = old_player.position
+                        new_pos = player.position
+                        distance = ((new_pos[0] - old_pos[0])**2 + 
+                                  (new_pos[1] - old_pos[1])**2 + 
+                                  (new_pos[2] - old_pos[2])**2)**0.5
+                        print(f"🎮 CLIENT_FR: Updating player {player.name or player_id[:8]}")
+                        print(f"   Old position: {old_pos}")
+                        print(f"   New position: {new_pos}")
+                        print(f"   Movement distance: {distance:.2f}")
+                    else:
+                        print(f"🎮 CLIENT_FR: New player {player.name or player_id[:8]} at {player.position}")
+                    
+                    # Store the updated player position
+                    self.window.model.other_players[player_id] = player
+                    
+                    # DEBUG: Verify storage
+                    stored_player = self.window.model.other_players.get(player_id)
+                    if stored_player:
+                        print(f"   ✅ Player stored successfully at {stored_player.position}")
+                        print(f"   📊 Total other players: {len(self.window.model.other_players)}")
+                    else:
+                        print(f"   ❌ Failed to store player!")
                     
             elif message.type == MessageType.PLAYER_LIST:
                 players = message.data.get("players", [])
