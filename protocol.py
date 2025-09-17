@@ -99,6 +99,7 @@ class PlayerState(Cube):
         self.sprinting = False
         self.on_ground = False
         self.is_local = False  # Flag to identify local player
+        self.last_move_time = 0.0  # Timestamp of last voluntary movement
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
