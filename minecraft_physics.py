@@ -213,6 +213,12 @@ class MinecraftCollisionDetector:
         Resolve collision with step-by-step movement AND ray-casting to prevent tunneling.
         This is the most robust approach against block traversal.
         
+        Key anti-tunneling measures:
+        1. Ray casting to detect collisions along the entire movement path
+        2. Step-by-step collision detection for large movements
+        3. Strict step height validation (max STEP_HEIGHT blocks)
+        4. Precise floating point handling with COLLISION_EPSILON
+        
         Args:
             old_position: Previous player position
             new_position: Desired new position
@@ -220,29 +226,43 @@ class MinecraftCollisionDetector:
         Returns:
             Tuple of (safe_position, collision_info)
         """
-        # First check if the ray from old to new position passes through any blocks
-        ray_collision, hit_block = self.ray_cast_collision(old_position, new_position)
-        
-        if ray_collision:
-            # If ray casting detected a collision, stop at the old position
-            collision_info = {'x': True, 'y': True, 'z': True, 'ground': False}
-            self._update_ground_status(collision_info, old_position)
-            return old_position, collision_info
-        
-        # If ray casting is clear, proceed with normal step-by-step resolution
+        # If ray casting is clear or movement is small enough, proceed with step-by-step resolution
         old_x, old_y, old_z = old_position
         new_x, new_y, new_z = new_position
         
         collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
         
-        # Calculate movement distance
+        # Calculate movement distance and direction
         dx = new_x - old_x
         dy = new_y - old_y
         dz = new_z - old_z
         total_distance = math.sqrt(dx*dx + dy*dy + dz*dz)
         
+        # Use ray casting as a preliminary check, but still allow step-by-step resolution
+        # This helps detect tunneling while still allowing valid movements
+        ray_collision, hit_block = self.ray_cast_collision(old_position, new_position)
+        
+        # For very fast movements, ray casting prevents tunneling
+        # But for normal movements, we rely on step-by-step collision resolution
+        fast_movement_threshold = PLAYER_WIDTH * 2  # 2 player widths
+        
+        if ray_collision and total_distance > fast_movement_threshold:
+            # Only stop movement completely for very fast movements that would tunnel
+            collision_info = {'x': True, 'y': True, 'z': True, 'ground': False}
+            self._update_ground_status(collision_info, old_position)
+            return old_position, collision_info
+        
+        # CRITICAL: Validate total Y movement before processing steps
+        # This prevents players from exceeding step height limits through multiple small steps
+        # Only apply step height limit to UPWARD movement (dy > 0)
+        if dy > STEP_HEIGHT:
+            # Total upward movement exceeds step height - block it
+            collision_info['y'] = True
+            return old_position, collision_info
+        
         # If movement is very large, use step-by-step collision detection
-        max_step = PLAYER_WIDTH / 4  # Smaller step size for better precision
+        # Use very small steps to prevent tunneling through thin walls
+        max_step = PLAYER_WIDTH / 8  # Even smaller step size for maximum precision
         
         if total_distance > max_step:
             # Break movement into smaller steps
@@ -304,19 +324,42 @@ class MinecraftCollisionDetector:
         else:
             collision_info['z'] = True
         
-        # Test Y movement last (vertical)
+        # Test Y movement last (vertical) with step height validation
+        # This prevents players from jumping too high or teleporting vertically
         test_y_pos = (current_x, new_y, current_z)
-        if not self.check_collision(test_y_pos):
-            current_y = new_y
-        else:
-            collision_info['y'] = True
-            # If moving down and hitting something, we're on ground
-            if new_y < old_y:
+        y_movement = new_y - current_y
+        
+        # Check if this is a valid vertical movement
+        movement_allowed = False
+        
+        if y_movement > 0:
+            # Upward movement - validate step height limit to prevent exploits
+            if y_movement <= STEP_HEIGHT:
+                # Valid step up - check for collision
+                if not self.check_collision(test_y_pos):
+                    movement_allowed = True
+                else:
+                    collision_info['y'] = True
+            else:
+                # Step too high - block the movement (prevents super-jumping)
+                collision_info['y'] = True
+        elif y_movement < 0:
+            # Downward movement - always check collision (falling/dropping)
+            if not self.check_collision(test_y_pos):
+                movement_allowed = True
+            else:
+                collision_info['y'] = True
                 collision_info['ground'] = True
                 # Snap to the surface of the block we hit
-                ground_level = self.find_ground_level(current_x, current_z, old_y)
+                ground_level = self.find_ground_level(current_x, current_z, current_y)
                 if ground_level is not None:
                     current_y = ground_level
+        else:
+            # No Y movement - always allowed
+            movement_allowed = True
+        
+        if movement_allowed:
+            current_y = new_y
         
         # Final ground check - more robust ground detection
         self._update_ground_status(collision_info, (current_x, current_y, current_z))
@@ -367,9 +410,16 @@ class MinecraftCollisionDetector:
         dy /= distance
         dz /= distance
         
-        # Step size should be smaller than half a block to catch thin walls
-        step_size = 0.1
+        # Step size should be smaller to catch thin walls but not too small for performance
+        # Use adaptive step size based on player width for precision
+        step_size = min(0.05, PLAYER_WIDTH / 8)  # More precise step size
         steps = int(distance / step_size) + 1
+        
+        # Limit maximum steps for performance (prevent infinite loops on huge movements)
+        max_steps = 1000
+        if steps > max_steps:
+            steps = max_steps
+            step_size = distance / steps
         
         for i in range(steps + 1):
             t = min(i * step_size, distance)
