@@ -54,11 +54,17 @@ except NameError:
 # Project imports
 from protocol import *
 from client_config import config
+from minecraft_physics import (
+    MinecraftCollisionDetector, MinecraftPhysics, 
+    PLAYER_WIDTH, PLAYER_HEIGHT as PHYSICS_PLAYER_HEIGHT,
+    GRAVITY as PHYSICS_GRAVITY, TERMINAL_VELOCITY as PHYSICS_TERMINAL_VELOCITY,
+    JUMP_VELOCITY, minecraft_collide, minecraft_check_ground
+)
 
 # Game constants  
 TICKS_PER_SEC, WALKING_SPEED, FLYING_SPEED = 60, 5, 15
 JUMP_SPEED, TERMINAL_VELOCITY, GRAVITY = 8.0, 50, 20.0
-PLAYER_HEIGHT, PLAYER_FOV, SPRINT_FOV = 2, 70.0, 10.0
+PLAYER_HEIGHT, PLAYER_FOV, SPRINT_FOV = 1.8, 70.0, 10.0  # Fixed to match standard Minecraft
 TEXTURE_PATH = 'texture.png'
 
 # Python 2/3 compatibility
@@ -654,7 +660,9 @@ class MinecraftWindow(pyglet.window.Window):
         self.update_message_display()
     
     def _update_physics(self, dt):
-        """Met à jour la physique du joueur."""
+        """
+        Standard Minecraft physics update using the new physics system.
+        """
         dt = min(dt, 0.2)
         
         # Vitesse selon le mode
@@ -667,100 +675,68 @@ class MinecraftWindow(pyglet.window.Window):
         else:
             speed = self.movement_speed
         
-        # Saut - seulement possible quand on est sur le sol (collision_types["top"] = True)
-        if self.jumping and not self.flying:
-            if self.collision_types["top"]:
-                self.dy = self.jump_speed
-        
         # Distance parcourue
         d = dt * speed
         dx, dy, dz = self.get_motion_vector()
         dx, dy, dz = dx * d, dy * d, dz * d
         
-        # Gravité (reduced since server handles physics)
-        if not self.flying:
-            # Apply minimal client-side gravity for responsiveness
-            self.dy -= dt * (GRAVITY * 0.3)  # Reduced to 30% of original
-            self.dy = max(self.dy, -TERMINAL_VELOCITY)
-            dy += self.dy * dt
+        # Initialize or update physics system
+        if not hasattr(self, '_collision_detector'):
+            self._collision_detector = MinecraftCollisionDetector(self.model.world)
+            self._physics = MinecraftPhysics(self._collision_detector)
         
-        # Collisions
-        x, y, z = self.position
-        x, y, z = self.collide((x + dx, y + dy, z + dz), PLAYER_HEIGHT)
-        self.position = (x, y, z)
+        # Update collision detector with current world
+        self._collision_detector.world_blocks = self.model.world
+        
+        # Current state
+        current_velocity = (dx / dt if dt > 0 else 0, self.dy, dz / dt if dt > 0 else 0)
+        on_ground = self.collision_types.get("top", False)
+        
+        if self.flying:
+            # Flying mode - no physics, just direct movement
+            x, y, z = self.position
+            x, y, z = self.collide((x + dx, y + dy, z + dz), PLAYER_HEIGHT)
+            self.position = (x, y, z)
+        else:
+            # Standard physics with gravity and collision
+            new_position, new_velocity, new_on_ground = self._physics.update_position(
+                self.position, current_velocity, dt, on_ground, self.jumping
+            )
+            
+            self.position = new_position
+            self.dy = new_velocity[1]
+            
+            # Update collision types for compatibility
+            self.collision_types["top"] = new_on_ground
     
     def collide(self, position, height):
-        """Gère les collisions avec les blocs."""
-        pad = 0.25
-        p = list(position)
-        np = normalize(position)
-        self.collision_types = {"top": False, "bottom": False, "right": False, "left": False}
+        """
+        Standard Minecraft collision detection using the new physics system.
         
-        # Collision avec les blocs
-        for face in FACES:
-            for i in xrange(3):
-                if not face[i]:
-                    continue
-                d = (p[i] - np[i]) * face[i]
-                # FIX: Allow downward collision detection even with small d values
-                # This enables proper ground collision detection
-                if d < pad and not (face == (0, -1, 0) and i == 1):
-                    continue
-                    
-                for dy in xrange(height):
-                    op = list(np)
-                    op[1] -= dy
-                    
-                    # COLLISION FIX: For downward collision, check the block the player is standing on
-                    if face == (0, -1, 0) and i == 1:
-                        # For downward collision, check blocks the player might be colliding with
-                        # This prevents falling through blocks during rapid movement
-                        floor_y = int(p[1]) - dy
-                        if p[1] < 0:
-                            # If player is underground, check blocks at ground level and above
-                            # This ensures underground players get pushed back to surface
-                            for check_y in range(max(floor_y, -2), 2):
-                                test_op = list(np)
-                                test_op[0] = op[0]
-                                test_op[1] = check_y
-                                test_op[2] = op[2] 
-                                if tuple(test_op) in self.model.world:
-                                    op[1] = check_y
-                                    break
-                            else:
-                                op[1] = floor_y
-                        else:
-                            op[1] = floor_y
-                    else:
-                        op[i] += face[i]
-                    
-                    if tuple(op) not in self.model.world:
-                        continue
-                        
-                    p[i] -= (d - pad) * face[i]
-                    if face == (0, -1, 0):
-                        self.collision_types["top"] = True
-                        self.dy = 0
-                    if face == (0, 1, 0):
-                        self.collision_types["bottom"] = True
-                        self.dy = 0
-                    break
-        
-        # Collision avec les autres joueurs
-        player_collision = check_player_collision_with_direction(tuple(p), 0.4, self.model.get_other_cubes())
-        if player_collision['collision']:
-            # Si collision "top" (joueur sur un autre joueur), arrêter la gravité
-            if player_collision['top']:
-                self.collision_types["top"] = True
-                self.dy = 0
-            # Si collision "bottom" (autre joueur sur le joueur actuel), arrêter le mouvement vers le haut  
-            elif player_collision['bottom']:
-                self.collision_types["bottom"] = True
-                self.dy = 0
-            # Pour toute collision avec un joueur, empêcher le mouvement
-            return position
+        Args:
+            position: Player position tuple (x, y, z)
+            height: Player height (ignored, uses standard height)
             
-        return tuple(p)
+        Returns:
+            Safe position after collision resolution
+        """
+        # Use the new standard physics system
+        collision_detector = MinecraftCollisionDetector(self.model.world)
+        safe_position, collision_info = collision_detector.resolve_collision(position, position)
+        
+        # Update collision types for compatibility with existing code
+        self.collision_types = {
+            "top": collision_info.get('ground', False),
+            "bottom": collision_info.get('y', False) and position[1] < safe_position[1],
+            "right": collision_info.get('x', False),
+            "left": collision_info.get('x', False)
+        }
+        
+        # Reset vertical velocity if we hit something
+        if collision_info.get('y', False):
+            self.dy = 0
+        
+        return safe_position
     
     def _send_position_update(self):
         """Envoie la mise à jour de position au serveur."""
