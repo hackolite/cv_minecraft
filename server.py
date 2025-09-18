@@ -17,6 +17,10 @@ from protocol import (
     create_world_update_message, create_player_list_message,
     create_player_update_message
 )
+from minecraft_physics import (
+    MinecraftCollisionDetector, MinecraftPhysics,
+    PLAYER_WIDTH, PLAYER_HEIGHT, GRAVITY, TERMINAL_VELOCITY, JUMP_VELOCITY
+)
 
 # ---------- Constants ----------
 SECTOR_SIZE = 16
@@ -26,10 +30,10 @@ DEFAULT_SPAWN_POSITION = (64, 100, 64)  # High spawn position for gravity testin
 WATER_LEVEL = 15
 GRASS_LEVEL = 18
 
-# Physics constants
-GRAVITY = 20.0
-TERMINAL_VELOCITY = 50.0
-PLAYER_HEIGHT = 1.8
+# Physics constants - use standard Minecraft values
+STANDARD_GRAVITY = GRAVITY
+STANDARD_TERMINAL_VELOCITY = TERMINAL_VELOCITY
+STANDARD_PLAYER_HEIGHT = PLAYER_HEIGHT
 PHYSICS_TICK_RATE = 20  # Updates per second
 
 # Configure logging
@@ -299,52 +303,17 @@ class MinecraftServer:
         self.last_physics_update = time.time()
 
     def _check_ground_collision(self, position: Tuple[float, float, float]) -> bool:
-        """Check if a position would collide with the ground/blocks."""
-        x, y, z = position
-        
-        # Check a more comprehensive area around the player
-        # Player occupies roughly 0.8x0.8x1.8 space (size 0.4 means half-size)
-        player_size = 0.4
-        player_height = PLAYER_HEIGHT  # Use float, not int
-        
-        # Player bounding box: from (x-size, y, z-size) to (x+size, y+height, z+size)
-        # Check all block positions that intersect with this bounding box
-        min_x = int(x - player_size)
-        max_x = int(x + player_size) + 1
-        min_y = int(y)  # Player's feet level
-        max_y = int(y + player_height) + 1  # Player's head level
-        min_z = int(z - player_size)  
-        max_z = int(z + player_size) + 1
-        
-        for check_x in range(min_x, max_x):
-            for check_y in range(min_y, max_y):
-                for check_z in range(min_z, max_z):
-                    check_pos = (check_x, check_y, check_z)
-                    if check_pos in self.world.world:
-                        # Additional check: ensure the player's actual bounding box intersects the block
-                        # Block occupies space from (check_x, check_y, check_z) to (check_x+1, check_y+1, check_z+1)
-                        # Player occupies space from (x-size, y, z-size) to (x+size, y+height, z+size)
-                        
-                        # Check if bounding boxes actually overlap
-                        block_x_min, block_x_max = check_x, check_x + 1
-                        block_y_min, block_y_max = check_y, check_y + 1  
-                        block_z_min, block_z_max = check_z, check_z + 1
-                        
-                        player_x_min, player_x_max = x - player_size, x + player_size
-                        player_y_min, player_y_max = y, y + player_height
-                        player_z_min, player_z_max = z - player_size, z + player_size
-                        
-                        # Check overlap in all three dimensions
-                        x_overlap = (player_x_min < block_x_max) and (player_x_max > block_x_min)
-                        y_overlap = (player_y_min < block_y_max) and (player_y_max > block_y_min)
-                        z_overlap = (player_z_min < block_z_max) and (player_z_max > block_z_min)
-                        
-                        if x_overlap and y_overlap and z_overlap:
-                            return True
-        return False
+        """
+        Standard Minecraft ground collision using the new physics system.
+        """
+        collision_detector = MinecraftCollisionDetector(self.world.world)
+        return collision_detector.check_collision(position)
 
     def _check_player_collision(self, player_id: str, position: Tuple[float, float, float]) -> bool:
-        """Check if a player's new position would collide with other players.
+        """
+        Check if a player's new position would collide with other players.
+        
+        Uses standard Minecraft player dimensions and collision detection.
         
         Args:
             player_id: ID of the player to check (excluded from collision)
@@ -354,7 +323,7 @@ class MinecraftServer:
             True if collision would occur, False otherwise
         """
         px, py, pz = position
-        player_size = 0.4  # Standard player collision box half-size
+        player_size = PLAYER_WIDTH / 2  # Standard player collision box half-size
         
         for other_id, other_player in self.players.items():
             if other_id == player_id:
@@ -363,10 +332,9 @@ class MinecraftServer:
             ox, oy, oz = other_player.position
             other_size = other_player.size
             
-            # Check 3D bounding box collision
-            # Two boxes collide if they overlap in all three dimensions
+            # Check 3D bounding box collision using standard Minecraft dimensions
             x_overlap = (px - player_size) < (ox + other_size) and (px + player_size) >= (ox - other_size)
-            y_overlap = (py - player_size) < (oy + other_size) and (py + player_size) >= (oy - other_size)
+            y_overlap = (py) < (oy + STANDARD_PLAYER_HEIGHT) and (py + STANDARD_PLAYER_HEIGHT) >= (oy)
             z_overlap = (pz - player_size) < (oz + other_size) and (pz + player_size) >= (oz - other_size)
             
             if x_overlap and y_overlap and z_overlap:
@@ -375,53 +343,42 @@ class MinecraftServer:
         return False
 
     def _apply_physics(self, player: PlayerState, dt: float) -> None:
-        """Apply server-side physics to a player."""
+        """
+        Apply standard Minecraft physics to a player using the new physics system.
+        """
         if player.flying:
             return  # No gravity when flying
         
         # Don't apply physics immediately after a voluntary movement to prevent interference
-        if time.time() - player.last_move_time < 0.5:  # 500ms grace period (longer)
+        if time.time() - player.last_move_time < 0.5:  # 500ms grace period
             return
         
-        # Apply gravity
-        player.velocity[1] -= GRAVITY * dt
-        # Apply terminal velocity
-        if player.velocity[1] < -TERMINAL_VELOCITY:
-            player.velocity[1] = -TERMINAL_VELOCITY
+        # Initialize physics system if needed
+        if not hasattr(self, '_collision_detector'):
+            self._collision_detector = MinecraftCollisionDetector(self.world.world)
+            self._physics = MinecraftPhysics(self._collision_detector)
         
-        # Calculate new position
-        new_x = player.position[0] + player.velocity[0] * dt
-        new_y = player.position[1] + player.velocity[1] * dt  
-        new_z = player.position[2] + player.velocity[2] * dt
+        # Update collision detector with current world
+        self._collision_detector.world_blocks = self.world.world
         
-        # Check collision with ground
-        test_position = (new_x, new_y, new_z)
-        if self._check_ground_collision(test_position):
-            if player.velocity[1] < 0:  # Falling down
-                # Find the highest block at this x,z position
-                max_y = 0
-                for check_y in range(256):
-                    check_pos = (int(new_x), check_y, int(new_z))
-                    if check_pos in self.world.world:
-                        max_y = max(max_y, check_y)
-                
-                # Place player on top of the highest block
-                new_y = max_y + 1
-                player.velocity[1] = 0  # Stop falling
-                player.on_ground = True
-            else:
-                # Hitting something while going up, stop vertical movement
-                player.velocity[1] = 0
-        else:
-            player.on_ground = False
+        # Current state
+        current_velocity = player.velocity
+        on_ground = player.on_ground
+        
+        # Apply standard Minecraft physics
+        new_position, new_velocity, new_on_ground = self._physics.update_position(
+            player.position, current_velocity, dt, on_ground, False  # server doesn't handle jumping directly
+        )
         
         # Check for player-to-player collision during physics updates
-        if self._check_player_collision(player.id, test_position):
+        if self._check_player_collision(player.id, new_position):
             # If physics would cause a collision, stop the movement
             return  # Don't update position
         
-        # Update player position
-        player.position = (new_x, new_y, new_z)
+        # Update player state
+        player.position = new_position
+        player.velocity = new_velocity
+        player.on_ground = new_on_ground
 
     async def _physics_update_loop(self):
         """Main physics update loop running at PHYSICS_TICK_RATE."""
