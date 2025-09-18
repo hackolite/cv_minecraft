@@ -210,8 +210,8 @@ class MinecraftCollisionDetector:
     def resolve_collision(self, old_position: Tuple[float, float, float], 
                          new_position: Tuple[float, float, float]) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
         """
-        Resolve collision with step-by-step movement AND ray-casting to prevent tunneling.
-        This is the most robust approach against block traversal.
+        Resolve collision with improved diagonal movement handling.
+        Uses sliding collision response instead of hard blocking for minor collisions.
         
         Args:
             old_position: Previous player position
@@ -220,64 +220,203 @@ class MinecraftCollisionDetector:
         Returns:
             Tuple of (safe_position, collision_info)
         """
-        # First check if the ray from old to new position passes through any blocks
-        ray_collision, hit_block = self.ray_cast_collision(old_position, new_position)
-        
-        if ray_collision:
-            # If ray casting detected a collision, stop at the old position
-            collision_info = {'x': True, 'y': True, 'z': True, 'ground': False}
-            self._update_ground_status(collision_info, old_position)
-            return old_position, collision_info
-        
-        # If ray casting is clear, proceed with normal step-by-step resolution
+        # Try the movement with sliding collision resolution
+        return self._resolve_with_sliding(old_position, new_position)
+    
+    def _resolve_with_sliding(self, old_position: Tuple[float, float, float], 
+                             new_position: Tuple[float, float, float]) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
+        """
+        Resolve collision with sliding behavior for diagonal movement.
+        Instead of stopping on minor collisions, tries to slide along walls.
+        Handles corner clipping by allowing small adjustments.
+        Enhanced with better sliding logic.
+        """
         old_x, old_y, old_z = old_position
         new_x, new_y, new_z = new_position
         
         collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
+        current_x, current_y, current_z = old_x, old_y, old_z
         
-        # Calculate movement distance
+        # First try the full movement
+        if not self.check_collision(new_position):
+            self._update_ground_status(collision_info, new_position)
+            return new_position, collision_info
+        
+        # If full movement fails, check if it's a minor corner collision
+        # that can be resolved by small position adjustments
+        adjusted_position = self._try_corner_adjustment(old_position, new_position)
+        if adjusted_position and not self.check_collision(adjusted_position):
+            self._update_ground_status(collision_info, adjusted_position)
+            return adjusted_position, collision_info
+        
+        # If corner adjustment doesn't work, try progressive sliding
+        # This approach tries to maintain as much movement as possible
+        
+        # Calculate movement distances
         dx = new_x - old_x
         dy = new_y - old_y
         dz = new_z - old_z
-        total_distance = math.sqrt(dx*dx + dy*dy + dz*dz)
         
-        # If movement is very large, use step-by-step collision detection
-        max_step = PLAYER_WIDTH / 4  # Smaller step size for better precision
+        # Try different sliding strategies
+        best_position = old_position
+        best_distance = 0.0
         
-        if total_distance > max_step:
-            # Break movement into smaller steps
-            steps = int(math.ceil(total_distance / max_step))
-            step_x = dx / steps
-            step_y = dy / steps
-            step_z = dz / steps
+        # Strategy 1: Try X then Z
+        test_pos = self._try_axis_sliding(old_position, new_position, ['x', 'z', 'y'])
+        distance = self._calculate_distance(old_position, test_pos)
+        if distance > best_distance:
+            best_position = test_pos
+            best_distance = distance
+        
+        # Strategy 2: Try Z then X  
+        test_pos = self._try_axis_sliding(old_position, new_position, ['z', 'x', 'y'])
+        distance = self._calculate_distance(old_position, test_pos)
+        if distance > best_distance:
+            best_position = test_pos
+            best_distance = distance
+        
+        # Strategy 3: Try partial movement in each axis
+        test_pos = self._try_partial_sliding(old_position, new_position)
+        distance = self._calculate_distance(old_position, test_pos)
+        if distance > best_distance:
+            best_position = test_pos
+            best_distance = distance
+        
+        # Update collision info based on what was blocked
+        collision_info['x'] = abs(best_position[0] - new_x) > COLLISION_EPSILON
+        collision_info['z'] = abs(best_position[2] - new_z) > COLLISION_EPSILON
+        collision_info['y'] = abs(best_position[1] - new_y) > COLLISION_EPSILON
+        
+        if collision_info['y'] and new_y < old_y:
+            collision_info['ground'] = True
+        
+        # Update ground status
+        self._update_ground_status(collision_info, best_position)
+        
+        return best_position, collision_info
+    
+    def _try_axis_sliding(self, old_position: Tuple[float, float, float], 
+                         new_position: Tuple[float, float, float], 
+                         axis_order: List[str]) -> Tuple[float, float, float]:
+        """Try sliding along axes in the specified order."""
+        current_x, current_y, current_z = old_position
+        new_x, new_y, new_z = new_position
+        
+        for axis in axis_order:
+            if axis == 'x':
+                test_pos = (new_x, current_y, current_z)
+                if not self.check_collision(test_pos):
+                    current_x = new_x
+            elif axis == 'z':
+                test_pos = (current_x, current_y, new_z)
+                if not self.check_collision(test_pos):
+                    current_z = new_z
+            elif axis == 'y':
+                test_pos = (current_x, new_y, current_z)
+                if not self.check_collision(test_pos):
+                    current_y = new_y
+                else:
+                    # Handle ground snapping for Y collisions
+                    if new_y < old_position[1]:
+                        ground_level = self.find_ground_level(current_x, current_z, old_position[1])
+                        if ground_level is not None:
+                            current_y = ground_level
+        
+        return (current_x, current_y, current_z)
+    
+    def _try_partial_sliding(self, old_position: Tuple[float, float, float], 
+                            new_position: Tuple[float, float, float]) -> Tuple[float, float, float]:
+        """Try moving partially in each direction to maximize movement."""
+        old_x, old_y, old_z = old_position
+        new_x, new_y, new_z = new_position
+        
+        # Calculate movement deltas
+        dx = new_x - old_x
+        dy = new_y - old_y
+        dz = new_z - old_z
+        
+        # Try different percentages of movement
+        for factor in [0.9, 0.8, 0.7, 0.6, 0.5]:
+            test_x = old_x + dx * factor
+            test_y = old_y + dy * factor
+            test_z = old_z + dz * factor
             
-            current_x, current_y, current_z = old_x, old_y, old_z
+            test_pos = (test_x, test_y, test_z)
+            if not self.check_collision(test_pos):
+                return test_pos
+        
+        return old_position
+    
+    def _calculate_distance(self, pos1: Tuple[float, float, float], 
+                           pos2: Tuple[float, float, float]) -> float:
+        """Calculate 3D distance between two positions."""
+        dx = pos2[0] - pos1[0]
+        dy = pos2[1] - pos1[1]
+        dz = pos2[2] - pos1[2]
+        return math.sqrt(dx*dx + dy*dy + dz*dz)
+    
+    def _try_corner_adjustment(self, old_position: Tuple[float, float, float], 
+                              new_position: Tuple[float, float, float]) -> Optional[Tuple[float, float, float]]:
+        """
+        Try to adjust position slightly to avoid corner clipping during diagonal movement.
+        This helps with the issue where player gets stuck on block corners.
+        Enhanced version with better adjustment strategies.
+        """
+        old_x, old_y, old_z = old_position
+        new_x, new_y, new_z = new_position
+        
+        # Calculate movement direction
+        dx = new_x - old_x
+        dy = new_y - old_y
+        dz = new_z - old_z
+        
+        # Only apply corner adjustment for diagonal movement
+        if abs(dx) < COLLISION_EPSILON or abs(dz) < COLLISION_EPSILON:
+            return None
+        
+        # Try progressively larger adjustments
+        adjustment_distances = [0.02, 0.05, 0.1, 0.15]  # Multiple adjustment sizes
+        
+        for adjustment_distance in adjustment_distances:
+            # Strategy 1: Try adjusting perpendicular to movement direction
+            # Calculate perpendicular directions
+            movement_length = math.sqrt(dx*dx + dz*dz)
+            if movement_length > 0:
+                # Normalized movement direction
+                move_x = dx / movement_length
+                move_z = dz / movement_length
+                
+                # Perpendicular directions (rotate 90 degrees)
+                perp_x = -move_z
+                perp_z = move_x
+                
+                # Try adjusting perpendicular to movement
+                for direction in [-1, 1]:
+                    adj_x = perp_x * direction * adjustment_distance
+                    adj_z = perp_z * direction * adjustment_distance
+                    test_pos = (new_x + adj_x, new_y, new_z + adj_z)
+                    
+                    if not self.check_collision(test_pos):
+                        return test_pos
             
-            for step in range(steps):
-                test_x = current_x + step_x
-                test_y = current_y + step_y
-                test_z = current_z + step_z
-                
-                # Test this step position
-                step_pos, step_collision = self._resolve_single_step(
-                    (current_x, current_y, current_z), 
-                    (test_x, test_y, test_z)
-                )
-                
-                # Update collision info
-                for key in collision_info:
-                    collision_info[key] = collision_info[key] or step_collision[key]
-                
-                # If we hit something, stop here
-                if step_collision['x'] or step_collision['y'] or step_collision['z']:
-                    return step_pos, collision_info
-                
-                current_x, current_y, current_z = step_pos
+            # Strategy 2: Try cardinal direction adjustments
+            for x_adj in [-adjustment_distance, 0, adjustment_distance]:
+                for z_adj in [-adjustment_distance, 0, adjustment_distance]:
+                    if x_adj == 0 and z_adj == 0:
+                        continue
+                    
+                    test_pos = (new_x + x_adj, new_y, new_z + z_adj)
+                    if not self.check_collision(test_pos):
+                        return test_pos
             
-            return (current_x, current_y, current_z), collision_info
-        else:
-            # Small movement, use single step
-            return self._resolve_single_step(old_position, new_position)
+            # Strategy 3: Try backing off slightly in movement direction
+            back_off_factor = adjustment_distance / movement_length if movement_length > 0 else 0
+            if back_off_factor < 0.5:  # Don't back off too much
+                test_pos = (new_x - dx * back_off_factor, new_y, new_z - dz * back_off_factor)
+                if not self.check_collision(test_pos):
+                    return test_pos
+        
+        return None
     
     def _resolve_single_step(self, old_position: Tuple[float, float, float], 
                            new_position: Tuple[float, float, float]) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
