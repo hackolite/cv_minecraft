@@ -100,6 +100,43 @@ def get_blocks_in_bounding_box(min_corner: Tuple[float, float, float],
     return blocks
 
 
+def check_cube_position_occupied(position: Tuple[float, float, float], 
+                                player_size: float, 
+                                other_cubes: List) -> bool:
+    """
+    Simple check if a position is occupied by another cube to avoid complex collision calculations.
+    
+    Args:
+        position: Position to test (x, y, z)
+        player_size: Size of the player's bounding box (half-size)
+        other_cubes: List of other player cubes to check against
+        
+    Returns:
+        True if position is occupied by another cube, False otherwise
+    """
+    px, py, pz = position
+    
+    for other_cube in other_cubes:
+        # Skip if not a valid cube object
+        if not hasattr(other_cube, 'position') or not hasattr(other_cube, 'size'):
+            continue
+            
+        # Get other cube's position and size
+        ox, oy, oz = other_cube.position
+        other_size = other_cube.size
+        
+        # Check 3D bounding box collision
+        # Two boxes collide if they overlap in all three dimensions
+        x_overlap = (px - player_size) < (ox + other_size) and (px + player_size) >= (ox - other_size)
+        y_overlap = (py - player_size) < (oy + other_size) and (py + player_size) >= (oy - other_size)
+        z_overlap = (pz - player_size) < (oz + other_size) and (pz + player_size) >= (oz - other_size)
+        
+        if x_overlap and y_overlap and z_overlap:
+            return True
+    
+    return False
+
+
 def box_intersects_block(min_corner: Tuple[float, float, float], 
                         max_corner: Tuple[float, float, float],
                         block_pos: Tuple[int, int, int]) -> bool:
@@ -149,6 +186,16 @@ class MinecraftCollisionDetector:
         self.world_blocks = world_blocks
         self.collision_cache = {}  # Cache recent collision checks
         self.cache_size = 1000  # Maximum cache entries
+        self.other_cubes = []  # List of other player cubes to check against
+        
+    def set_other_cubes(self, other_cubes: List) -> None:
+        """
+        Set the list of other player cubes to check for position conflicts.
+        
+        Args:
+            other_cubes: List of other player cubes
+        """
+        self.other_cubes = other_cubes if other_cubes else []
         
     def _cache_key(self, position: Tuple[float, float, float]) -> Tuple[int, int, int]:
         """Generate cache key for position (rounded to avoid float precision issues)"""
@@ -157,8 +204,8 @@ class MinecraftCollisionDetector:
     
     def check_collision(self, position: Tuple[float, float, float]) -> bool:
         """
-        Check if the player would collide with any blocks at the given position.
-        More aggressive collision detection to prevent block traversal.
+        Check if the player would collide with any blocks or other cubes at the given position.
+        First checks for cube position conflicts (simple check), then block collisions if needed.
         
         Args:
             position: Player position to test
@@ -166,7 +213,12 @@ class MinecraftCollisionDetector:
         Returns:
             True if collision would occur, False otherwise
         """
-        # Disable cache for critical collision checks to ensure accuracy
+        # First, simple check if position is occupied by another cube
+        # This avoids complex collision calculations when cubes are in same position
+        if check_cube_position_occupied(position, PLAYER_WIDTH / 2, self.other_cubes):
+            return True
+        
+        # If no cube collision, proceed with normal block collision detection
         min_corner, max_corner = get_player_bounding_box(position)
         potential_blocks = get_blocks_in_bounding_box(min_corner, max_corner)
         

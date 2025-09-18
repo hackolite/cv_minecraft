@@ -722,6 +722,11 @@ class MinecraftWindow(pyglet.window.Window):
         """
         # Use the new standard physics system
         collision_detector = MinecraftCollisionDetector(self.model.world)
+        
+        # Set other cubes for position validation to avoid complex collision calculations
+        other_cubes = self.model.get_other_cubes()
+        collision_detector.set_other_cubes(other_cubes)
+        
         safe_position, collision_info = collision_detector.resolve_collision(position, position)
         
         # Update collision types for compatibility with existing code
