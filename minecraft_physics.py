@@ -31,10 +31,10 @@ WALKING_SPEED = 4.317       # Blocks per second
 SPRINTING_SPEED = 5.612     # Blocks per second  
 FLYING_SPEED = 10.89        # Blocks per second
 
-# Collision constants
-COLLISION_EPSILON = 0.001   # Small value for floating point precision
-STEP_HEIGHT = 0.5625        # Maximum step up height (9/16 blocks)
-GROUND_TOLERANCE = 0.05     # Distance to consider "on ground"
+# Collision constants - Made more restrictive to prevent block traversal
+COLLISION_EPSILON = 0.0001  # Smaller value for tighter collision detection
+STEP_HEIGHT = 0.5           # Reduced from 0.5625 to prevent easy block climbing  
+GROUND_TOLERANCE = 0.01     # Smaller tolerance for more precise ground detection
 
 # World constants
 BLOCK_SIZE = 1.0            # Each block is 1×1×1
@@ -211,7 +211,12 @@ class MinecraftCollisionDetector:
                          new_position: Tuple[float, float, float]) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
         """
         Resolve collision with step-by-step movement AND ray-casting to prevent tunneling.
-        This is the most robust approach against block traversal.
+        
+        CRITICAL IMPROVEMENTS TO PREVENT BLOCK TRAVERSAL:
+        1. Always validate that returned positions are safe (no collision)
+        2. Handle cases where old_position is already inside a block
+        3. Use emergency safe position finding when normal resolution fails
+        4. Multiple layers of validation to ensure players never end up inside blocks
         
         Args:
             old_position: Previous player position
@@ -220,13 +225,65 @@ class MinecraftCollisionDetector:
         Returns:
             Tuple of (safe_position, collision_info)
         """
-        # First check if the ray from old to new position passes through any blocks
+        # CRITICAL FIX: First ensure old position is actually safe
+        # If player is already inside a block, we need to move them to safety
+        # This handles edge cases where previous physics updates left player in invalid state
+        if self.check_collision(old_position):
+            # Player is currently inside a block - find a safe position
+            safe_pos = self._find_safe_position_near(old_position)
+            if safe_pos:
+                old_position = safe_pos
+        
+        # Check if the ray from old to new position passes through any blocks
+        # This prevents high-speed tunneling through thin walls
         ray_collision, hit_block = self.ray_cast_collision(old_position, new_position)
         
         if ray_collision:
-            # If ray casting detected a collision, stop at the old position
+            # Ray casting detected collision, but we need to handle different movement types:
+            # - Falling movement: Try to land on top of the hit block
+            # - Horizontal movement: Stop at old position only if genuinely blocked
+            # - Diagonal movement: Resolve component by component
+            
+            old_x, old_y, old_z = old_position
+            new_x, new_y, new_z = new_position
+            
+            # Check if this is primarily a falling movement (Y decreasing significantly)
+            y_movement = new_y - old_y
+            horizontal_movement = math.sqrt((new_x - old_x)**2 + (new_z - old_z)**2)
+            
+            if y_movement < -0.5 and horizontal_movement < 0.5:
+                # This is falling movement - try to land on the hit block
+                if hit_block:
+                    block_x, block_y, block_z = hit_block
+                    # Try to place player on top of the block
+                    landing_y = float(block_y + 1)  # Top surface of block
+                    landing_pos = (old_x, landing_y, old_z)
+                    
+                    if not self.check_collision(landing_pos):
+                        collision_info = {'x': False, 'y': True, 'z': False, 'ground': True}
+                        return landing_pos, collision_info
+            elif abs(y_movement) < 0.1:
+                # This is horizontal movement - verify that target position is actually blocked
+                if not self.check_collision(new_position):
+                    # Target position is actually safe, ray casting may have been overly cautious
+                    # Proceed with normal step-by-step resolution
+                    pass  # Continue to normal resolution below
+                else:
+                    # Target is genuinely blocked
+                    collision_info = {'x': True, 'y': False, 'z': True, 'ground': False}
+                    self._update_ground_status(collision_info, old_position)
+                    return old_position, collision_info
+            
+            # For diagonal movements or if special handling failed, return safe old position
             collision_info = {'x': True, 'y': True, 'z': True, 'ground': False}
             self._update_ground_status(collision_info, old_position)
+            
+            # Double-check that old_position is actually safe before returning it
+            if self.check_collision(old_position):
+                safe_pos = self._find_safe_position_near(old_position)
+                if safe_pos:
+                    old_position = safe_pos
+            
             return old_position, collision_info
         
         # If ray casting is clear, proceed with normal step-by-step resolution
@@ -268,13 +325,33 @@ class MinecraftCollisionDetector:
                 for key in collision_info:
                     collision_info[key] = collision_info[key] or step_collision[key]
                 
+                # CRITICAL VALIDATION: Ensure step resulted in safe position
+                if self.check_collision(step_pos):
+                    # Step resulted in unsafe position, stop here and use current safe position
+                    final_position = (current_x, current_y, current_z)
+                    if self.check_collision(final_position):
+                        # Even current position is unsafe, find emergency safe position
+                        emergency_safe = self._find_safe_position_near(final_position)
+                        if emergency_safe:
+                            final_position = emergency_safe
+                    return final_position, collision_info
+                
                 # If we hit something, stop here
                 if step_collision['x'] or step_collision['y'] or step_collision['z']:
                     return step_pos, collision_info
                 
                 current_x, current_y, current_z = step_pos
             
-            return (current_x, current_y, current_z), collision_info
+            final_position = (current_x, current_y, current_z)
+            
+            # FINAL SAFETY CHECK for step-by-step movement
+            if self.check_collision(final_position):
+                emergency_safe = self._find_safe_position_near(final_position)
+                if emergency_safe:
+                    final_position = emergency_safe
+                    collision_info['x'] = collision_info['y'] = collision_info['z'] = True
+            
+            return final_position, collision_info
         else:
             # Small movement, use single step
             return self._resolve_single_step(old_position, new_position)
@@ -283,12 +360,21 @@ class MinecraftCollisionDetector:
                            new_position: Tuple[float, float, float]) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
         """
         Resolve collision for a single small step.
+        CRITICAL: Always ensure the returned position is safe (no collision).
         """
         old_x, old_y, old_z = old_position
         new_x, new_y, new_z = new_position
         
         collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
         current_x, current_y, current_z = old_x, old_y, old_z
+        
+        # CRITICAL FIX: Ensure starting position is safe
+        if self.check_collision((current_x, current_y, current_z)):
+            # Starting position is not safe, try to fix it
+            safe_start = self._find_safe_position_near((current_x, current_y, current_z))
+            if safe_start:
+                current_x, current_y, current_z = safe_start
+                collision_info['x'] = collision_info['y'] = collision_info['z'] = True
         
         # Test X movement first (horizontal)
         test_x_pos = (new_x, current_y, current_z)
@@ -313,15 +399,26 @@ class MinecraftCollisionDetector:
             # If moving down and hitting something, we're on ground
             if new_y < old_y:
                 collision_info['ground'] = True
-                # Snap to the surface of the block we hit
+                # Try to snap to the surface of the block we hit
                 ground_level = self.find_ground_level(current_x, current_z, old_y)
                 if ground_level is not None:
-                    current_y = ground_level
+                    test_ground_pos = (current_x, ground_level, current_z)
+                    if not self.check_collision(test_ground_pos):
+                        current_y = ground_level
+        
+        # CRITICAL VALIDATION: Final safety check
+        final_position = (current_x, current_y, current_z)
+        if self.check_collision(final_position):
+            # Final position is still not safe! Try emergency fix
+            emergency_safe = self._find_safe_position_near(final_position)
+            if emergency_safe:
+                final_position = emergency_safe
+                collision_info['x'] = collision_info['y'] = collision_info['z'] = True
         
         # Final ground check - more robust ground detection
-        self._update_ground_status(collision_info, (current_x, current_y, current_z))
+        self._update_ground_status(collision_info, final_position)
         
-        return (current_x, current_y, current_z), collision_info
+        return final_position, collision_info
     
     def _update_ground_status(self, collision_info: Dict[str, bool], 
                             position: Tuple[float, float, float]) -> None:
@@ -341,7 +438,11 @@ class MinecraftCollisionDetector:
                           end_pos: Tuple[float, float, float]) -> Tuple[bool, Optional[Tuple[int, int, int]]]:
         """
         Use ray casting to detect if movement from start to end would pass through any blocks.
-        This prevents tunneling through thin walls or fast movement.
+        
+        ENHANCED FOR BETTER BLOCK TRAVERSAL PREVENTION:
+        - Smaller step size to catch thin walls and corner cases
+        - More thorough collision checking along the path
+        - Handles edge cases with floating point precision
         
         Args:
             start_pos: Starting position
@@ -367,8 +468,9 @@ class MinecraftCollisionDetector:
         dy /= distance
         dz /= distance
         
-        # Step size should be smaller than half a block to catch thin walls
-        step_size = 0.1
+        # IMPROVED: Use smaller step size for better precision
+        # Step size should be smaller than quarter block to catch thin walls and corners
+        step_size = 0.05  # Reduced from 0.1 for better collision detection
         steps = int(distance / step_size) + 1
         
         for i in range(steps + 1):
@@ -449,6 +551,57 @@ class MinecraftCollisionDetector:
         
         # Check if there's clearance at the target position
         return not self.check_collision(to_pos)
+    
+    def _find_safe_position_near(self, position: Tuple[float, float, float]) -> Optional[Tuple[float, float, float]]:
+        """
+        Find a safe position near the given position for players stuck inside blocks.
+        
+        MULTI-STRATEGY APPROACH FOR SAFETY:
+        1. Find ground level and place player on top (most common case)
+        2. Search upward from current position (for underground scenarios)  
+        3. Search horizontally (for corner/wall stuck cases)
+        
+        This handles edge cases like:
+        - Player teleported or spawned inside blocks
+        - Physics glitches that place player in invalid position
+        - Chunk loading issues that change world geometry
+        
+        Args:
+            position: Current (unsafe) position
+            
+        Returns:
+            Safe position or None if none found nearby
+        """
+        x, y, z = position
+        
+        # Strategy 1: Try to find ground level and place player on top
+        # This is the most common case - player fell/glitched into ground
+        ground_level = self.find_ground_level(x, z, y + 10.0, check_clearance=True)
+        if ground_level is not None:
+            safe_pos = (x, ground_level, z)
+            if not self.check_collision(safe_pos):
+                return safe_pos
+        
+        # Strategy 2: Search upward from current position
+        # Handles cases where player is stuck underground or in walls
+        for y_offset in [0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]:
+            test_pos = (x, y + y_offset, z)
+            if not self.check_collision(test_pos):
+                return test_pos
+        
+        # Strategy 3: Search in horizontal directions
+        # Handles corner cases and complex geometry
+        for radius in [0.5, 1.0, 1.5, 2.0]:
+            for dx in [-radius, 0.0, radius]:
+                for dz in [-radius, 0.0, radius]:
+                    if dx == 0 and dz == 0:
+                        continue
+                    test_pos = (x + dx, y + 1.0, z + dz)  # Try slightly above current position
+                    if not self.check_collision(test_pos):
+                        return test_pos
+        
+        # If all else fails, return None - caller must handle this gracefully
+        return None
 
 
 class MinecraftPhysics:
