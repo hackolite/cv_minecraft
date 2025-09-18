@@ -31,9 +31,9 @@ WALKING_SPEED = 4.317       # Blocks per second
 SPRINTING_SPEED = 5.612     # Blocks per second  
 FLYING_SPEED = 10.89        # Blocks per second
 
-# Collision constants
-COLLISION_EPSILON = 0.001   # Small value for floating point precision
-STEP_HEIGHT = 0.5625        # Maximum step up height (9/16 blocks)
+# Collision constants - reduced for better precision to prevent tunneling
+COLLISION_EPSILON = 0.0001  # Smaller epsilon for better floating point precision 
+STEP_HEIGHT = 0.5           # Maximum step up height (reduced to prevent over-stepping)
 GROUND_TOLERANCE = 0.05     # Distance to consider "on ground"
 
 # World constants
@@ -210,8 +210,8 @@ class MinecraftCollisionDetector:
     def resolve_collision(self, old_position: Tuple[float, float, float], 
                          new_position: Tuple[float, float, float]) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
         """
-        Resolve collision with step-by-step movement AND ray-casting to prevent tunneling.
-        This is the most robust approach against block traversal.
+        Resolve collision with step-by-step movement and selective ray-casting to prevent tunneling.
+        Uses less aggressive ray-casting to allow legitimate movement while preventing tunneling.
         
         Args:
             old_position: Previous player position
@@ -220,20 +220,9 @@ class MinecraftCollisionDetector:
         Returns:
             Tuple of (safe_position, collision_info)
         """
-        # First check if the ray from old to new position passes through any blocks
-        ray_collision, hit_block = self.ray_cast_collision(old_position, new_position)
-        
-        if ray_collision:
-            # If ray casting detected a collision, stop at the old position
-            collision_info = {'x': True, 'y': True, 'z': True, 'ground': False}
-            self._update_ground_status(collision_info, old_position)
-            return old_position, collision_info
-        
-        # If ray casting is clear, proceed with normal step-by-step resolution
+        # Only use ray casting for very large movements that could cause tunneling
         old_x, old_y, old_z = old_position
         new_x, new_y, new_z = new_position
-        
-        collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
         
         # Calculate movement distance
         dx = new_x - old_x
@@ -241,11 +230,25 @@ class MinecraftCollisionDetector:
         dz = new_z - old_z
         total_distance = math.sqrt(dx*dx + dy*dy + dz*dz)
         
-        # If movement is very large, use step-by-step collision detection
-        max_step = PLAYER_WIDTH / 4  # Smaller step size for better precision
+        # Use ray casting only for movements larger than 2 blocks to prevent excessive tunneling
+        if total_distance > 2.0:
+            ray_collision, hit_block = self.ray_cast_collision(old_position, new_position)
+            if ray_collision:
+                # Find the closest safe position before the collision
+                safe_pos = self._find_safe_position_before_collision(old_position, new_position, hit_block)
+                collision_info = {'x': True, 'y': True, 'z': True, 'ground': False}
+                self._update_ground_status(collision_info, safe_pos)
+                return safe_pos, collision_info
+        
+        # Proceed with normal step-by-step resolution for smaller movements
+        
+        collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
+        
+        # Use smaller step size for better precision to prevent tunneling
+        max_step = PLAYER_WIDTH / 8  # Smaller step size for better precision
         
         if total_distance > max_step:
-            # Break movement into smaller steps
+            # Break movement into smaller steps to prevent tunneling
             steps = int(math.ceil(total_distance / max_step))
             step_x = dx / steps
             step_y = dy / steps
@@ -279,6 +282,47 @@ class MinecraftCollisionDetector:
             # Small movement, use single step
             return self._resolve_single_step(old_position, new_position)
     
+    def _find_safe_position_before_collision(self, start_pos: Tuple[float, float, float], 
+                                            end_pos: Tuple[float, float, float], 
+                                            hit_block: Tuple[int, int, int]) -> Tuple[float, float, float]:
+        """
+        Find the closest safe position before collision when ray casting detects tunneling.
+        
+        Args:
+            start_pos: Starting position
+            end_pos: Desired end position 
+            hit_block: Block that was hit by ray casting
+            
+        Returns:
+            Safe position before the collision
+        """
+        sx, sy, sz = start_pos
+        ex, ey, ez = end_pos
+        
+        # Binary search for the safe position
+        safe_t = 0.0
+        unsafe_t = 1.0
+        
+        for _ in range(10):  # Limited iterations for performance
+            test_t = (safe_t + unsafe_t) / 2.0
+            test_x = sx + (ex - sx) * test_t
+            test_y = sy + (ey - sy) * test_t
+            test_z = sz + (ez - sz) * test_t
+            test_pos = (test_x, test_y, test_z)
+            
+            if self.check_collision(test_pos):
+                unsafe_t = test_t
+            else:
+                safe_t = test_t
+        
+        # Return position at safe_t with small buffer
+        buffer_t = max(0.0, safe_t - 0.01)
+        safe_x = sx + (ex - sx) * buffer_t
+        safe_y = sy + (ey - sy) * buffer_t
+        safe_z = sz + (ez - sz) * buffer_t
+        
+        return (safe_x, safe_y, safe_z)
+
     def _resolve_single_step(self, old_position: Tuple[float, float, float], 
                            new_position: Tuple[float, float, float]) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
         """
@@ -304,17 +348,17 @@ class MinecraftCollisionDetector:
         else:
             collision_info['z'] = True
         
-        # Test Y movement last (vertical)
+        # Test Y movement last (vertical) with improved ground snapping
         test_y_pos = (current_x, new_y, current_z)
         if not self.check_collision(test_y_pos):
             current_y = new_y
         else:
             collision_info['y'] = True
-            # If moving down and hitting something, we're on ground
+            # If moving down and hitting something, snap to proper ground level
             if new_y < old_y:
                 collision_info['ground'] = True
-                # Snap to the surface of the block we hit
-                ground_level = self.find_ground_level(current_x, current_z, old_y)
+                # Find the exact ground level for precise snapping
+                ground_level = self._find_precise_ground_level(current_x, current_z, old_y)
                 if ground_level is not None:
                     current_y = ground_level
         
@@ -323,6 +367,47 @@ class MinecraftCollisionDetector:
         
         return (current_x, current_y, current_z), collision_info
     
+    def _find_precise_ground_level(self, x: float, z: float, start_y: float) -> Optional[float]:
+        """
+        Find precise ground level using binary search for accurate snapping.
+        
+        Args:
+            x: X coordinate
+            z: Z coordinate  
+            start_y: Y coordinate to start searching from
+            
+        Returns:
+            Precise Y coordinate of ground surface
+        """
+        # First find the general area using integer block search
+        ground_block_y = None
+        for y in range(int(start_y), -64, -1):
+            block_pos = (int(math.floor(x)), y, int(math.floor(z)))
+            if block_pos in self.world_blocks:
+                ground_block_y = y
+                break
+        
+        if ground_block_y is None:
+            return None
+        
+        # Use binary search to find precise surface level
+        min_y = float(ground_block_y)  # This is inside the block (collision)
+        max_y = float(ground_block_y + 1)  # This is above the block (no collision)
+        
+        for _ in range(10):  # Limit iterations for performance
+            test_y = (min_y + max_y) / 2.0
+            test_pos = (x, test_y, z)
+            
+            if self.check_collision(test_pos):
+                # If collision, this Y is too low, search higher
+                min_y = test_y  
+            else:
+                # If no collision, this Y is safe, can go lower
+                max_y = test_y
+        
+        # Return the surface level (highest safe position)
+        return max_y
+
     def _update_ground_status(self, collision_info: Dict[str, bool], 
                             position: Tuple[float, float, float]) -> None:
         """Update ground status with more robust detection"""
