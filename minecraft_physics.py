@@ -71,6 +71,7 @@ def get_blocks_in_bounding_box(min_corner: Tuple[float, float, float],
                               max_corner: Tuple[float, float, float]) -> Set[Tuple[int, int, int]]:
     """
     Get all block coordinates that intersect with the given bounding box.
+    Fixed to prevent missing blocks that should be tested.
     
     Args:
         min_corner: Minimum corner of bounding box
@@ -82,13 +83,13 @@ def get_blocks_in_bounding_box(min_corner: Tuple[float, float, float],
     x_min, y_min, z_min = min_corner
     x_max, y_max, z_max = max_corner
     
-    # Get integer bounds for blocks - use proper rounding for edge cases
-    block_x_min = int(math.floor(x_min + COLLISION_EPSILON))
-    block_x_max = int(math.floor(x_max - COLLISION_EPSILON))
-    block_y_min = int(math.floor(y_min + COLLISION_EPSILON))
-    block_y_max = int(math.floor(y_max - COLLISION_EPSILON))
-    block_z_min = int(math.floor(z_min + COLLISION_EPSILON))
-    block_z_max = int(math.floor(z_max - COLLISION_EPSILON))
+    # Get integer bounds for blocks - don't add epsilon here as it can miss blocks
+    block_x_min = int(math.floor(x_min))
+    block_x_max = int(math.floor(x_max))
+    block_y_min = int(math.floor(y_min))
+    block_y_max = int(math.floor(y_max))
+    block_z_min = int(math.floor(z_min))
+    block_z_max = int(math.floor(z_max))
     
     blocks = set()
     for x in range(block_x_min, block_x_max + 1):
@@ -157,7 +158,7 @@ class MinecraftCollisionDetector:
     def check_collision(self, position: Tuple[float, float, float]) -> bool:
         """
         Check if the player would collide with any blocks at the given position.
-        Now with caching for better performance.
+        More aggressive collision detection to prevent block traversal.
         
         Args:
             position: Player position to test
@@ -165,30 +166,16 @@ class MinecraftCollisionDetector:
         Returns:
             True if collision would occur, False otherwise
         """
-        cache_key = self._cache_key(position)
-        
-        # Check cache first
-        if cache_key in self.collision_cache:
-            return self.collision_cache[cache_key]
-        
+        # Disable cache for critical collision checks to ensure accuracy
         min_corner, max_corner = get_player_bounding_box(position)
         potential_blocks = get_blocks_in_bounding_box(min_corner, max_corner)
         
-        collision = False
         for block_pos in potential_blocks:
             if block_pos in self.world_blocks:
                 if box_intersects_block(min_corner, max_corner, block_pos):
-                    collision = True
-                    break  # Early exit on first collision
+                    return True
         
-        # Update cache (with size limit)
-        if len(self.collision_cache) >= self.cache_size:
-            # Remove oldest entry (simple FIFO)
-            oldest_key = next(iter(self.collision_cache))
-            del self.collision_cache[oldest_key]
-        
-        self.collision_cache[cache_key] = collision
-        return collision
+        return False
     
     def find_ground_level(self, x: float, z: float, start_y: float = 256.0, 
                          check_clearance: bool = True) -> Optional[float]:
@@ -223,8 +210,8 @@ class MinecraftCollisionDetector:
     def resolve_collision(self, old_position: Tuple[float, float, float], 
                          new_position: Tuple[float, float, float]) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
         """
-        Resolve collision with improved order: horizontal movement first, then vertical.
-        This provides more natural movement behavior.
+        Resolve collision with step-by-step movement AND ray-casting to prevent tunneling.
+        This is the most robust approach against block traversal.
         
         Args:
             old_position: Previous player position
@@ -232,6 +219,70 @@ class MinecraftCollisionDetector:
             
         Returns:
             Tuple of (safe_position, collision_info)
+        """
+        # First check if the ray from old to new position passes through any blocks
+        ray_collision, hit_block = self.ray_cast_collision(old_position, new_position)
+        
+        if ray_collision:
+            # If ray casting detected a collision, stop at the old position
+            collision_info = {'x': True, 'y': True, 'z': True, 'ground': False}
+            self._update_ground_status(collision_info, old_position)
+            return old_position, collision_info
+        
+        # If ray casting is clear, proceed with normal step-by-step resolution
+        old_x, old_y, old_z = old_position
+        new_x, new_y, new_z = new_position
+        
+        collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
+        
+        # Calculate movement distance
+        dx = new_x - old_x
+        dy = new_y - old_y
+        dz = new_z - old_z
+        total_distance = math.sqrt(dx*dx + dy*dy + dz*dz)
+        
+        # If movement is very large, use step-by-step collision detection
+        max_step = PLAYER_WIDTH / 4  # Smaller step size for better precision
+        
+        if total_distance > max_step:
+            # Break movement into smaller steps
+            steps = int(math.ceil(total_distance / max_step))
+            step_x = dx / steps
+            step_y = dy / steps
+            step_z = dz / steps
+            
+            current_x, current_y, current_z = old_x, old_y, old_z
+            
+            for step in range(steps):
+                test_x = current_x + step_x
+                test_y = current_y + step_y
+                test_z = current_z + step_z
+                
+                # Test this step position
+                step_pos, step_collision = self._resolve_single_step(
+                    (current_x, current_y, current_z), 
+                    (test_x, test_y, test_z)
+                )
+                
+                # Update collision info
+                for key in collision_info:
+                    collision_info[key] = collision_info[key] or step_collision[key]
+                
+                # If we hit something, stop here
+                if step_collision['x'] or step_collision['y'] or step_collision['z']:
+                    return step_pos, collision_info
+                
+                current_x, current_y, current_z = step_pos
+            
+            return (current_x, current_y, current_z), collision_info
+        else:
+            # Small movement, use single step
+            return self._resolve_single_step(old_position, new_position)
+    
+    def _resolve_single_step(self, old_position: Tuple[float, float, float], 
+                           new_position: Tuple[float, float, float]) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
+        """
+        Resolve collision for a single small step.
         """
         old_x, old_y, old_z = old_position
         new_x, new_y, new_z = new_position
@@ -285,6 +336,59 @@ class MinecraftCollisionDetector:
                 return
         
         collision_info['ground'] = False
+    
+    def ray_cast_collision(self, start_pos: Tuple[float, float, float], 
+                          end_pos: Tuple[float, float, float]) -> Tuple[bool, Optional[Tuple[int, int, int]]]:
+        """
+        Use ray casting to detect if movement from start to end would pass through any blocks.
+        This prevents tunneling through thin walls or fast movement.
+        
+        Args:
+            start_pos: Starting position
+            end_pos: Ending position
+            
+        Returns:
+            Tuple of (collision_detected, first_block_hit)
+        """
+        sx, sy, sz = start_pos
+        ex, ey, ez = end_pos
+        
+        # Calculate direction and distance
+        dx = ex - sx
+        dy = ey - sy
+        dz = ez - sz
+        distance = math.sqrt(dx*dx + dy*dy + dz*dz)
+        
+        if distance < COLLISION_EPSILON:
+            return False, None
+        
+        # Normalize direction
+        dx /= distance
+        dy /= distance
+        dz /= distance
+        
+        # Step size should be smaller than half a block to catch thin walls
+        step_size = 0.1
+        steps = int(distance / step_size) + 1
+        
+        for i in range(steps + 1):
+            t = min(i * step_size, distance)
+            test_x = sx + dx * t
+            test_y = sy + dy * t
+            test_z = sz + dz * t
+            
+            test_pos = (test_x, test_y, test_z)
+            if self.check_collision(test_pos):
+                # Find which block we hit
+                min_corner, max_corner = get_player_bounding_box(test_pos)
+                blocks = get_blocks_in_bounding_box(min_corner, max_corner)
+                
+                for block_pos in blocks:
+                    if block_pos in self.world_blocks:
+                        if box_intersects_block(min_corner, max_corner, block_pos):
+                            return True, block_pos
+        
+        return False, None
     
     def snap_to_ground(self, position: Tuple[float, float, float], 
                       max_step_down: float = 1.0) -> Tuple[float, float, float]:
