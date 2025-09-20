@@ -880,9 +880,11 @@ Statut: {connection_status}"""
         sight_dx = math.cos(math.radians(rotation_x - 90)) * m
         sight_dz = math.sin(math.radians(rotation_x - 90)) * m
         
-        # Calculate offset to position camera at front face
-        front_face_offset_x = sight_dx * cube_half_size
-        front_face_offset_z = sight_dz * cube_half_size
+        # Calculate offset to position camera slightly outside the cube
+        # Use a slightly larger offset than cube_half_size to prevent view from entering cube
+        camera_offset = cube_half_size + 0.1  # 0.1 units outside the cube surface
+        front_face_offset_x = sight_dx * camera_offset
+        front_face_offset_z = sight_dz * camera_offset
         
         if self.crouch:
             # When crouching, position slightly lower within the cube
