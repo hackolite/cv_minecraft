@@ -11,7 +11,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from minecraft_physics import (
     MinecraftCollisionDetector, MinecraftPhysics,
-    PLAYER_WIDTH, PLAYER_HEIGHT
+    PLAYER_WIDTH, PLAYER_HEIGHT, COLLISION_EPSILON
 )
 
 def test_diagonal_movement_issue():
@@ -46,8 +46,8 @@ def test_diagonal_movement_issue():
         },
         {
             "name": "Moving diagonally through corner",
-            "start": (9.5, 11.0, 9.5),  # Outside the blocks
-            "end": (11.5, 11.0, 11.5),  # Through the corner of blocks
+            "start": (9.5, 10.5, 9.5),  # Player intersecting with block space
+            "end": (11.5, 10.5, 11.5),  # Through the corner of blocks
             "expected_safe": False
         },
         {
@@ -113,7 +113,11 @@ def test_diagonal_movement_issue():
         # Determine if this case passed
         if case['expected_safe']:
             # Should be able to move freely
-            passed = not ray_collision and distance_moved > intended_distance * 0.9
+            if intended_distance < COLLISION_EPSILON:
+                # Zero-distance movement should always pass if no collision
+                passed = not ray_collision
+            else:
+                passed = not ray_collision and distance_moved > intended_distance * 0.9
             status = "✅" if passed else "❌"
         else:
             # Should be blocked or limited

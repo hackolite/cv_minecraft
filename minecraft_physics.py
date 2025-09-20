@@ -264,6 +264,7 @@ class MinecraftCollisionDetector:
         """
         Resolve collision with improved diagonal movement handling.
         Uses sliding collision response instead of hard blocking for minor collisions.
+        Enhanced to prevent diagonal tunneling through block corners.
         
         Args:
             old_position: Previous player position
@@ -272,6 +273,21 @@ class MinecraftCollisionDetector:
         Returns:
             Tuple of (safe_position, collision_info)
         """
+        old_x, old_y, old_z = old_position
+        new_x, new_y, new_z = new_position
+        
+        # Check if this is a diagonal movement (both X and Z changing significantly)
+        dx = abs(new_x - old_x)
+        dz = abs(new_z - old_z)
+        is_diagonal = dx > COLLISION_EPSILON and dz > COLLISION_EPSILON
+        
+        # For diagonal movements, first check if the path would go through any blocks
+        if is_diagonal:
+            ray_collision, hit_block = self.ray_cast_collision(old_position, new_position)
+            if ray_collision:
+                # Diagonal movement would tunnel through blocks - use conservative sliding
+                return self._resolve_with_conservative_sliding(old_position, new_position)
+        
         # Try the movement with axis-separated collision resolution (simplest implementation)
         return self._resolve_with_axis_separation(old_position, new_position)
     
@@ -438,6 +454,94 @@ class MinecraftCollisionDetector:
         final_position = (current_x, current_y, current_z)
         
         # Update ground status for final position
+        self._update_ground_status(collision_info, final_position)
+        
+        return final_position, collision_info
+    
+    def _resolve_with_conservative_sliding(self, old_position: Tuple[float, float, float], 
+                                         new_position: Tuple[float, float, float]) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
+        """
+        Resolve collision with conservative sliding that prevents diagonal tunneling.
+        This method ensures that diagonal movements cannot pass through block corners.
+        
+        Args:
+            old_position: Previous player position
+            new_position: Desired new position
+            
+        Returns:
+            Tuple of (safe_position, collision_info)
+        """
+        old_x, old_y, old_z = old_position
+        new_x, new_y, new_z = new_position
+        
+        collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
+        current_x, current_y, current_z = old_x, old_y, old_z
+        
+        # For diagonal movements that would tunnel, try conservative sliding:
+        # Only allow movement in one axis at a time, with path validation
+        
+        # Try X movement first, with path validation
+        if abs(new_x - old_x) > COLLISION_EPSILON:
+            test_x_pos = (new_x, current_y, current_z)
+            # Check both destination and path for X movement
+            x_ray_collision, _ = self.ray_cast_collision((current_x, current_y, current_z), test_x_pos)
+            if not self.check_collision(test_x_pos) and not x_ray_collision:
+                current_x = new_x
+            else:
+                collision_info['x'] = True
+        
+        # Try Z movement second, with path validation
+        if abs(new_z - old_z) > COLLISION_EPSILON:
+            test_z_pos = (current_x, current_y, new_z)
+            # Check both destination and path for Z movement
+            z_ray_collision, _ = self.ray_cast_collision((current_x, current_y, current_z), test_z_pos)
+            if not self.check_collision(test_z_pos) and not z_ray_collision:
+                current_z = new_z
+            else:
+                collision_info['z'] = True
+        
+        # Handle Y movement last (same as axis separation)
+        if new_y != old_y:
+            test_position_y = (current_x, new_y, current_z)
+            collision_at_destination = self.check_collision(test_position_y)
+            
+            if new_y > old_y:
+                # Moving upward - check for ceiling collisions along the path
+                if not collision_at_destination:
+                    step_size = 0.1
+                    steps = int(abs(new_y - old_y) / step_size) + 1
+                    collision_found = False
+                    collision_y = new_y
+                    
+                    for i in range(1, steps + 1):
+                        test_y = old_y + (new_y - old_y) * i / steps
+                        test_pos = (current_x, test_y, current_z)
+                        if self.check_collision(test_pos):
+                            collision_found = True
+                            collision_y = test_y
+                            break
+                    
+                    if collision_found:
+                        collision_info['y'] = True
+                        current_y = max(old_y, collision_y - 0.1)
+                    else:
+                        current_y = new_y
+                else:
+                    collision_info['y'] = True
+                    current_y = old_y
+            else:
+                # Moving downward
+                ground_level = self.find_ground_level(current_x, current_z, old_y)
+                if ground_level is not None and new_y < ground_level:
+                    collision_info['y'] = True
+                    collision_info['ground'] = True
+                    current_y = ground_level
+                else:
+                    current_y = new_y
+        else:
+            current_y = old_y
+        
+        final_position = (current_x, current_y, current_z)
         self._update_ground_status(collision_info, final_position)
         
         return final_position, collision_info
@@ -628,6 +732,7 @@ class MinecraftCollisionDetector:
         """
         Use ray casting to detect if movement from start to end would pass through any blocks.
         This prevents tunneling through thin walls or fast movement.
+        Enhanced with better precision for diagonal movements.
         
         Args:
             start_pos: Starting position
@@ -653,8 +758,9 @@ class MinecraftCollisionDetector:
         dy /= distance
         dz /= distance
         
-        # Step size should be smaller than half a block to catch thin walls
-        step_size = 0.1
+        # Use smaller step size for diagonal movements to catch corner collisions
+        is_diagonal = abs(dx) > 0.1 and abs(dz) > 0.1
+        step_size = 0.05 if is_diagonal else 0.1  # Smaller steps for diagonal movement
         steps = int(distance / step_size) + 1
         
         for i in range(steps + 1):
