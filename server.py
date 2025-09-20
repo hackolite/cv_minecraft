@@ -22,6 +22,7 @@ from minecraft_physics import (
     PLAYER_WIDTH, PLAYER_HEIGHT, GRAVITY, TERMINAL_VELOCITY, JUMP_VELOCITY,
     unified_check_collision, unified_check_player_collision
 )
+from illegal_traversal_agent import IllegalBlockTraversalAgent
 
 # ---------- Constants ----------
 SECTOR_SIZE = 16
@@ -302,6 +303,8 @@ class MinecraftServer:
         self.logger = logging.getLogger(__name__)
         # Physics tick timing
         self.last_physics_update = time.time()
+        # Agent de détection de traversée illégale
+        self.traversal_agent = IllegalBlockTraversalAgent(self.world.world)
 
     def _check_ground_collision(self, position: Tuple[float, float, float]) -> bool:
         """Check ground collision using unified collision system."""
@@ -591,6 +594,16 @@ class MinecraftServer:
             if self._check_player_collision(player_id, new_position):
                 self.logger.warning(f"🚫 COLLISION: Player {player.name or player_id[:8]} blocked by other player at {new_position}")
                 raise InvalidPlayerDataError("Movement blocked by another player")
+            
+            # ANTI-CHEAT: Check for illegal block traversal
+            if self.traversal_agent.check_traversal(player_id, player.name, old_position, new_position):
+                # Log la déconnexion et déconnecter le client
+                self.traversal_agent.log_disconnection(player_id, player.name)
+                # Fermer la connexion WebSocket pour déconnecter le client
+                if player_id in self.clients:
+                    await self.clients[player_id].close(code=1000, reason="Illegal block traversal detected")
+                await self.unregister_client(player_id)
+                return  # Sortir de la fonction pour éviter toute mise à jour de position
                 
             player.position = new_position
             player.rotation = tuple(rotation)
