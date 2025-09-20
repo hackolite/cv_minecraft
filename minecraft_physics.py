@@ -272,8 +272,8 @@ class MinecraftCollisionDetector:
         Returns:
             Tuple of (safe_position, collision_info)
         """
-        # Try the movement with sliding collision resolution
-        return self._resolve_with_sliding(old_position, new_position)
+        # Try the movement with axis-separated collision resolution (simplest implementation)
+        return self._resolve_with_axis_separation(old_position, new_position)
     
     def _resolve_with_sliding(self, old_position: Tuple[float, float, float], 
                              new_position: Tuple[float, float, float]) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
@@ -346,6 +346,101 @@ class MinecraftCollisionDetector:
         self._update_ground_status(collision_info, best_position)
         
         return best_position, collision_info
+    
+    def _resolve_with_axis_separation(self, old_position: Tuple[float, float, float], 
+                                    new_position: Tuple[float, float, float]) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
+        """
+        Resolve collision using simple axis-separated collision detection.
+        Implements the simplest possible approach as specified in the problem statement:
+        - Process axes separately in order: X → Y → Z
+        - Block movement and reset velocity on collision
+        - Handle ground snapping for Y axis
+        
+        Args:
+            old_position: Previous player position
+            new_position: Desired new position
+            
+        Returns:
+            Tuple of (safe_position, collision_info)
+        """
+        old_x, old_y, old_z = old_position
+        new_x, new_y, new_z = new_position
+        
+        # Start with old position and process each axis separately
+        current_x, current_y, current_z = old_x, old_y, old_z
+        collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
+        
+        # AXIS X (left/right): Attempt movement, block if collision, set vx = 0
+        # Test X movement at the ORIGINAL Y and Z positions to ensure independence
+        test_position_x = (new_x, old_y, old_z)
+        if not self.check_collision(test_position_x):
+            current_x = new_x  # Movement allowed
+        else:
+            collision_info['x'] = True  # Block movement, vx will be set to 0
+        
+        # AXIS Y (vertical): Add gravity, handle ground/ceiling collisions
+        # For Y axis, we need to check the movement path, not just the destination
+        if new_y != old_y:
+            # Check collision at destination first
+            test_position_y = (current_x, new_y, current_z)
+            collision_at_destination = self.check_collision(test_position_y)
+            
+            if new_y > old_y:
+                # Moving upward - check for ceiling collisions along the path
+                if not collision_at_destination:
+                    step_size = 0.1
+                    steps = int(abs(new_y - old_y) / step_size) + 1
+                    collision_found = False
+                    collision_y = new_y
+                    
+                    for i in range(1, steps + 1):
+                        test_y = old_y + (new_y - old_y) * i / steps
+                        test_pos = (current_x, test_y, current_z)
+                        if self.check_collision(test_pos):
+                            collision_found = True
+                            collision_y = test_y
+                            break
+                    
+                    if collision_found:
+                        collision_info['y'] = True
+                        # Stop just before the collision point
+                        current_y = max(old_y, collision_y - 0.1)
+                    else:
+                        current_y = new_y  # Movement allowed
+                else:
+                    # Collision at destination
+                    collision_info['y'] = True
+                    current_y = old_y  # Stop at old position
+            else:
+                # Moving downward - check if we would pass through any solid blocks
+                # and find where to land
+                ground_level = self.find_ground_level(current_x, current_z, old_y)
+                
+                if ground_level is not None and new_y < ground_level:
+                    # We would go below ground level - land on the ground
+                    collision_info['y'] = True
+                    collision_info['ground'] = True
+                    current_y = ground_level
+                else:
+                    # No ground in the way, or destination is above ground
+                    current_y = new_y  # Movement allowed
+        else:
+            current_y = old_y  # No Y movement requested
+        
+        # AXIS Z (forward/backward): Same logic as X axis
+        # Test Z movement at the ORIGINAL Y position to ensure independence from Y changes
+        test_position_z = (current_x, old_y, new_z)
+        if not self.check_collision(test_position_z):
+            current_z = new_z  # Movement allowed
+        else:
+            collision_info['z'] = True  # Block movement, vz will be set to 0
+        
+        final_position = (current_x, current_y, current_z)
+        
+        # Update ground status for final position
+        self._update_ground_status(collision_info, final_position)
+        
+        return final_position, collision_info
     
     def _try_axis_sliding(self, old_position: Tuple[float, float, float], 
                          new_position: Tuple[float, float, float], 
