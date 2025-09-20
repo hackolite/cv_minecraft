@@ -657,22 +657,32 @@ class MinecraftWindow(pyglet.window.Window):
     
     def collide(self, position, height):
         """
-        Standard Minecraft collision detection using the new physics system.
+        Simple collision detection inspired by fogleman/Minecraft main.py.
+        
+        This method uses a simplified collision approach that only checks the player's 
+        central position and height, without complex bounding box management.
+        The collision system backs up the player on collision by adjusting position
+        on the affected axis and blocks falling/rising when hitting ground/ceiling.
+        
+        This replaces the previous complex sweeping AABB system with a simpler method
+        following the fogleman/Minecraft approach for better simplicity and 
+        performance.
         
         Args:
             position: Player position tuple (x, y, z)
             height: Player height (ignored, uses standard height)
             
         Returns:
-            Safe position after collision resolution
+            Safe position after simple collision resolution
         """
-        # Use the new standard physics system
+        # Use the simple collision system inspired by fogleman/Minecraft
         collision_detector = MinecraftCollisionDetector(self.model.world)
         
-        # Set other cubes for position validation to avoid complex collision calculations
+        # Set other cubes for position validation
         other_cubes = self.model.get_other_cubes()
         collision_detector.set_other_cubes(other_cubes)
         
+        # Use the simple collision resolution (no complex AABB sweeping)
         safe_position, collision_info = collision_detector.resolve_collision(position, position)
         
         # Update collision types for compatibility with existing code
@@ -683,7 +693,7 @@ class MinecraftWindow(pyglet.window.Window):
             "left": collision_info.get('x', False)
         }
         
-        # Reset vertical velocity if we hit something
+        # Reset vertical velocity if we hit something (simple collision response)
         if collision_info.get('y', False):
             self.dy = 0
         
