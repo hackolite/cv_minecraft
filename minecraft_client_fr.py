@@ -859,18 +859,32 @@ Statut: {connection_status}"""
         glRotatef(-y, math.cos(math.radians(x)), 0, math.sin(math.radians(x)))
         x, y, z = self.position
         
-        # Position camera to align with player cube
-        # The cube is rendered at y + size, so camera should be positioned relative to that
+        # Position camera at the front face of the player cube
+        # This centers the view on the front face of the cube in the direction the player is looking
+        cube_center_y = y + 0.4  # Cube center (y + size)
+        cube_half_size = 0.4
+        
+        # Calculate sight vector to determine front face direction
+        rotation_x, rotation_y = self.rotation
+        m = math.cos(math.radians(rotation_y))
+        sight_dx = math.cos(math.radians(rotation_x - 90)) * m
+        sight_dz = math.sin(math.radians(rotation_x - 90)) * m
+        
+        # Calculate offset to position camera at front face
+        front_face_offset_x = sight_dx * cube_half_size
+        front_face_offset_z = sight_dz * cube_half_size
+        
         if self.crouch:
             # When crouching, position slightly lower within the cube
-            cube_center_y = y + 0.4  # Cube center (y + size)
             camera_y = cube_center_y - 0.2  # Slightly lower when crouching
-            glTranslatef(-x, -camera_y, -z)
         else:
-            # Position camera at the center/top of the player cube for normal stance
-            # This aligns the camera view with where the cube is actually rendered
-            cube_center_y = y + 0.4  # Cube center matches get_render_position logic
-            glTranslatef(-x, -cube_center_y, -z)
+            # Normal stance - position at cube center height
+            camera_y = cube_center_y
+            
+        # Apply camera positioning with front face offset
+        camera_x = x + front_face_offset_x
+        camera_z = z + front_face_offset_z
+        glTranslatef(-camera_x, -camera_y, -camera_z)
     
     def set_2d(self):
         """Configure OpenGL pour le rendu 2D."""
