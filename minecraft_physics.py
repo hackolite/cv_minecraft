@@ -159,67 +159,56 @@ class UnifiedCollisionManager:
                     return ground_y
         return None
     
+
+    
     def resolve_collision(self, old_pos: Tuple[float, float, float], 
-                         new_pos: Tuple[float, float, float],
-                         player_id: str = None) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
-        """
-        Server-side collision resolution using per-axis movement strategy.
-        
-        As specified in requirements:
-        - Test X → bloque ou accepte
-        - Test Y → bloque ou accepte  
-        - Test Z → bloque ou accepte
-        
-        This prevents getting stuck on corners and provides smooth movement.
-        """
-        collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
-        
-        # If no collision at target position, movement is free
-        if not self.check_collision(new_pos, player_id):
-            # Check if on ground
-            ground_test = (new_pos[0], new_pos[1] - 0.1, new_pos[2])
-            collision_info['ground'] = self.check_block_collision(ground_test)
-            return new_pos, collision_info
-        
-        # Apply per-axis collision resolution strategy
-        final_pos = list(old_pos)
-        
-        # Test X axis movement first
-        test_pos_x = (new_pos[0], old_pos[1], old_pos[2])
-        if not self.check_collision(test_pos_x, player_id):
-            final_pos[0] = new_pos[0]  # Accept X movement
-        else:
-            collision_info['x'] = True  # Block X movement, reset velocity on X axis
-        
-        # Test Z axis movement (using updated X position)
-        test_pos_z = (final_pos[0], old_pos[1], new_pos[2])
-        if not self.check_collision(test_pos_z, player_id):
-            final_pos[2] = new_pos[2]  # Accept Z movement
-        else:
-            collision_info['z'] = True  # Block Z movement, reset velocity on Z axis
-        
-        # Test Y axis movement (using updated X, Z positions)
-        test_pos_y = (final_pos[0], new_pos[1], final_pos[2])
-        if not self.check_collision(test_pos_y, player_id):
-            final_pos[1] = new_pos[1]  # Accept Y movement
-        else:
-            collision_info['y'] = True  # Block Y movement, reset velocity on Y axis
+                              new_pos: Tuple[float, float, float],
+                              player_id: str = None) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
+            """
+            Collision resolution améliorée pour éviter de traverser les coins.
+            Test Y en premier, puis X et Z avec marge epsilon.
+            """
+            collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
+            final_pos = list(old_pos)
             
-            # Special handling for falling - find exact ground level
-            if new_pos[1] < old_pos[1]:  # Player is falling
-                ground_level = self.find_ground_level(final_pos[0], final_pos[2], old_pos[1])
-                if ground_level is not None:
-                    final_pos[1] = ground_level
-        
-        # Determine ground status for physics
-        ground_test = (final_pos[0], final_pos[1] - 0.1, final_pos[2])
-        collision_info['ground'] = self.check_block_collision(ground_test)
-        
-        # If Y collision occurred and player is standing on something, mark as on ground
-        if collision_info['y'] and final_pos[1] > old_pos[1] - 0.5:
-            collision_info['ground'] = True
-        
-        return tuple(final_pos), collision_info
+            # Appliquer un petit epsilon pour éviter de passer à travers les coins
+            epsilon = 0.001
+            
+            # 1️⃣ Test axe Y (vertical)
+            test_pos_y = (old_pos[0], new_pos[1], old_pos[2])
+            if not self.check_collision(test_pos_y, player_id):
+                final_pos[1] = new_pos[1]
+            else:
+                collision_info['y'] = True
+                # Si chute, ajuster au sol
+                if new_pos[1] < old_pos[1]:
+                    ground_level = self.find_ground_level(final_pos[0], final_pos[2], old_pos[1])
+                    if ground_level is not None:
+                        final_pos[1] = ground_level
+            
+            # 2️⃣ Test axe X (horizontal) avec marge
+            test_pos_x = (new_pos[0] + (epsilon if new_pos[0] > final_pos[0] else -epsilon),
+                          final_pos[1], final_pos[2])
+            if not self.check_collision(test_pos_x, player_id):
+                final_pos[0] = new_pos[0]
+            else:
+                collision_info['x'] = True
+            
+            # 3️⃣ Test axe Z (horizontal) avec marge
+            test_pos_z = (final_pos[0], final_pos[1], new_pos[2] + (epsilon if new_pos[2] > final_pos[2] else -epsilon))
+            if not self.check_collision(test_pos_z, player_id):
+                final_pos[2] = new_pos[2]
+            else:
+                collision_info['z'] = True
+            
+            # Vérifier le sol
+            ground_test = (final_pos[0], final_pos[1] - 0.1, final_pos[2])
+            collision_info['ground'] = self.check_block_collision(ground_test)
+            
+            return tuple(final_pos), collision_info
+
+    
+    
     
     def server_side_collision_check(self, player_position: Tuple[float, float, float], 
                                    movement_delta: Tuple[float, float, float],
