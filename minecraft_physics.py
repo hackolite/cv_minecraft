@@ -158,10 +158,16 @@ class UnifiedCollisionManager:
     
     def check_collision(self, position: Tuple[float, float, float], player_id: str = None) -> bool:
         """
-        Simple collision check inspired by fogleman/Minecraft.
-        Replaces complex bounding box collision with simple center position + height check.
+        Comprehensive collision check using proper bounding box detection.
+        Uses both block collision (AABB) and player collision for complete accuracy.
         """
-        return self.simple_collision_check(position, player_id)
+        # Use proper bounding box collision detection for blocks
+        block_collision = self.check_block_collision(position)
+        
+        # Check player-to-player collision  
+        player_collision = self.check_player_collision(position, player_id)
+        
+        return block_collision or player_collision
     
     def find_ground_level(self, x: float, z: float, start_y: float = 256.0) -> Optional[float]:
         """Find ground level at given x, z coordinates."""
@@ -182,21 +188,18 @@ class UnifiedCollisionManager:
                                   new_pos: Tuple[float, float, float],
                                   player_id: str = None) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
         """
-        Simple collision resolution inspired by fogleman/Minecraft main.py.
+        Collision resolution using proper bounding box detection.
         
-        This method uses a simple collision detection approach:
-        - Tests only the player's central position and height
+        This method uses comprehensive collision detection approach:
+        - Tests the player's full bounding box against blocks
         - Backs up the player on collision by adjusting position on the affected axis
-        - Blocks falling/rising if collision with ground/ceiling
-        - No complex bounding box sweeping or per-axis resolution
-        - No diagonal tunneling prevention
-        
-        Inspired by fogleman/Minecraft collision system for simplicity.
+        - Uses per-axis testing to allow sliding along walls
+        - Maintains consistent collision detection throughout
         """
         collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
         
-        # Simple collision check: if new position has collision, stay at old position
-        if self.simple_collision_check(new_pos, player_id):
+        # Check if new position has collision using proper bounding box detection
+        if self.check_collision(new_pos, player_id):
             # Collision detected - try each axis independently to find which one caused it
             old_x, old_y, old_z = old_pos
             new_x, new_y, new_z = new_pos
@@ -204,21 +207,21 @@ class UnifiedCollisionManager:
             
             # Test X movement only
             test_x = (new_x, old_y, old_z)
-            if not self.simple_collision_check(test_x, player_id):
+            if not self.check_collision(test_x, player_id):
                 final_pos[0] = new_x
             else:
                 collision_info['x'] = True
             
             # Test Z movement only  
             test_z = (final_pos[0], old_y, new_z)
-            if not self.simple_collision_check(test_z, player_id):
+            if not self.check_collision(test_z, player_id):
                 final_pos[2] = new_z
             else:
                 collision_info['z'] = True
                 
             # Test Y movement only
             test_y = (final_pos[0], new_y, final_pos[2])
-            if not self.simple_collision_check(test_y, player_id):
+            if not self.check_collision(test_y, player_id):
                 final_pos[1] = new_y
             else:
                 collision_info['y'] = True
@@ -226,9 +229,9 @@ class UnifiedCollisionManager:
             # No collision, can move to new position
             final_pos = list(new_pos)
         
-        # Check if on ground (simple test: is there a block just below?)
+        # Check if on ground (test position slightly below)
         ground_test = (final_pos[0], final_pos[1] - 0.1, final_pos[2])
-        collision_info['ground'] = self.simple_collision_check(ground_test, player_id)
+        collision_info['ground'] = self.check_collision(ground_test, player_id)
         
         return tuple(final_pos), collision_info
     

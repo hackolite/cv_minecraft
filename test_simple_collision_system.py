@@ -43,16 +43,16 @@ def test_simple_collision_behavior():
     print("\n🧪 Test 2: Height-based Collision")
     print("-" * 50)
     
-    # Test player with head in block
-    player_head_in_block = (10.0, 8.5, 10.0)  # Head would be at ~10.3, in the block
+    # Test player with head in block  
+    player_head_in_block = (10.0, 9.5, 10.0)  # Head would be at 10.5, in the block (Y=10-11)
     collision = manager.simple_collision_check(player_head_in_block)
-    print(f"Player head in block (10.0, 8.5, 10.0, head at ~10.3): collision = {collision}")
+    print(f"Player head in block (10.0, 9.5, 10.0, head at 10.5): collision = {collision}")
     assert collision == True, "Player head in block should collide"
     
     # Test player under block (no collision)
-    player_under_block = (10.0, 8.0, 10.0)  # Head would be at ~9.8, under the block
+    player_under_block = (10.0, 8.0, 10.0)  # Head would be at 9.0, under the block (Y=10-11)
     collision = manager.simple_collision_check(player_under_block)
-    print(f"Player under block (10.0, 8.0, 10.0, head at ~9.8): collision = {collision}")
+    print(f"Player under block (10.0, 8.0, 10.0, head at 9.0): collision = {collision}")
     assert collision == False, "Player under block should not collide"
     
     print("\n🧪 Test 3: Simple Collision Resolution")
