@@ -23,9 +23,9 @@ def test_basic_physics_constants():
     print(f"   Terminal velocity: {TERMINAL_VELOCITY} blocks/s")
     print(f"   Jump velocity: {JUMP_VELOCITY} blocks/s")
     
-    # Validate constants are reasonable
-    assert 0.5 < PLAYER_WIDTH < 1.0, "Player width should be reasonable"
-    assert 1.7 < PLAYER_HEIGHT < 2.0, "Player height should be reasonable"
+    # Validate constants are reasonable for 1x1x1 cube
+    assert 0.5 <= PLAYER_WIDTH <= 1.0, "Player width should be reasonable for 1x1x1 cube"
+    assert 0.5 <= PLAYER_HEIGHT <= 1.0, "Player height should be reasonable for 1x1x1 cube"
     assert GRAVITY > 0, "Gravity should be positive"
     assert TERMINAL_VELOCITY > JUMP_VELOCITY, "Terminal velocity should exceed jump velocity"
     

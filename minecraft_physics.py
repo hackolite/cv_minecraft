@@ -33,9 +33,9 @@ import math
 from typing import Tuple, List, Dict, Optional, Set
 from collections import defaultdict
 
-# Standard Minecraft Physics Constants
-PLAYER_WIDTH = 0.6          # Player width (X and Z dimensions)
-PLAYER_HEIGHT = 1.8         # Player height (Y dimension)
+# Standard Minecraft Physics Constants - 1x1x1 cube
+PLAYER_WIDTH = 1.0          # Player width (X and Z dimensions) 
+PLAYER_HEIGHT = 1.0         # Player height (Y dimension)
 PLAYER_EYE_HEIGHT = 1.62    # Eye height from feet
 
 # Physics constants matching Minecraft's behavior

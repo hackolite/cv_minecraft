@@ -67,7 +67,7 @@ class Cube:
     """Base class representing a cube in the game world."""
     
     def __init__(self, cube_id: str, position: Tuple[float, float, float],
-                 rotation: Tuple[float, float] = (0, 0), size: float = 0.4):
+                 rotation: Tuple[float, float] = (0, 0), size: float = 0.5):
         self.id = cube_id
         self.position = position  # (x, y, z)
         self.rotation = rotation  # (horizontal, vertical)
@@ -93,7 +93,7 @@ class PlayerState(Cube):
 
     def __init__(self, player_id: str, position: Tuple[float, float, float],
                  rotation: Tuple[float, float], name: Optional[str] = None):
-        super().__init__(player_id, position, rotation, size=0.4)
+        super().__init__(player_id, position, rotation, size=0.5)
         self.name = name or f"Player_{player_id[:8]}"
         self.flying = False
         self.sprinting = False
@@ -121,7 +121,7 @@ class PlayerState(Cube):
         player = cls(data["id"], tuple(data["position"]), tuple(data["rotation"]), data.get("name"))
         player.flying = data.get("flying", False)
         player.sprinting = data.get("sprinting", False)
-        player.size = data.get("size", 0.4)
+        player.size = data.get("size", 0.5)
         return player
 
 class BlockUpdate:

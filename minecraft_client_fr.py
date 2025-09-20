@@ -869,10 +869,10 @@ Statut: {connection_status}"""
         glRotatef(-y, math.cos(math.radians(x)), 0, math.sin(math.radians(x)))
         x, y, z = self.position
         
-        # Position camera at the front face of the player cube
+        # Position camera at the front face of the player cube  
         # This centers the view on the front face of the cube in the direction the player is looking
-        cube_center_y = y + 0.4  # Cube center (y + size)
-        cube_half_size = 0.4
+        cube_center_y = y + 0.5  # Cube center (y + half_size) for 1x1x1 cube
+        cube_half_size = 0.5
         
         # Calculate sight vector to determine front face direction
         rotation_x, rotation_y = self.rotation
