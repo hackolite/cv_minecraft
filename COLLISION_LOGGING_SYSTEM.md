@@ -65,18 +65,59 @@ import logging
 logging.getLogger('minecraft_collision').setLevel(logging.INFO)
 ```
 
+### Nouveau: Filtrage des logs de collision
+Le système permet maintenant de filtrer les logs selon le type de collision:
+
+```python
+from minecraft_physics import UnifiedCollisionManager
+
+# Configuration du filtrage
+config = {
+    "collision_only": True,        # Afficher uniquement les logs de collision
+    "collision_blocks": True,      # Logs de collision avec blocs
+    "collision_players": False,    # Désactiver les logs de collision entre joueurs
+    "log_level": "INFO"           # Niveau de log
+}
+
+# Appliquer la configuration
+manager = UnifiedCollisionManager(world_blocks)
+manager.configure_collision_logging(config)
+```
+
+### Options de filtrage disponibles
+- **collision_only**: Si True, seuls les logs de collision sont affichés (pas les logs système)
+- **collision_blocks**: Si True, affiche les logs de collision avec les blocs
+- **collision_players**: Si True, affiche les logs de collision entre joueurs
+- **log_level**: Niveau de logging (DEBUG, INFO, WARNING, ERROR)
+
 ## Tests et Démonstration
 
 ### Tests automatisés
 - `test_collision_logging.py` - Tests complets du système de logging
+- `test_collision_filter.py` - Tests du système de filtrage des logs (NOUVEAU)
 - Vérifie que tous les champs requis sont présents
 - Teste les collisions bloc et joueur
 - Valide qu'aucun log n'est généré sans collision
+- Teste le filtrage par type de collision
 
 ### Démonstration
-- `demo_collision_logging.py` - Démonstration interactive
+- `demo_collision_logging.py` - Démonstration interactive avec filtrage
+- `demo_collision_filter.py` - Outil en ligne de commande pour tester les filtres (NOUVEAU)
 - Montre des exemples de collisions en temps réel
 - Affiche les logs formatés avec toutes les informations
+- Démontre les capacités de filtrage
+
+### Exemples d'usage du filtrage
+```bash
+# Afficher uniquement les logs de collision (pas les logs système)
+python3 demo_collision_filter.py --collision-only
+
+# Afficher uniquement les collisions avec blocs
+python3 demo_collision_filter.py --collision-only --no-players
+
+# Afficher uniquement les collisions entre joueurs
+python3 demo_collision_filter.py --collision-only --no-blocks
+```
 
 ## Intégration
 

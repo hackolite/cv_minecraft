@@ -27,6 +27,73 @@ def setup_collision_logging():
     
     return collision_logger
 
+def demonstrate_log_filtering():
+    """Démontre le système de filtrage des logs de collision."""
+    print("🔧 DÉMONSTRATION: Filtrage des logs de collision")
+    print("=" * 60)
+    
+    # Create a simple player class for testing
+    class TestPlayer:
+        def __init__(self, position, player_id):
+            self.position = position
+            self.id = player_id
+    
+    # Créer un monde simple
+    world = {(10, 10, 10): 'stone'}
+    manager = UnifiedCollisionManager(world)
+    test_player = TestPlayer((15, 10, 15), "player2")
+    manager.set_other_players([test_player])
+    
+    print("1️⃣ Test avec tous les logs activés (par défaut)")
+    print("-" * 50)
+    config = {"collision_blocks": True, "collision_players": True, "collision_only": False}
+    manager.configure_collision_logging(config)
+    
+    # Test collision bloc
+    manager.check_block_collision((10.5, 10.5, 10.5))
+    
+    # Test collision joueur
+    manager.check_player_collision((15.2, 10.0, 15.1))
+    
+    print("\n2️⃣ Test avec uniquement les logs de collision de blocs")
+    print("-" * 50)
+    config = {"collision_blocks": True, "collision_players": False, "collision_only": True}
+    manager.configure_collision_logging(config)
+    
+    # Test collision bloc (devrait afficher)
+    manager.check_block_collision((10.5, 10.5, 10.5))
+    
+    # Test collision joueur (ne devrait pas afficher)
+    manager.check_player_collision((15.2, 10.0, 15.1))
+    
+    print("\n3️⃣ Test avec uniquement les logs de collision de joueurs")
+    print("-" * 50)
+    config = {"collision_blocks": False, "collision_players": True, "collision_only": True}
+    manager.configure_collision_logging(config)
+    
+    # Test collision bloc (ne devrait pas afficher)
+    manager.check_block_collision((10.5, 10.5, 10.5))
+    
+    # Test collision joueur (devrait afficher)
+    manager.check_player_collision((15.2, 10.0, 15.1))
+    
+    print("\n4️⃣ Test avec tous les logs de collision désactivés")
+    print("-" * 50)
+    config = {"collision_blocks": False, "collision_players": False, "collision_only": True}
+    manager.configure_collision_logging(config)
+    
+    # Aucun log ne devrait s'afficher
+    manager.check_block_collision((10.5, 10.5, 10.5))
+    manager.check_player_collision((15.2, 10.0, 15.1))
+    
+    print("✅ Aucun log affiché comme attendu")
+    
+    # Remettre la configuration par défaut
+    config = {"collision_blocks": True, "collision_players": True, "collision_only": False}
+    manager.configure_collision_logging(config)
+    
+    print("\n" + "=" * 60)
+
 def demonstrate_block_collision_logging():
     """Démontre le logging lors de collisions avec des blocs."""
     print("🧱 DÉMONSTRATION: Collision avec des blocs")
@@ -176,14 +243,23 @@ def main():
         # Démonstration des scénarios mixtes
         demonstrate_mixed_collision_scenarios()
         
+        # Démonstration du système de filtrage
+        demonstrate_log_filtering()
+        
         print("=" * 80)
         print("✅ DÉMONSTRATION TERMINÉE")
         print("✅ Le système de logging des collisions est opérationnel")
+        print("✅ Nouveau: Système de filtrage des logs disponible")
         print("✅ Tous les logs incluent:")
         print("   - 🕒 Heure précise (YYYY-MM-DD HH:MM:SS.mmm)")
         print("   - 📍 Coordonnées des entités en collision")
         print("   - 📦 Coordonnées AABB complètes (min/max)")
         print("   - 🏷️ Type d'objet (bloc/joueur)")
+        print("✅ Filtrage disponible:")
+        print("   - 🔧 Affichage uniquement des logs de collision")
+        print("   - 🧱 Filtrage par type: blocs seulement")
+        print("   - 👥 Filtrage par type: joueurs seulement")
+        print("   - 🎛️ Configuration via UnifiedCollisionManager.configure_collision_logging()")
         
         return True
         
