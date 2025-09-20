@@ -7,12 +7,26 @@ This module implements a unified, simplified Minecraft-style physics system
 that consolidates all collision detection into a single, clean interface.
 Used by both client and server for consistent behavior.
 
+COLLISION SYSTEM APPROACH:
+=========================
+The collision detection system has been simplified and is inspired by the
+fogleman/Minecraft implementation (https://github.com/fogleman/Minecraft/blob/master/main.py#L596-L679).
+
+This simple approach:
+- Tests only the player's central position and height (no complex bounding box)
+- Backs up the player on collision by adjusting position on the affected axis  
+- Blocks falling/rising if collision with ground/ceiling
+- Uses simple collision logic without sweeping AABB or complex per-axis resolution
+- Eliminates diagonal tunneling prevention for simplicity
+- Provides better performance through simplified calculations
+
 Key Features:
 - Unified collision management in a single module
 - Simplified algorithms without over-engineering  
 - Clean interfaces for both client and server
 - Elimination of code duplication
 - Standard Minecraft physics constants
+- Simple collision detection inspired by fogleman/Minecraft
 """
 
 import math
@@ -143,9 +157,11 @@ class UnifiedCollisionManager:
         return False
     
     def check_collision(self, position: Tuple[float, float, float], player_id: str = None) -> bool:
-        """Check both block and player collisions."""
-        return (self.check_block_collision(position) or 
-                self.check_player_collision(position, player_id))
+        """
+        Simple collision check inspired by fogleman/Minecraft.
+        Replaces complex bounding box collision with simple center position + height check.
+        """
+        return self.simple_collision_check(position, player_id)
     
     def find_ground_level(self, x: float, z: float, start_y: float = 256.0) -> Optional[float]:
         """Find ground level at given x, z coordinates."""
@@ -165,48 +181,84 @@ class UnifiedCollisionManager:
     def resolve_collision(self, old_pos: Tuple[float, float, float], 
                                   new_pos: Tuple[float, float, float],
                                   player_id: str = None) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
-                """
-                Server-side collision resolution with per-axis strategy: X → Z → Y.
-                Ensures correct handling of horizontal collisions before vertical movement.
-                """
-                collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
-                final_pos = list(old_pos)
+        """
+        Simple collision resolution inspired by fogleman/Minecraft main.py.
+        
+        This method uses a simple collision detection approach:
+        - Tests only the player's central position and height
+        - Backs up the player on collision by adjusting position on the affected axis
+        - Blocks falling/rising if collision with ground/ceiling
+        - No complex bounding box sweeping or per-axis resolution
+        - No diagonal tunneling prevention
+        
+        Inspired by fogleman/Minecraft collision system for simplicity.
+        """
+        collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
+        
+        # Simple collision check: if new position has collision, stay at old position
+        if self.simple_collision_check(new_pos, player_id):
+            # Collision detected - try each axis independently to find which one caused it
+            old_x, old_y, old_z = old_pos
+            new_x, new_y, new_z = new_pos
+            final_pos = list(old_pos)  # Start with safe old position
             
-                # --- Test X axis first ---
-                test_pos_x = (new_pos[0], old_pos[1], old_pos[2])
-                if not self.check_collision(test_pos_x, player_id):
-                    final_pos[0] = new_pos[0]
-                else:
-                    collision_info['x'] = True
+            # Test X movement only
+            test_x = (new_x, old_y, old_z)
+            if not self.simple_collision_check(test_x, player_id):
+                final_pos[0] = new_x
+            else:
+                collision_info['x'] = True
             
-                # --- Test Z axis next, using updated X ---
-                test_pos_z = (final_pos[0], old_pos[1], new_pos[2])
-                if not self.check_collision(test_pos_z, player_id):
-                    final_pos[2] = new_pos[2]
-                else:
-                    collision_info['z'] = True
+            # Test Z movement only  
+            test_z = (final_pos[0], old_y, new_z)
+            if not self.simple_collision_check(test_z, player_id):
+                final_pos[2] = new_z
+            else:
+                collision_info['z'] = True
+                
+            # Test Y movement only
+            test_y = (final_pos[0], new_y, final_pos[2])
+            if not self.simple_collision_check(test_y, player_id):
+                final_pos[1] = new_y
+            else:
+                collision_info['y'] = True
+        else:
+            # No collision, can move to new position
+            final_pos = list(new_pos)
+        
+        # Check if on ground (simple test: is there a block just below?)
+        ground_test = (final_pos[0], final_pos[1] - 0.1, final_pos[2])
+        collision_info['ground'] = self.simple_collision_check(ground_test, player_id)
+        
+        return tuple(final_pos), collision_info
+    
+    def simple_collision_check(self, position: Tuple[float, float, float], 
+                              player_id: str = None) -> bool:
+        """
+        Simple collision check inspired by fogleman/Minecraft.
+        Only checks the player's center position and height, not a complex bounding box.
+        
+        This is much simpler than the complex AABB collision detection.
+        """
+        px, py, pz = position
+        
+        # Simple approach: check if the player's feet and head positions collide with blocks
+        # Check player's foot position (center)
+        foot_block = (int(math.floor(px)), int(math.floor(py)), int(math.floor(pz)))
+        if foot_block in self.world_blocks:
+            return True
             
-                # --- Test Y axis last, using updated X and Z ---
-                test_pos_y = (final_pos[0], new_pos[1], final_pos[2])
-                if not self.check_collision(test_pos_y, player_id):
-                    final_pos[1] = new_pos[1]
-                else:
-                    collision_info['y'] = True
-                    # Special handling for falling: snap to ground
-                    if new_pos[1] < old_pos[1]:
-                        ground_level = self.find_ground_level(final_pos[0], final_pos[2], old_pos[1])
-                        if ground_level is not None:
-                            final_pos[1] = ground_level
+        # Check player's head position (center + height)
+        head_y = py + PLAYER_HEIGHT
+        head_block = (int(math.floor(px)), int(math.floor(head_y)), int(math.floor(pz)))
+        if head_block in self.world_blocks:
+            return True
             
-                # --- Determine if on ground ---
-                ground_test = (final_pos[0], final_pos[1] - 0.1, final_pos[2])
-                collision_info['ground'] = self.check_block_collision(ground_test)
+        # Check for player-to-player collision (simplified)
+        if self.check_player_collision(position, player_id):
+            return True
             
-                # Ensure standing on block sets on-ground flag
-                if collision_info['y'] and final_pos[1] > old_pos[1] - 0.5:
-                    collision_info['ground'] = True
-            
-                return tuple(final_pos), collision_info
+        return False
 
     
     def server_side_collision_check(self, player_position: Tuple[float, float, float], 
