@@ -64,23 +64,54 @@ class UnifiedCollisionManager:
         self.world_blocks = world_blocks
     
     def check_block_collision(self, position: Tuple[float, float, float]) -> bool:
-        """Check collision with world blocks."""
-        min_x = position[0] - PLAYER_WIDTH / 2
-        max_x = position[0] + PLAYER_WIDTH / 2
-        min_y = position[1]
-        max_y = position[1] + PLAYER_HEIGHT
-        min_z = position[2] - PLAYER_WIDTH / 2
-        max_z = position[2] + PLAYER_WIDTH / 2
+        """
+        Check collision with world blocks using server-side voxel collision detection.
         
-        # Check all blocks that could intersect with player bounding box
-        for x in range(int(math.floor(min_x)), int(math.ceil(max_x)) + 1):
-            for y in range(int(math.floor(min_y)), int(math.ceil(max_y)) + 1):
-                for z in range(int(math.floor(min_z)), int(math.ceil(max_z)) + 1):
+        Implements the exact formulas specified:
+        - xmin = floor(px - largeur/2)
+        - xmax = floor(px + largeur/2) 
+        - ymin = floor(py)
+        - ymax = floor(py + hauteur)
+        - zmin = floor(pz - profondeur/2)
+        - zmax = floor(pz + profondeur/2)
+        """
+        px, py, pz = position
+        largeur = PLAYER_WIDTH      # 0.6
+        hauteur = PLAYER_HEIGHT     # 1.8
+        profondeur = PLAYER_WIDTH   # 0.6 (same as width for square base)
+        
+        # Calculate voxel bounds using exact formulas from problem statement
+        xmin = int(math.floor(px - largeur / 2))
+        xmax = int(math.floor(px + largeur / 2))
+        ymin = int(math.floor(py))
+        ymax = int(math.floor(py + hauteur))
+        zmin = int(math.floor(pz - profondeur / 2))
+        zmax = int(math.floor(pz + profondeur / 2))
+        
+        # Test only the voxels in the calculated range (neighboring voxels)
+        # This avoids testing the entire world - only relevant blocks
+        for x in range(xmin, xmax + 1):
+            for y in range(ymin, ymax + 1):
+                for z in range(zmin, zmax + 1):
                     if (x, y, z) in self.world_blocks:
-                        # Check if player bounding box intersects with this block
-                        if (min_x < x + 1 and max_x > x and
-                            min_y < y + 1 and max_y > y and
-                            min_z < z + 1 and max_z > z):
+                        # Voxel exists at this position - check AABB intersection
+                        # Player bounding box vs voxel (1x1x1 block)
+                        player_min_x = px - largeur / 2
+                        player_max_x = px + largeur / 2
+                        player_min_y = py
+                        player_max_y = py + hauteur
+                        player_min_z = pz - profondeur / 2
+                        player_max_z = pz + profondeur / 2
+                        
+                        # Block boundaries (voxel from x,y,z to x+1,y+1,z+1)
+                        block_min_x, block_max_x = float(x), float(x + 1)
+                        block_min_y, block_max_y = float(y), float(y + 1)
+                        block_min_z, block_max_z = float(z), float(z + 1)
+                        
+                        # AABB intersection test
+                        if (player_min_x < block_max_x and player_max_x > block_min_x and
+                            player_min_y < block_max_y and player_max_y > block_min_y and
+                            player_min_z < block_max_z and player_max_z > block_min_z):
                             return True
         return False
     
@@ -132,55 +163,97 @@ class UnifiedCollisionManager:
                          new_pos: Tuple[float, float, float],
                          player_id: str = None) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
         """
-        Resolve collision by finding a safe position.
-        Simple approach: try each axis separately.
+        Server-side collision resolution using per-axis movement strategy.
+        
+        As specified in requirements:
+        - Test X → bloque ou accepte
+        - Test Y → bloque ou accepte  
+        - Test Z → bloque ou accepte
+        
+        This prevents getting stuck on corners and provides smooth movement.
         """
         collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
         
+        # If no collision at target position, movement is free
         if not self.check_collision(new_pos, player_id):
             # Check if on ground
             ground_test = (new_pos[0], new_pos[1] - 0.1, new_pos[2])
             collision_info['ground'] = self.check_block_collision(ground_test)
             return new_pos, collision_info
         
-        # Try moving each axis separately
+        # Apply per-axis collision resolution strategy
         final_pos = list(old_pos)
         
-        # Try X movement
-        test_pos = (new_pos[0], old_pos[1], old_pos[2])
-        if not self.check_collision(test_pos, player_id):
-            final_pos[0] = new_pos[0]
+        # Test X axis movement first
+        test_pos_x = (new_pos[0], old_pos[1], old_pos[2])
+        if not self.check_collision(test_pos_x, player_id):
+            final_pos[0] = new_pos[0]  # Accept X movement
         else:
-            collision_info['x'] = True
+            collision_info['x'] = True  # Block X movement, reset velocity on X axis
         
-        # Try Z movement  
-        test_pos = (final_pos[0], old_pos[1], new_pos[2])
-        if not self.check_collision(test_pos, player_id):
-            final_pos[2] = new_pos[2]
+        # Test Z axis movement (using updated X position)
+        test_pos_z = (final_pos[0], old_pos[1], new_pos[2])
+        if not self.check_collision(test_pos_z, player_id):
+            final_pos[2] = new_pos[2]  # Accept Z movement
         else:
-            collision_info['z'] = True
+            collision_info['z'] = True  # Block Z movement, reset velocity on Z axis
         
-        # Try Y movement - with special handling for falling
-        test_pos = (final_pos[0], new_pos[1], final_pos[2])
-        if not self.check_collision(test_pos, player_id):
-            final_pos[1] = new_pos[1]
+        # Test Y axis movement (using updated X, Z positions)
+        test_pos_y = (final_pos[0], new_pos[1], final_pos[2])
+        if not self.check_collision(test_pos_y, player_id):
+            final_pos[1] = new_pos[1]  # Accept Y movement
         else:
-            collision_info['y'] = True
-            # If falling (new_y < old_y), find the exact ground level
-            if new_pos[1] < old_pos[1]:
+            collision_info['y'] = True  # Block Y movement, reset velocity on Y axis
+            
+            # Special handling for falling - find exact ground level
+            if new_pos[1] < old_pos[1]:  # Player is falling
                 ground_level = self.find_ground_level(final_pos[0], final_pos[2], old_pos[1])
                 if ground_level is not None:
                     final_pos[1] = ground_level
         
-        # Check ground status - be more precise about ground detection
+        # Determine ground status for physics
         ground_test = (final_pos[0], final_pos[1] - 0.1, final_pos[2])
         collision_info['ground'] = self.check_block_collision(ground_test)
         
-        # If we hit a Y collision and are standing on something, we're on ground
+        # If Y collision occurred and player is standing on something, mark as on ground
         if collision_info['y'] and final_pos[1] > old_pos[1] - 0.5:
             collision_info['ground'] = True
         
         return tuple(final_pos), collision_info
+    
+    def server_side_collision_check(self, player_position: Tuple[float, float, float], 
+                                   movement_delta: Tuple[float, float, float],
+                                   player_id: str = None) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
+        """
+        Server-side collision check implementing the exact requirements:
+        
+        1️⃣ Principe général:
+        - Le monde est une grille 3D de voxels (1×1×1)
+        - Chaque voxel peut être vide ou solide
+        - On teste seulement les blocs autour de la position (voisins immédiats)
+        
+        2️⃣ Bounding box du joueur: ~0.6×0.6×1.8
+        
+        3️⃣ Per-axis movement testing (X, Y, Z separately)
+        """
+        px, py, pz = player_position
+        dx, dy, dz = movement_delta
+        new_position = (px + dx, py + dy, pz + dz)
+        
+        # Use the server-side collision resolution
+        safe_position, collision_info = self.resolve_collision(player_position, new_position, player_id)
+        
+        # Reset velocity components for blocked axes (as specified in requirements)
+        velocity_reset = {
+            'reset_vx': collision_info['x'],  # Reset X velocity if X collision
+            'reset_vy': collision_info['y'],  # Reset Y velocity if Y collision  
+            'reset_vz': collision_info['z'],  # Reset Z velocity if Z collision
+        }
+        
+        # Combine collision info with velocity reset info
+        detailed_info = {**collision_info, **velocity_reset}
+        
+        return safe_position, detailed_info
     
     def get_player_collision_info(self, position: Tuple[float, float, float], 
                                  player_id: str = None) -> Dict[str, bool]:
