@@ -30,6 +30,9 @@ Key Features:
 """
 
 import math
+import logging
+import time
+from datetime import datetime
 from typing import Tuple, List, Dict, Optional, Set
 from collections import defaultdict
 
@@ -53,6 +56,10 @@ GROUND_TOLERANCE = 0.05     # Distance to consider "on ground"
 
 # World constants
 BLOCK_SIZE = 1.0            # Each block is 1×1×1
+
+# Setup collision logger
+collision_logger = logging.getLogger('minecraft_collision')
+collision_logger.setLevel(logging.INFO)
 
 # ============================================================================
 # UNIFIED COLLISION MANAGER
@@ -132,6 +139,17 @@ class UnifiedCollisionManager:
                         if (player_min_x < block_max_x and player_max_x > block_min_x and
                             player_min_y < block_max_y and player_max_y > block_min_y and
                             player_min_z < block_max_z and player_max_z > block_min_z):
+                            
+                            # Log collision with AABB coordinates, time and coordinates
+                            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                            collision_logger.info(f"🚫 COLLISION DÉTECTÉE - Bloc")
+                            collision_logger.info(f"   Heure: {current_time}")
+                            collision_logger.info(f"   Position joueur: ({px:.3f}, {py:.3f}, {pz:.3f})")
+                            collision_logger.info(f"   Position bloc: ({x}, {y}, {z})")
+                            collision_logger.info(f"   Type bloc: {block_type}")
+                            collision_logger.info(f"   AABB Joueur: min=({player_min_x:.3f}, {player_min_y:.3f}, {player_min_z:.3f}) max=({player_max_x:.3f}, {player_max_y:.3f}, {player_max_z:.3f})")
+                            collision_logger.info(f"   AABB Bloc: min=({block_min_x:.3f}, {block_min_y:.3f}, {block_min_z:.3f}) max=({block_max_x:.3f}, {block_max_y:.3f}, {block_max_z:.3f})")
+                            
                             return True
         return False
     
@@ -159,6 +177,31 @@ class UnifiedCollisionManager:
             z_overlap = (pz - player_size) < (oz + other_size) and (pz + player_size) > (oz - other_size)
             
             if x_overlap and y_overlap and z_overlap:
+                # Log player collision with AABB coordinates, time and coordinates
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                
+                # Calculate player AABB coordinates
+                player1_min_x = px - player_size
+                player1_max_x = px + player_size
+                player1_min_y = py
+                player1_max_y = py + PLAYER_HEIGHT
+                player1_min_z = pz - player_size
+                player1_max_z = pz + player_size
+                
+                player2_min_x = ox - other_size
+                player2_max_x = ox + other_size
+                player2_min_y = oy
+                player2_max_y = oy + PLAYER_HEIGHT
+                player2_min_z = oz - other_size
+                player2_max_z = oz + other_size
+                
+                collision_logger.info(f"🚫 COLLISION DÉTECTÉE - Joueur vs Joueur")
+                collision_logger.info(f"   Heure: {current_time}")
+                collision_logger.info(f"   Position joueur 1: ({px:.3f}, {py:.3f}, {pz:.3f})")
+                collision_logger.info(f"   Position joueur 2: ({ox:.3f}, {oy:.3f}, {oz:.3f})")
+                collision_logger.info(f"   AABB Joueur 1: min=({player1_min_x:.3f}, {player1_min_y:.3f}, {player1_min_z:.3f}) max=({player1_max_x:.3f}, {player1_max_y:.3f}, {player1_max_z:.3f})")
+                collision_logger.info(f"   AABB Joueur 2: min=({player2_min_x:.3f}, {player2_min_y:.3f}, {player2_min_z:.3f}) max=({player2_max_x:.3f}, {player2_max_y:.3f}, {player2_max_z:.3f})")
+                
                 return True
         return False
     
