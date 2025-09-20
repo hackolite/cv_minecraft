@@ -108,7 +108,13 @@ class UnifiedCollisionManager:
             for y in range(ymin, ymax + 1):
                 for z in range(zmin, zmax + 1):
                     if (x, y, z) in self.world_blocks:
-                        # Voxel exists at this position - check AABB intersection
+                        block_type = self.world_blocks[(x, y, z)]
+                        
+                        # AIR blocks should not cause collision - players can pass through
+                        if block_type == "air":
+                            continue
+                        
+                        # All other blocks (grass, stone, wood, sand, water, leaf, brick) are solid
                         # Player bounding box vs voxel (1x1x1 block)
                         player_min_x = px - largeur / 2
                         player_max_x = px + largeur / 2
