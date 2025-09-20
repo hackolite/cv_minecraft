@@ -4,7 +4,7 @@ Test de cohérence des collisions - Minecraft CV
 
 Ce fichier vérifie la cohérence entre:
 - Taille des blocs: 1x1x1
-- Bounding box du joueur: largeur 0.6, hauteur 1.8
+- Bounding box du joueur: largeur 1.0, hauteur 1.0 (cube 1x1x1)
 
 Tests validés:
 - Collision verticale (sol/plafond): le joueur ne doit pas traverser le sol ni le plafond
@@ -97,20 +97,20 @@ class CollisionConsistencyTester:
         )
         
         # Test 4: Collision avec plafond (tête du joueur touche)
-        # Joueur hauteur 1.8, donc tête à Y + 1.8
-        player_hit_ceiling = (10.0, 8.5, 10.0)  # Tête à Y=10.3, plafond à Y=10
+        # Joueur hauteur 1.0, donc tête à Y + 1.0
+        player_hit_ceiling = (10.0, 9.5, 10.0)  # Tête à Y=10.5, plafond à Y=10
         collision = manager.check_block_collision(player_hit_ceiling)
         self.log_test(
-            "Tête du joueur dans plafond (Y=8.5, tête à Y=10.3, plafond à Y=10)",
+            "Tête du joueur dans plafond (Y=9.5, tête à Y=10.5, plafond à Y=10)",
             collision,
             f"Position: {player_hit_ceiling}, collision: {collision}"
         )
         
-        # Test 5: Joueur juste sous plafond (position valide)
-        player_under_ceiling = (10.0, 8.1, 10.0)  # Tête à Y=9.9, plafond à Y=10
+        # Test 5: Joueur juste sous plafond (position valide) 
+        player_under_ceiling = (10.0, 9.0, 10.0)  # Tête à Y=10.0, plafond à Y=10
         collision = manager.check_block_collision(player_under_ceiling)
         self.log_test(
-            "Joueur juste sous plafond (Y=8.1, tête à Y=9.9)",
+            "Joueur juste sous plafond (Y=9.0, tête à Y=10.0)",
             not collision,
             f"Position: {player_under_ceiling}, collision: {collision}"
         )
@@ -129,20 +129,20 @@ class CollisionConsistencyTester:
         }
         manager = UnifiedCollisionManager(world)
         
-        # Test 1: Joueur contre mur X (largeur 0.6, donc rayon 0.3)
+        # Test 1: Joueur contre mur X (largeur 1.0, donc rayon 0.5)
         player_against_wall_x = (5.5, 10.5, 10.0)  # Centre à X=5.5, mur à X=5-6
         collision = manager.check_block_collision(player_against_wall_x)
         self.log_test(
-            "Joueur contre mur X (X=5.5, largeur=0.6, mur à X=5-6)",
+            "Joueur contre mur X (X=5.5, largeur=1.0, mur à X=5-6)",
             collision,
             f"Position: {player_against_wall_x}, collision: {collision}"
         )
         
         # Test 2: Joueur juste libre du mur X
-        player_free_wall_x = (4.2, 10.5, 10.0)  # Centre à X=4.2, bord droit à X=4.5
+        player_free_wall_x = (4.0, 10.5, 10.0)  # Centre à X=4.0, bord droit à X=4.5
         collision = manager.check_block_collision(player_free_wall_x)
         self.log_test(
-            "Joueur libre du mur X (X=4.2, bord droit à X=4.5)",
+            "Joueur libre du mur X (X=4.0, bord droit à X=4.5)",
             not collision,
             f"Position: {player_free_wall_x}, collision: {collision}"
         )
@@ -151,7 +151,7 @@ class CollisionConsistencyTester:
         player_against_wall_z = (10.0, 10.5, 5.5)  # Centre à Z=5.5, mur à Z=5-6
         collision = manager.check_block_collision(player_against_wall_z)
         self.log_test(
-            "Joueur contre mur Z (Z=5.5, profondeur=0.6, mur à Z=5-6)",
+            "Joueur contre mur Z (Z=5.5, profondeur=1.0, mur à Z=5-6)",
             collision,
             f"Position: {player_against_wall_z}, collision: {collision}"
         )
