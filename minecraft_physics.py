@@ -339,6 +339,162 @@ class SimplePhysicsManager:
         return new_position, (final_vx, final_vy, final_vz), collision_info['ground']
 
 # ============================================================================
+# TICK-BASED PHYSICS MANAGER (IA-FRIENDLY VERSION)
+# ============================================================================
+
+class TickBasedPhysicsManager:
+    """
+    Physics manager implementing tick-based movement with sub-steps as specified.
+    
+    🔹 Logique de la collision (version IA-friendly)
+    
+    1. Représentation:
+    - Monde = grille 3D où chaque cellule peut être vide ou solide
+    - Joueur = boîte rectangulaire verticale (AABB)
+    - Vitesse du joueur = (vx, vy, vz) mise à jour à chaque tick
+    - Paramètres: gravité, vitesse terminale, pad (tolérance)
+    
+    2. Mise à jour par tick:
+    - Appliquer la gravité: vy = vy - gravité * dt
+    - Limiter la vitesse terminale: vy = max(vy, -vitesse_terminale)
+    - Calculer translation: dx = vx * dt, dy = vy * dt, dz = vz * dt
+    - Diviser en sous-étapes pour éviter tunneling
+    
+    3. Déplacement et collisions:
+    - Position candidate = (x+dx, y+dy, z+dz)
+    - Correction par axe (X, Y, Z indépendamment)
+    - Si collision → repositionner et mettre vitesse = 0 sur cet axe
+    """
+    
+    def __init__(self, collision_manager: UnifiedCollisionManager):
+        self.collision_manager = collision_manager
+        self.gravity = GRAVITY                    # gravité
+        self.terminal_velocity = TERMINAL_VELOCITY # vitesse_terminale
+        self.sub_steps = 8                       # nombre_etapes pour éviter tunneling
+        
+    def apply_gravity_tick(self, velocity_y: float, dt: float) -> float:
+        """
+        Appliquer la gravité selon la spécification:
+        vy = vy - gravité * dt
+        vy = max(vy, -vitesse_terminale)
+        """
+        # Appliquer la gravité
+        vy = velocity_y - self.gravity * dt
+        
+        # Appliquer la vitesse terminale
+        vy = max(vy, -self.terminal_velocity)
+        
+        return vy
+    
+    def apply_movement_substep(self, position: Tuple[float, float, float], 
+                              velocity: Tuple[float, float, float],
+                              dt_substep: float,
+                              player_id: str = None) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+        """
+        Appliquer un déplacement en sous-étape avec collision.
+        
+        Pour chaque sous-étape:
+        - Position candidate = (x+dx, y+dy, z+dz)
+        - Vérifier collisions avec les blocs voisins
+        - Corriger par axe et remettre vitesse = 0 si collision
+        """
+        x, y, z = position
+        vx, vy, vz = velocity
+        
+        # Calculer la translation souhaitée pour cette sous-étape
+        dx = vx * dt_substep
+        dy = vy * dt_substep  
+        dz = vz * dt_substep
+        
+        # Position candidate
+        new_position = (x + dx, y + dy, z + dz)
+        
+        # Résolution des collisions par axe avec le système existant
+        safe_position, collision_info = self.collision_manager.resolve_collision(
+            position, new_position, player_id
+        )
+        
+        # Corriger la vitesse selon les collisions détectées
+        # Si collision → replacer position au bord du bloc, mettre vitesse = 0
+        final_vx = 0.0 if collision_info['x'] else vx
+        final_vy = 0.0 if collision_info['y'] else vy  
+        final_vz = 0.0 if collision_info['z'] else vz
+        
+        return safe_position, (final_vx, final_vy, final_vz)
+    
+    def update_tick(self, position: Tuple[float, float, float],
+                   velocity: Tuple[float, float, float], 
+                   dt: float,
+                   jumping: bool = False,
+                   player_id: str = None) -> Tuple[Tuple[float, float, float], Tuple[float, float, float], Dict[str, bool]]:
+        """
+        Mise à jour complète par tick selon la spécification.
+        
+        À chaque tick (ex. toutes les 16 ms):
+        1. Appliquer la gravité
+        2. Calculer la translation souhaitée  
+        3. Diviser le déplacement en sous-étapes
+        4. Pour chaque sous-étape: appliquer_deplacement()
+        
+        Retourne: (nouvelle_position, nouvelle_vitesse, info_collision)
+        """
+        x, y, z = position
+        vx, vy, vz = velocity
+        
+        # Gestion du saut
+        if jumping:
+            # Vérifier si le joueur est au sol
+            ground_test = (x, y - 0.1, z)
+            on_ground = self.collision_manager.check_block_collision(ground_test)
+            if on_ground:
+                vy = JUMP_VELOCITY
+        
+        # 1. Appliquer la gravité
+        vy = self.apply_gravity_tick(vy, dt)
+        
+        # Position et vitesse actuelles pour les sous-étapes
+        current_position = (x, y, z)
+        current_velocity = (vx, vy, vz)
+        
+        # 2. Diviser le déplacement en sous-étapes pour éviter le tunneling
+        dt_substep = dt / self.sub_steps
+        
+        # Information sur les collisions détectées
+        final_collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
+        
+        # 3. Pour chaque sous-étape: appliquer_deplacement()
+        for step in range(self.sub_steps):
+            old_velocity = current_velocity
+            current_position, current_velocity = self.apply_movement_substep(
+                current_position, current_velocity, dt_substep, player_id
+            )
+            
+            # Accumuler les informations de collision
+            # Si la vitesse a été réinitialisée, cela indique une collision
+            if current_velocity[0] == 0.0 and old_velocity[0] != 0.0:
+                final_collision_info['x'] = True
+            if current_velocity[1] == 0.0 and old_velocity[1] != 0.0:
+                final_collision_info['y'] = True  
+            if current_velocity[2] == 0.0 and old_velocity[2] != 0.0:
+                final_collision_info['z'] = True
+                
+            # Si une collision est détectée sur un axe, arrêter le mouvement sur cet axe
+            # pour toutes les sous-étapes restantes
+            if final_collision_info['x']:
+                current_velocity = (0.0, current_velocity[1], current_velocity[2])
+            if final_collision_info['y']:
+                current_velocity = (current_velocity[0], 0.0, current_velocity[2])
+            if final_collision_info['z']:
+                current_velocity = (current_velocity[0], current_velocity[1], 0.0)
+        
+        # Vérifier le statut du sol après toutes les sous-étapes
+        ground_test = (current_position[0], current_position[1] - 0.1, current_position[2])
+        final_collision_info['ground'] = self.collision_manager.check_block_collision(ground_test)
+        
+        # 4. Résultat: position corrigée et vitesse mise à jour
+        return current_position, current_velocity, final_collision_info
+
+# ============================================================================
 # LEGACY COMPATIBILITY LAYER
 # ============================================================================
 
@@ -418,6 +574,7 @@ class MinecraftPhysics:
 # Create global instances for backwards compatibility
 _global_collision_manager = None
 _global_physics_manager = None
+_global_tick_physics_manager = None
 
 def get_collision_manager(world_blocks: Dict[Tuple[int, int, int], str]) -> UnifiedCollisionManager:
     """Get or create global collision manager."""
@@ -433,6 +590,14 @@ def get_physics_manager(world_blocks: Dict[Tuple[int, int, int], str]) -> Simple
     if _global_physics_manager is None or _global_physics_manager.collision_manager != collision_manager:
         _global_physics_manager = SimplePhysicsManager(collision_manager)
     return _global_physics_manager
+
+def get_tick_physics_manager(world_blocks: Dict[Tuple[int, int, int], str]) -> TickBasedPhysicsManager:
+    """Get or create global tick-based physics manager."""
+    global _global_tick_physics_manager, _global_collision_manager
+    collision_manager = get_collision_manager(world_blocks)
+    if _global_tick_physics_manager is None or _global_tick_physics_manager.collision_manager != collision_manager:
+        _global_tick_physics_manager = TickBasedPhysicsManager(collision_manager)
+    return _global_tick_physics_manager
 
 # ============================================================================
 # UNIFIED API FUNCTIONS
