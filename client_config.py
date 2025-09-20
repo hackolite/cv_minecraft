@@ -68,6 +68,16 @@ class ClientConfig:
             "movement_speed": 5.0,
             "jump_speed": 8.0,
             "flying_speed": 15.0
+        },
+        
+        # Configuration du logging / Logging configuration
+        "logging": {
+            "collision_only": False,        # Afficher uniquement les logs de collision
+            "collision_blocks": True,       # Logs de collision avec blocs
+            "collision_players": True,      # Logs de collision entre joueurs
+            "log_level": "INFO",           # Niveau de log: DEBUG, INFO, WARNING, ERROR
+            "show_timestamps": True,        # Afficher les timestamps
+            "show_coordinates": True        # Afficher les coordonnées détaillées
         }
     }
     

@@ -57,9 +57,78 @@ GROUND_TOLERANCE = 0.05     # Distance to consider "on ground"
 # World constants
 BLOCK_SIZE = 1.0            # Each block is 1×1×1
 
-# Setup collision logger
+# Collision Logging Configuration
+class CollisionLoggingConfig:
+    """Configuration pour le système de logging des collisions."""
+    
+    def __init__(self):
+        self.collision_only = False      # Afficher uniquement les logs de collision
+        self.collision_blocks = True     # Logs de collision avec blocs
+        self.collision_players = True    # Logs de collision entre joueurs
+        self.log_level = logging.INFO    # Niveau de log
+        self.show_timestamps = True      # Afficher les timestamps
+        self.show_coordinates = True     # Afficher les coordonnées détaillées
+        
+    def update_from_config(self, config_dict: dict):
+        """Met à jour la configuration à partir d'un dictionnaire."""
+        if not config_dict:
+            return
+            
+        self.collision_only = config_dict.get('collision_only', self.collision_only)
+        self.collision_blocks = config_dict.get('collision_blocks', self.collision_blocks)
+        self.collision_players = config_dict.get('collision_players', self.collision_players)
+        self.show_timestamps = config_dict.get('show_timestamps', self.show_timestamps)
+        self.show_coordinates = config_dict.get('show_coordinates', self.show_coordinates)
+        
+        # Conversion du niveau de log
+        log_level_str = config_dict.get('log_level', 'INFO')
+        if hasattr(logging, log_level_str):
+            self.log_level = getattr(logging, log_level_str)
+
+# Configuration globale des logs de collision
+collision_log_config = CollisionLoggingConfig()
+
+# Setup collision logger avec filtre personnalisé
 collision_logger = logging.getLogger('minecraft_collision')
 collision_logger.setLevel(logging.INFO)
+
+class CollisionLogFilter(logging.Filter):
+    """Filtre pour les logs de collision permettant de filtrer par type."""
+    
+    def filter(self, record):
+        """Filtre les logs selon la configuration."""
+        # Si collision_only est activé, ne laisser passer que les logs de collision
+        if collision_log_config.collision_only:
+            if not hasattr(record, 'collision_type'):
+                return False
+        
+        # Filtrer par type de collision
+        if hasattr(record, 'collision_type'):
+            if record.collision_type == 'block' and not collision_log_config.collision_blocks:
+                return False
+            if record.collision_type == 'player' and not collision_log_config.collision_players:
+                return False
+        
+        return True
+
+# Ajouter le filtre au logger de collision
+collision_filter = CollisionLogFilter()
+collision_logger.addFilter(collision_filter)
+
+def log_collision(collision_type: str, message: str):
+    """Fonction utilitaire pour logger une collision avec le type approprié."""
+    # Créer un record de log avec le type de collision
+    record = logging.LogRecord(
+        name=collision_logger.name,
+        level=logging.INFO,
+        pathname='',
+        lineno=0,
+        msg=message,
+        args=(),
+        exc_info=None
+    )
+    record.collision_type = collision_type
+    collision_logger.handle(record)
 
 # ============================================================================
 # UNIFIED COLLISION MANAGER
@@ -83,6 +152,18 @@ class UnifiedCollisionManager:
     def update_world(self, world_blocks: Dict[Tuple[int, int, int], str]) -> None:
         """Update the world blocks."""
         self.world_blocks = world_blocks
+        
+    @staticmethod
+    def configure_collision_logging(config_dict: dict = None):
+        """Configure le système de logging des collisions."""
+        global collision_log_config
+        if config_dict:
+            collision_log_config.update_from_config(config_dict)
+        
+        # Mettre à jour le niveau du logger
+        collision_logger.setLevel(collision_log_config.log_level)
+        
+        return collision_log_config
     
     def check_block_collision(self, position: Tuple[float, float, float]) -> bool:
         """
@@ -142,13 +223,13 @@ class UnifiedCollisionManager:
                             
                             # Log collision with AABB coordinates, time and coordinates
                             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-                            collision_logger.info(f"🚫 COLLISION DÉTECTÉE - Bloc")
-                            collision_logger.info(f"   Heure: {current_time}")
-                            collision_logger.info(f"   Position joueur: ({px:.3f}, {py:.3f}, {pz:.3f})")
-                            collision_logger.info(f"   Position bloc: ({x}, {y}, {z})")
-                            collision_logger.info(f"   Type bloc: {block_type}")
-                            collision_logger.info(f"   AABB Joueur: min=({player_min_x:.3f}, {player_min_y:.3f}, {player_min_z:.3f}) max=({player_max_x:.3f}, {player_max_y:.3f}, {player_max_z:.3f})")
-                            collision_logger.info(f"   AABB Bloc: min=({block_min_x:.3f}, {block_min_y:.3f}, {block_min_z:.3f}) max=({block_max_x:.3f}, {block_max_y:.3f}, {block_max_z:.3f})")
+                            log_collision("block", f"🚫 COLLISION DÉTECTÉE - Bloc")
+                            log_collision("block", f"   Heure: {current_time}")
+                            log_collision("block", f"   Position joueur: ({px:.3f}, {py:.3f}, {pz:.3f})")
+                            log_collision("block", f"   Position bloc: ({x}, {y}, {z})")
+                            log_collision("block", f"   Type bloc: {block_type}")
+                            log_collision("block", f"   AABB Joueur: min=({player_min_x:.3f}, {player_min_y:.3f}, {player_min_z:.3f}) max=({player_max_x:.3f}, {player_max_y:.3f}, {player_max_z:.3f})")
+                            log_collision("block", f"   AABB Bloc: min=({block_min_x:.3f}, {block_min_y:.3f}, {block_min_z:.3f}) max=({block_max_x:.3f}, {block_max_y:.3f}, {block_max_z:.3f})")
                             
                             return True
         return False
@@ -195,12 +276,12 @@ class UnifiedCollisionManager:
                 player2_min_z = oz - other_size
                 player2_max_z = oz + other_size
                 
-                collision_logger.info(f"🚫 COLLISION DÉTECTÉE - Joueur vs Joueur")
-                collision_logger.info(f"   Heure: {current_time}")
-                collision_logger.info(f"   Position joueur 1: ({px:.3f}, {py:.3f}, {pz:.3f})")
-                collision_logger.info(f"   Position joueur 2: ({ox:.3f}, {oy:.3f}, {oz:.3f})")
-                collision_logger.info(f"   AABB Joueur 1: min=({player1_min_x:.3f}, {player1_min_y:.3f}, {player1_min_z:.3f}) max=({player1_max_x:.3f}, {player1_max_y:.3f}, {player1_max_z:.3f})")
-                collision_logger.info(f"   AABB Joueur 2: min=({player2_min_x:.3f}, {player2_min_y:.3f}, {player2_min_z:.3f}) max=({player2_max_x:.3f}, {player2_max_y:.3f}, {player2_max_z:.3f})")
+                log_collision("player", f"🚫 COLLISION DÉTECTÉE - Joueur vs Joueur")
+                log_collision("player", f"   Heure: {current_time}")
+                log_collision("player", f"   Position joueur 1: ({px:.3f}, {py:.3f}, {pz:.3f})")
+                log_collision("player", f"   Position joueur 2: ({ox:.3f}, {oy:.3f}, {oz:.3f})")
+                log_collision("player", f"   AABB Joueur 1: min=({player1_min_x:.3f}, {player1_min_y:.3f}, {player1_min_z:.3f}) max=({player1_max_x:.3f}, {player1_max_y:.3f}, {player1_max_z:.3f})")
+                log_collision("player", f"   AABB Joueur 2: min=({player2_min_x:.3f}, {player2_min_y:.3f}, {player2_min_z:.3f}) max=({player2_max_x:.3f}, {player2_max_y:.3f}, {player2_max_z:.3f})")
                 
                 return True
         return False
