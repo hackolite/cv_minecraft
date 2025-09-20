@@ -58,7 +58,7 @@ from minecraft_physics import (
     MinecraftCollisionDetector, MinecraftPhysics, 
     PLAYER_WIDTH, PLAYER_HEIGHT as PHYSICS_PLAYER_HEIGHT,
     GRAVITY as PHYSICS_GRAVITY, TERMINAL_VELOCITY as PHYSICS_TERMINAL_VELOCITY,
-    JUMP_VELOCITY, minecraft_collide, minecraft_check_ground
+    JUMP_VELOCITY, unified_check_player_collision, unified_get_player_collision_info
 )
 
 # Game constants  
@@ -93,62 +93,8 @@ def cube_vertices(x, y, z, n):
         x+n,y-n,z-n, x-n,y-n,z-n, x-n,y+n,z-n, x+n,y+n,z-n,  # back
     ]
 
-def check_player_collision(position, player_size, other_players):
-    """Check if player at position collides with other players."""
-    px, py, pz = position
-    for other_player in other_players:
-        if not isinstance(other_player, PlayerState):
-            continue
-        ox, oy, oz = other_player.position
-        other_size = other_player.size
-        # Check 3D bounding box collision
-        if all((px - player_size) < (ox + other_size) and (px + player_size) >= (ox - other_size)
-               for px, ox, player_size, other_size in [(px, ox, player_size, other_size),
-                                                       (py, oy, player_size, other_size), 
-                                                       (pz, oz, player_size, other_size)]):
-            return True
-    return False
-
-def check_player_collision_with_direction(position, player_size, other_players):
-    """Check if player at position collides with other players and return collision direction.
-    
-    Returns:
-        dict: {
-            'collision': bool,
-            'top': bool,     # True if standing on top of another player
-            'bottom': bool,  # True if another player is on top
-            'side': bool     # True if side collision
-        }
-    """
-    px, py, pz = position
-    result = {'collision': False, 'top': False, 'bottom': False, 'side': False}
-    
-    for other_player in other_players:
-        if not isinstance(other_player, PlayerState):
-            continue
-        ox, oy, oz = other_player.position
-        other_size = other_player.size
-        
-        # Check 3D bounding box collision
-        x_overlap = (px - player_size) < (ox + other_size) and (px + player_size) >= (ox - other_size)
-        y_overlap = (py - player_size) < (oy + other_size) and (py + player_size) >= (oy - other_size)
-        z_overlap = (pz - player_size) < (oz + other_size) and (pz + player_size) >= (oz - other_size)
-        
-        if x_overlap and y_overlap and z_overlap:
-            result['collision'] = True
-            
-            # Determine collision direction based on relative Y positions
-            # Top collision: current player is standing on another player
-            # This happens when the player is above the other player
-            if py > oy:  # Current player center is above other player center
-                result['top'] = True
-            # Bottom collision: another player is on top of current player  
-            elif py < oy:  # Current player center is below other player center
-                result['bottom'] = True
-            else:
-                result['side'] = True
-    
-    return result
+# Unified collision functions - now using the centralized collision manager
+# No need for duplicate functions - everything is handled in minecraft_physics.py
 
 class AdvancedNetworkClient:
     """Client réseau simplifié avec reconnexion automatique."""

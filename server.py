@@ -19,7 +19,8 @@ from protocol import (
 )
 from minecraft_physics import (
     MinecraftCollisionDetector, MinecraftPhysics,
-    PLAYER_WIDTH, PLAYER_HEIGHT, GRAVITY, TERMINAL_VELOCITY, JUMP_VELOCITY
+    PLAYER_WIDTH, PLAYER_HEIGHT, GRAVITY, TERMINAL_VELOCITY, JUMP_VELOCITY,
+    unified_check_collision, unified_check_player_collision
 )
 
 # ---------- Constants ----------
@@ -303,44 +304,13 @@ class MinecraftServer:
         self.last_physics_update = time.time()
 
     def _check_ground_collision(self, position: Tuple[float, float, float]) -> bool:
-        """
-        Standard Minecraft ground collision using the new physics system.
-        """
-        collision_detector = MinecraftCollisionDetector(self.world.world)
-        return collision_detector.check_collision(position)
+        """Check ground collision using unified collision system."""
+        return unified_check_collision(position, self.world.world)
 
     def _check_player_collision(self, player_id: str, position: Tuple[float, float, float]) -> bool:
-        """
-        Check if a player's new position would collide with other players.
-        
-        Uses standard Minecraft player dimensions and collision detection.
-        
-        Args:
-            player_id: ID of the player to check (excluded from collision)
-            position: New position to test
-            
-        Returns:
-            True if collision would occur, False otherwise
-        """
-        px, py, pz = position
-        player_size = PLAYER_WIDTH / 2  # Standard player collision box half-size
-        
-        for other_id, other_player in self.players.items():
-            if other_id == player_id:
-                continue  # Don't check collision with self
-                
-            ox, oy, oz = other_player.position
-            other_size = other_player.size
-            
-            # Check 3D bounding box collision using standard Minecraft dimensions
-            x_overlap = (px - player_size) < (ox + other_size) and (px + player_size) >= (ox - other_size)
-            y_overlap = (py) < (oy + STANDARD_PLAYER_HEIGHT) and (py + STANDARD_PLAYER_HEIGHT) >= (oy)
-            z_overlap = (pz - player_size) < (oz + other_size) and (pz + player_size) >= (oz - other_size)
-            
-            if x_overlap and y_overlap and z_overlap:
-                return True
-        
-        return False
+        """Check player collision using unified collision system."""
+        other_players = [p for p in self.players.values() if p.id != player_id]
+        return unified_check_player_collision(position, other_players, player_id)
 
     def _apply_physics(self, player: PlayerState, dt: float) -> None:
         """
