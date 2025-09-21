@@ -234,18 +234,17 @@ class UnifiedCollisionManager:
         """
         Simple, effective collision resolution to prevent cube face traversal.
         
-        Inspired by fogleman but adapted to prevent traversal:
-        - Uses much smaller pad (0.01) to prevent face traversal
-        - Checks if player center will be inside any block
-        - If collision detected, keeps player at safe position
-        - Simple and effective - no complex calculations
+        This method prevents both direct collision and diagonal traversal by:
+        1. Checking if the direct path would go through any blocks
+        2. If so, using axis-by-axis movement that prevents traversal
+        3. Ensuring the final position is safe and reachable without traversal
         """
         collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
         
         # Check if new position would put player inside a block
         if self._is_position_in_block(new_pos):
             # Player would be inside a block - find safe position
-            safe_pos = self._find_safe_position(old_pos, new_pos)
+            safe_pos = self._find_safe_position_axis_by_axis(old_pos, new_pos)
             
             # Determine which axis caused the collision
             old_x, old_y, old_z = old_pos
@@ -258,8 +257,24 @@ class UnifiedCollisionManager:
             if abs(safe_z - old_z) < abs(new_pos[2] - old_z):
                 collision_info['z'] = True
         else:
-            # No collision, allow movement
-            safe_pos = new_pos
+            # Target position is safe, but check for traversal along the path
+            if self._path_intersects_blocks(old_pos, new_pos):
+                # Path goes through blocks - use safe axis-by-axis movement with traversal check
+                safe_pos = self._find_safe_position_with_traversal_check(old_pos, new_pos)
+                
+                # Mark axes as collided if movement was restricted
+                old_x, old_y, old_z = old_pos
+                safe_x, safe_y, safe_z = safe_pos
+                
+                if abs(safe_x - old_x) < abs(new_pos[0] - old_x):
+                    collision_info['x'] = True
+                if abs(safe_y - old_y) < abs(new_pos[1] - old_y):
+                    collision_info['y'] = True
+                if abs(safe_z - old_z) < abs(new_pos[2] - old_z):
+                    collision_info['z'] = True
+            else:
+                # No collision and no traversal, allow movement
+                safe_pos = new_pos
         
         # Check if on ground
         ground_test_pos = (safe_pos[0], safe_pos[1] - 0.1, safe_pos[2])
@@ -267,6 +282,114 @@ class UnifiedCollisionManager:
             collision_info['ground'] = True
         
         return safe_pos, collision_info
+    
+    def _find_safe_position_axis_by_axis(self, old_pos: Tuple[float, float, float], 
+                                        new_pos: Tuple[float, float, float]) -> Tuple[float, float, float]:
+        """
+        Find safe position using simple axis-by-axis movement (original behavior).
+        This is used when the target position is inside a block.
+        """
+        old_x, old_y, old_z = old_pos
+        new_x, new_y, new_z = new_pos
+        
+        # Start with old position
+        safe_pos = list(old_pos)
+        
+        # Test X movement only (if different)
+        if new_x != old_x:
+            test_x_pos = (new_x, safe_pos[1], safe_pos[2])
+            if not self._is_position_in_block(test_x_pos):
+                safe_pos[0] = new_x
+        
+        # Test Y movement only (if different)  
+        if new_y != old_y:
+            test_y_pos = (safe_pos[0], new_y, safe_pos[2])
+            if not self._is_position_in_block(test_y_pos):
+                safe_pos[1] = new_y
+        
+        # Test Z movement only (if different)
+        if new_z != old_z:
+            test_z_pos = (safe_pos[0], safe_pos[1], new_z)
+            if not self._is_position_in_block(test_z_pos):
+                safe_pos[2] = new_z
+        
+        return tuple(safe_pos)
+    
+    def _path_intersects_blocks(self, start_pos: Tuple[float, float, float], 
+                               end_pos: Tuple[float, float, float]) -> bool:
+        """
+        Check if the direct path from start to end intersects any blocks.
+        This prevents diagonal traversal through blocks.
+        """
+        # Sample points along the path to check for intersections
+        samples = 16  # Higher sample count for more accuracy
+        
+        for i in range(1, samples):  # Skip start point (i=0)
+            t = i / samples
+            sample_x = start_pos[0] + t * (end_pos[0] - start_pos[0])
+            sample_y = start_pos[1] + t * (end_pos[1] - start_pos[1])
+            sample_z = start_pos[2] + t * (end_pos[2] - start_pos[2])
+            sample_pos = (sample_x, sample_y, sample_z)
+            
+            if self._is_position_in_block(sample_pos):
+                return True
+        
+        return False
+    
+    def _find_safe_position_with_traversal_check(self, old_pos: Tuple[float, float, float], 
+                                                new_pos: Tuple[float, float, float]) -> Tuple[float, float, float]:
+        """
+        Find safe position with traversal prevention.
+        
+        This method ensures that:
+        1. Movement is tried axis by axis
+        2. Each intermediate position is safe
+        3. No traversal through blocks occurs
+        4. The overall movement doesn't allow diagonal traversal
+        """
+        old_x, old_y, old_z = old_pos
+        new_x, new_y, new_z = new_pos
+        
+        # Start with old position
+        safe_pos = list(old_pos)
+        
+        # Test X movement only (if different)
+        if new_x != old_x:
+            test_x_pos = (new_x, safe_pos[1], safe_pos[2])
+            # Check both that position is safe AND path to it is clear
+            if (not self._is_position_in_block(test_x_pos) and 
+                not self._path_intersects_blocks((safe_pos[0], safe_pos[1], safe_pos[2]), test_x_pos)):
+                safe_pos[0] = new_x
+        
+        # Test Y movement only (if different)  
+        if new_y != old_y:
+            test_y_pos = (safe_pos[0], new_y, safe_pos[2])
+            # Check both that position is safe AND path to it is clear
+            if (not self._is_position_in_block(test_y_pos) and 
+                not self._path_intersects_blocks((safe_pos[0], safe_pos[1], safe_pos[2]), test_y_pos)):
+                safe_pos[1] = new_y
+        
+        # Test Z movement only (if different)
+        if new_z != old_z:
+            test_z_pos = (safe_pos[0], safe_pos[1], new_z)
+            # Check both that position is safe AND path to it is clear
+            if (not self._is_position_in_block(test_z_pos) and 
+                not self._path_intersects_blocks((safe_pos[0], safe_pos[1], safe_pos[2]), test_z_pos)):
+                safe_pos[2] = new_z
+        
+        # CRITICAL FIX: Check that the final movement from old_pos to safe_pos doesn't traverse
+        # This prevents cases where axis-by-axis movement is safe but overall path traverses
+        final_pos = tuple(safe_pos)
+        if self._path_intersects_blocks(old_pos, final_pos):
+            # If the overall path would traverse, don't allow any movement
+            return old_pos
+        
+        # Final verification that the position is safe
+        if self._is_position_in_block(final_pos):
+            # If the final position is not safe, revert to old position
+            return old_pos
+        
+        return final_pos
     
     def _is_position_in_block(self, position: Tuple[float, float, float]) -> bool:
         """Check if position is inside any block (proper AABB collision detection).""" 
@@ -315,37 +438,6 @@ class UnifiedCollisionManager:
         
         return False
     
-    def _find_safe_position(self, old_pos: Tuple[float, float, float], 
-                           new_pos: Tuple[float, float, float]) -> Tuple[float, float, float]:
-        """Find safe position when collision detected - be strict to prevent traversal."""
-        # If any movement would cause collision, don't allow it
-        # This prevents all forms of face traversal
-        
-        old_x, old_y, old_z = old_pos
-        new_x, new_y, new_z = new_pos
-        
-        # Try movement in each axis individually first
-        safe_pos = list(old_pos)  # Start with old position
-        
-        # Test X movement only (if different)
-        if new_x != old_x:
-            test_x_pos = (new_x, old_y, old_z)
-            if not self._is_position_in_block(test_x_pos):
-                safe_pos[0] = new_x
-        
-        # Test Y movement only (if different)  
-        if new_y != old_y:
-            test_y_pos = (safe_pos[0], new_y, old_z)
-            if not self._is_position_in_block(test_y_pos):
-                safe_pos[1] = new_y
-        
-        # Test Z movement only (if different)
-        if new_z != old_z:
-            test_z_pos = (safe_pos[0], safe_pos[1], new_z)
-            if not self._is_position_in_block(test_z_pos):
-                safe_pos[2] = new_z
-        
-        return tuple(safe_pos)
 
     def _normalize_position(self, position: Tuple[float, float, float]) -> Tuple[int, int, int]:
         """Normalize position to block coordinates (like fogleman's normalize function).""" 
