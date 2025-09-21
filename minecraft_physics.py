@@ -392,11 +392,23 @@ class UnifiedCollisionManager:
         Simple, effective collision resolution to prevent cube face traversal.
         
         This method prevents both direct collision and diagonal traversal by:
-        1. Checking if the direct path would go through any blocks
-        2. If so, using axis-by-axis movement that prevents traversal
-        3. Ensuring the final position is safe and reachable without traversal
+        1. Checking if the starting position is already in a block and snapping out if needed
+        2. Checking if the direct path would go through any blocks
+        3. If so, using axis-by-axis movement that prevents traversal
+        4. Ensuring the final position is safe and reachable without traversal
         """
         collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
+        
+        # CRITICAL FIX: Check if starting position is already in a block
+        # This prevents the player from being stuck inside blocks
+        if self._is_position_in_block(old_pos):
+            # Player is already inside a block - snap them to nearest safe position
+            safe_start_pos = self._snap_out_of_block(old_pos, player_id or "player", 0.01)
+            # Use the snapped position as the new starting point
+            old_pos = safe_start_pos
+            # Mark collision on all axes since we had to snap
+            collision_info['x'] = True
+            collision_info['z'] = True
         
         # Check if new position would put player inside a block
         if self._is_position_in_block(new_pos):
