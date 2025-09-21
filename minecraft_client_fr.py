@@ -679,33 +679,31 @@ class MinecraftWindow(pyglet.window.Window):
     
     def collide(self, position, height):
         """
-        Simple collision detection inspired by fogleman/Minecraft main.py.
+        Simplified collision detection with severe snapping to prevent 'seeing inside cubes'.
         
-        This method uses a simplified collision approach that only checks the player's 
-        central position and height, without complex bounding box management.
-        The collision system backs up the player on collision by adjusting position
-        on the affected axis and blocks falling/rising when hitting ground/ceiling.
-        
-        This replaces the previous complex sweeping AABB system with a simpler method
-        following the fogleman/Minecraft approach for better simplicity and 
-        performance.
+        This simplified approach:
+        - Validates the new position against the current position
+        - Uses severe snapping with minimum clearance from block faces
+        - Prevents visual penetration into blocks
+        - Maintains clean, simple code
         
         Args:
-            position: Player position tuple (x, y, z)
+            position: Intended new player position tuple (x, y, z)
             height: Player height (ignored, uses standard height)
             
         Returns:
-            Safe position after simple collision resolution
+            Safe position after collision resolution with severe snapping
         """
-        # Use the simple collision system inspired by fogleman/Minecraft
+        # Use the simplified collision system 
         collision_detector = MinecraftCollisionDetector(self.model.world)
         
         # Set other cubes for position validation
         other_cubes = self.model.get_other_cubes()
         collision_detector.set_other_cubes(other_cubes)
         
-        # Use the simple collision resolution (no complex AABB sweeping)
-        safe_position, collision_info = collision_detector.resolve_collision(position, position)
+        # Resolve collision between current position and intended position
+        # This provides proper movement-based collision resolution with severe snapping
+        safe_position, collision_info = collision_detector.resolve_collision(self.position, position)
         
         # Update collision types for compatibility with existing code
         self.collision_types = {
