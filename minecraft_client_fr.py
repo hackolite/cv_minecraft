@@ -211,12 +211,11 @@ class AdvancedNetworkClient:
                 server_rotation = movement_data.get("rotation", self.window.rotation)
                 
                 if status == "ok":
-                    # Movement accepted - apply server position
-                    self.window.position = server_position
-                    self.window.rotation = server_rotation
-                    # Update local player cube position
-                    if self.window.local_player_cube:
-                        self.window.local_player_cube.update_position(self.window.position)
+                    # Movement accepted - client continues with its own prediction
+                    # Only update rotation if server provides it
+                    if server_rotation != self.window.rotation:
+                        self.window.rotation = server_rotation
+                    # No position override - client continues its route
                 elif status == "forbidden":
                     # Movement forbidden - revert to server position and show warning
                     self.window.position = server_position
@@ -681,8 +680,8 @@ class MinecraftWindow(pyglet.window.Window):
             message = create_player_move_message(new_position, self.rotation)
             self.client.send_message(message)
         
-        # For immediate visual feedback, temporarily update position
-        # Server response will override this if needed
+        # For immediate visual feedback, update position locally
+        # Server will only override if collision detected ("forbidden" status)
         self.position = new_position
         
         # Update local player cube position for visual consistency
