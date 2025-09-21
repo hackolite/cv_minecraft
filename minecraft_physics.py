@@ -232,61 +232,131 @@ class UnifiedCollisionManager:
                                   new_pos: Tuple[float, float, float],
                                   player_id: str = None) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
         """
-        Simplified collision resolution with severe snapping to prevent 'seeing inside cubes'.
+        Simple, effective collision resolution to prevent cube face traversal.
         
-        This simplified approach:
-        - Tests each axis independently (X, Y, Z)
-        - Uses severe snapping with minimum clearance from block faces
-        - Prevents visual penetration into blocks
-        - Handles cases where player is already inside a block by moving them to safety
-        - Maintains clean, simple code without over-engineering
+        Inspired by fogleman but adapted to prevent traversal:
+        - Uses much smaller pad (0.01) to prevent face traversal
+        - Checks if player center will be inside any block
+        - If collision detected, keeps player at safe position
+        - Simple and effective - no complex calculations
         """
         collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
         
-        # Minimum clearance distance from block faces to prevent 'seeing inside cubes'
-        SNAP_CLEARANCE = 0.05  # 5cm minimum distance - severe snapping
+        # Check if new position would put player inside a block
+        if self._is_position_in_block(new_pos):
+            # Player would be inside a block - find safe position
+            safe_pos = self._find_safe_position(old_pos, new_pos)
+            
+            # Determine which axis caused the collision
+            old_x, old_y, old_z = old_pos
+            safe_x, safe_y, safe_z = safe_pos
+            
+            if abs(safe_x - old_x) < abs(new_pos[0] - old_x):
+                collision_info['x'] = True
+            if abs(safe_y - old_y) < abs(new_pos[1] - old_y):
+                collision_info['y'] = True
+            if abs(safe_z - old_z) < abs(new_pos[2] - old_z):
+                collision_info['z'] = True
+        else:
+            # No collision, allow movement
+            safe_pos = new_pos
+        
+        # Check if on ground
+        ground_test_pos = (safe_pos[0], safe_pos[1] - 0.1, safe_pos[2])
+        if self._is_position_in_block(ground_test_pos):
+            collision_info['ground'] = True
+        
+        return safe_pos, collision_info
+    
+    def _is_position_in_block(self, position: Tuple[float, float, float]) -> bool:
+        """Check if position is inside any block (strict collision detection).""" 
+        px, py, pz = position
+        
+        # Use very small margin to allow close movement but prevent face traversal
+        margin = 0.05  # Very small margin - only 5cm clearance
+        
+        # Check if player center + margin would be inside a block
+        block_x = int(math.floor(px))
+        block_y = int(math.floor(py))
+        block_z = int(math.floor(pz))
+        
+        # Check the block the player center is in
+        if (block_x, block_y, block_z) in self.world_blocks:
+            return True
+        
+        # Check player's full bounding box with very small margin
+        player_half_width = margin
+        
+        # Player occupies space from py to py + PLAYER_HEIGHT
+        min_x = int(math.floor(px - player_half_width))
+        max_x = int(math.floor(px + player_half_width))
+        min_y = int(math.floor(py))  # Player feet level
+        max_y = int(math.floor(py + PLAYER_HEIGHT - 0.01))  # Player head level
+        min_z = int(math.floor(pz - player_half_width))
+        max_z = int(math.floor(pz + player_half_width))
+        
+        # Check all blocks that player might intersect
+        for bx in range(min_x, max_x + 1):
+            for by in range(min_y, max_y + 1):
+                for bz in range(min_z, max_z + 1):
+                    if (bx, by, bz) in self.world_blocks:
+                        return True
+        
+        # Also check blocks immediately below player (for standing on blocks)
+        # This ensures player can't "float" just above a block
+        below_y = int(math.floor(py - 0.01))
+        if below_y >= min_y - 1:  # Only check one block below
+            for bx in range(min_x, max_x + 1):
+                for bz in range(min_z, max_z + 1):
+                    if (bx, below_y, bz) in self.world_blocks:
+                        # Player is too close to the top of a block
+                        if py - below_y < 1.1:  # Less than 1.1 blocks above the block
+                            return True
+        
+        return False
+    
+    def _find_safe_position(self, old_pos: Tuple[float, float, float], 
+                           new_pos: Tuple[float, float, float]) -> Tuple[float, float, float]:
+        """Find safe position when collision detected - be strict to prevent traversal."""
+        # If any movement would cause collision, don't allow it
+        # This prevents all forms of face traversal
         
         old_x, old_y, old_z = old_pos
         new_x, new_y, new_z = new_pos
         
-        # Special case: if old position has collision, snap to completely safe position
-        if self.check_collision(old_pos, player_id):
-            # Player is already inside a block - snap to a completely safe position
-            safe_pos = self._snap_out_of_block(old_pos, player_id, SNAP_CLEARANCE)
-            # Set all axes as having collision for compatibility
-            collision_info = {'x': True, 'y': True, 'z': True, 'ground': False}
-        else:
-            # Normal collision resolution - test each axis independently
-            final_pos = [new_x, new_y, new_z]
-            
-            # X-axis movement with snapping
+        # Try movement in each axis individually first
+        safe_pos = list(old_pos)  # Start with old position
+        
+        # Test X movement only (if different)
+        if new_x != old_x:
             test_x_pos = (new_x, old_y, old_z)
-            if self.check_collision(test_x_pos, player_id):
-                collision_info['x'] = True
-                # Snap to safe position with clearance
-                final_pos[0] = self._snap_to_safe_x_position(old_x, new_x, old_y, old_z, player_id, SNAP_CLEARANCE)
-            
-            # Z-axis movement with snapping  
-            test_z_pos = (final_pos[0], old_y, new_z)
-            if self.check_collision(test_z_pos, player_id):
-                collision_info['z'] = True
-                # Snap to safe position with clearance
-                final_pos[2] = self._snap_to_safe_z_position(final_pos[0], old_z, new_z, old_y, player_id, SNAP_CLEARANCE)
-            
-            # Y-axis movement with snapping
-            test_y_pos = (final_pos[0], new_y, final_pos[2])
-            if self.check_collision(test_y_pos, player_id):
-                collision_info['y'] = True
-                # Snap to safe position with clearance
-                final_pos[1] = self._snap_to_safe_y_position(final_pos[0], final_pos[2], old_y, new_y, player_id, SNAP_CLEARANCE)
-            
-            safe_pos = tuple(final_pos)
+            if not self._is_position_in_block(test_x_pos):
+                safe_pos[0] = new_x
         
-        # Check if on ground (test position slightly below)
-        ground_test = (safe_pos[0], safe_pos[1] - 0.1, safe_pos[2])
-        collision_info['ground'] = self.check_collision(ground_test, player_id)
+        # Test Y movement only (if different)  
+        if new_y != old_y:
+            test_y_pos = (safe_pos[0], new_y, old_z)
+            if not self._is_position_in_block(test_y_pos):
+                safe_pos[1] = new_y
         
-        return safe_pos, collision_info
+        # Test Z movement only (if different)
+        if new_z != old_z:
+            test_z_pos = (safe_pos[0], safe_pos[1], new_z)
+            if not self._is_position_in_block(test_z_pos):
+                safe_pos[2] = new_z
+        
+        return tuple(safe_pos)
+
+    def _normalize_position(self, position: Tuple[float, float, float]) -> Tuple[int, int, int]:
+        """Normalize position to block coordinates (like fogleman's normalize function).""" 
+        x, y, z = position
+        x, y, z = (int(round(x)), int(round(y)), int(round(z)))
+        return (x, y, z)
+    
+    def _check_block_at_position(self, position: Tuple[float, float, float]) -> bool:
+        """Check if there's a block at the given position."""
+        block_pos = self._normalize_position(position)
+        return block_pos in self.world_blocks
     
     def _snap_out_of_block(self, pos: Tuple[float, float, float], 
                           player_id: str, clearance: float) -> Tuple[float, float, float]:
