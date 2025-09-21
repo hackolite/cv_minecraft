@@ -55,7 +55,7 @@ except NameError:
 from protocol import *
 from client_config import config
 from minecraft_physics import (
-    MinecraftCollisionDetector, MinecraftPhysics, 
+    MinecraftCollisionDetector, MinecraftPhysics, UnifiedCollisionManager,
     PLAYER_WIDTH, PLAYER_HEIGHT as PHYSICS_PLAYER_HEIGHT,
     GRAVITY as PHYSICS_GRAVITY, TERMINAL_VELOCITY as PHYSICS_TERMINAL_VELOCITY,
     JUMP_VELOCITY, unified_check_player_collision, unified_get_player_collision_info
@@ -919,10 +919,116 @@ Statut: {connection_status}"""
             # Normal stance - position at cube center height
             camera_y = cube_center_y
             
-        # Apply camera positioning with front face offset
-        camera_x = x + front_face_offset_x
-        camera_z = z + front_face_offset_z
+        # Apply camera positioning with collision detection
+        camera_x, camera_y, camera_z = self._calculate_safe_camera_position(
+            x, y, z, sight_dx, sight_dz, camera_offset, cube_center_y
+        )
         glTranslatef(-camera_x, -camera_y, -camera_z)
+    
+    def _calculate_safe_camera_position(self, player_x, player_y, player_z, 
+                                       sight_dx, sight_dz, desired_offset, cube_center_y):
+        """
+        Calculate a safe camera position that doesn't penetrate blocks.
+        
+        This method implements camera collision detection to prevent the camera
+        from going inside blocks, which was causing the issue where the player
+        could see inside cubes during collision.
+        
+        Args:
+            player_x, player_y, player_z: Player position
+            sight_dx, sight_dz: Sight direction vector (normalized)
+            desired_offset: Desired camera distance from player
+            cube_center_y: Y position for camera (considering crouch)
+            
+        Returns:
+            Tuple (camera_x, camera_y, camera_z) of safe camera position
+        """
+        # Start with desired camera position
+        initial_camera_x = player_x + sight_dx * desired_offset
+        initial_camera_z = player_z + sight_dz * desired_offset
+        
+        # Set Y position based on crouch state
+        if self.crouch:
+            camera_y = cube_center_y - 0.2  # Slightly lower when crouching
+        else:
+            camera_y = cube_center_y
+        
+        # Get collision detector
+        if not hasattr(self, '_camera_collision_detector'):
+            self._camera_collision_detector = UnifiedCollisionManager(self.model.world)
+        else:
+            # Update world state
+            self._camera_collision_detector.world_blocks = self.model.world
+        
+        # Check if initial camera position collides with blocks
+        initial_pos = (initial_camera_x, camera_y, initial_camera_z)
+        
+        if not self._check_camera_point_collision(initial_pos):
+            # No collision - use desired position
+            return initial_camera_x, camera_y, initial_camera_z
+        
+        # Collision detected - find safe position by pulling camera back
+        max_pullback_distance = 3.0  # Maximum distance to pull back camera
+        min_camera_distance = 0.2    # Minimum distance from player
+        pullback_step = 0.1          # Step size for finding safe position
+        
+        for pullback in range(int(max_pullback_distance / pullback_step)):
+            # Calculate pull-back distance
+            current_offset = max(min_camera_distance, desired_offset - (pullback * pullback_step))
+            
+            # Calculate new camera position
+            camera_x = player_x + sight_dx * current_offset
+            camera_z = player_z + sight_dz * current_offset
+            test_pos = (camera_x, camera_y, camera_z)
+            
+            # Test if this position is safe
+            if not self._check_camera_point_collision(test_pos):
+                return camera_x, camera_y, camera_z
+        
+        # If we can't find a safe position, place camera very close to player
+        # This prevents seeing inside blocks even in tight spaces
+        # Try moving camera slightly behind the player if forward is blocked
+        for alternative_offset in [0.15, 0.1, 0.05]:
+            safe_camera_x = player_x - sight_dx * alternative_offset  # Behind player
+            safe_camera_z = player_z - sight_dz * alternative_offset
+            test_pos = (safe_camera_x, camera_y, safe_camera_z)
+            
+            if not self._check_camera_point_collision(test_pos):
+                return safe_camera_x, camera_y, safe_camera_z
+        
+        # Last resort: place camera at player position (very close)
+        return player_x, camera_y, player_z
+    
+    def _check_camera_point_collision(self, camera_pos):
+        """
+        Check if a camera point is inside any block.
+        
+        This is different from player collision detection as it only checks
+        if a single point (the camera) is inside a solid block, rather than
+        checking bounding box overlap.
+        
+        Args:
+            camera_pos: Tuple (x, y, z) of camera position
+            
+        Returns:
+            True if camera is inside a block, False if safe
+        """
+        cx, cy, cz = camera_pos
+        
+        # Find which block coordinates this point is in
+        block_x = int(math.floor(cx))
+        block_y = int(math.floor(cy))
+        block_z = int(math.floor(cz))
+        
+        # Check if there's a solid block at this position
+        block_pos = (block_x, block_y, block_z)
+        if block_pos in self.model.world:
+            block_type = self.model.world[block_pos]
+            # Only solid blocks block the camera (not air)
+            return block_type != "air"
+        
+        # No block at this position, camera is safe
+        return False
     
     def set_2d(self):
         """Configure OpenGL pour le rendu 2D."""
