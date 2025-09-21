@@ -234,17 +234,18 @@ class UnifiedCollisionManager:
         """
         Simple, effective collision resolution to prevent cube face traversal.
         
-        Inspired by fogleman but adapted to prevent traversal:
-        - Uses much smaller pad (0.01) to prevent face traversal
-        - Checks if player center will be inside any block
-        - If collision detected, keeps player at safe position
-        - Simple and effective - no complex calculations
+        This version checks if movement would pass through any blocks,
+        not just if the destination is inside a block. This prevents
+        face traversal completely.
         """
         collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
         
-        # Check if new position would put player inside a block
-        if self._is_position_in_block(new_pos):
-            # Player would be inside a block - find safe position
+        # Check if new position OR movement path would collide with blocks
+        collision_detected = (self._is_position_in_block(new_pos) or 
+                            self._movement_passes_through_block(old_pos, new_pos))
+        
+        if collision_detected:
+            # Player would collide - find safe position
             safe_pos = self._find_safe_position(old_pos, new_pos)
             
             # Determine which axis caused the collision
@@ -324,28 +325,71 @@ class UnifiedCollisionManager:
         old_x, old_y, old_z = old_pos
         new_x, new_y, new_z = new_pos
         
-        # Try movement in each axis individually first
+        # First check: if the overall movement passes through blocks, 
+        # don't allow ANY component movements (prevents diagonal traversal)
+        if self._movement_passes_through_block(old_pos, new_pos):
+            return old_pos  # Don't allow any movement
+        
+        # If overall movement is safe, test individual axes
+        # This prevents sliding around blocks by testing each axis independently
         safe_pos = list(old_pos)  # Start with old position
         
-        # Test X movement only (if different)
+        # Test X movement only (if different) - from old position
         if new_x != old_x:
             test_x_pos = (new_x, old_y, old_z)
-            if not self._is_position_in_block(test_x_pos):
+            # Check both destination and movement path
+            if (not self._is_position_in_block(test_x_pos) and 
+                not self._movement_passes_through_block(old_pos, test_x_pos)):
                 safe_pos[0] = new_x
         
-        # Test Y movement only (if different)  
+        # Test Y movement only (if different) - from old position  
         if new_y != old_y:
-            test_y_pos = (safe_pos[0], new_y, old_z)
-            if not self._is_position_in_block(test_y_pos):
+            test_y_pos = (old_x, new_y, old_z)  # Use old_x, not safe_pos[0]
+            # Check both destination and movement path
+            if (not self._is_position_in_block(test_y_pos) and 
+                not self._movement_passes_through_block(old_pos, test_y_pos)):
                 safe_pos[1] = new_y
         
-        # Test Z movement only (if different)
+        # Test Z movement only (if different) - from old position
         if new_z != old_z:
-            test_z_pos = (safe_pos[0], safe_pos[1], new_z)
-            if not self._is_position_in_block(test_z_pos):
+            test_z_pos = (old_x, old_y, new_z)  # Use old_x, old_y, not safe_pos
+            # Check both destination and movement path
+            if (not self._is_position_in_block(test_z_pos) and 
+                not self._movement_passes_through_block(old_pos, test_z_pos)):
                 safe_pos[2] = new_z
         
         return tuple(safe_pos)
+
+    def _movement_passes_through_block(self, old_pos: Tuple[float, float, float], 
+                                     new_pos: Tuple[float, float, float]) -> bool:
+        """Check if movement from old_pos to new_pos passes through any solid blocks."""
+        old_x, old_y, old_z = old_pos
+        new_x, new_y, new_z = new_pos
+        
+        # Calculate movement vector
+        dx = new_x - old_x
+        dy = new_y - old_y  
+        dz = new_z - old_z
+        
+        # If no movement, no collision
+        if dx == 0 and dy == 0 and dz == 0:
+            return False
+        
+        # Sample points along the movement path
+        # Use enough samples to catch intersections with 1x1x1 blocks
+        max_distance = max(abs(dx), abs(dy), abs(dz))
+        num_samples = max(10, int(max_distance * 10))  # At least 10 samples per block distance
+        
+        for i in range(1, num_samples + 1):
+            t = i / num_samples
+            sample_x = old_x + dx * t
+            sample_y = old_y + dy * t
+            sample_z = old_z + dz * t
+            
+            if self._is_position_in_block((sample_x, sample_y, sample_z)):
+                return True
+        
+        return False
 
     def _normalize_position(self, position: Tuple[float, float, float]) -> Tuple[int, int, int]:
         """Normalize position to block coordinates (like fogleman's normalize function).""" 

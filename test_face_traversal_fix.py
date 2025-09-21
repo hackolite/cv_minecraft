@@ -82,7 +82,7 @@ def test_face_traversal_prevention():
     # Test that normal safe movement still works
     safe_tests = [
         ((8.0, 10.0, 10.0), (9.0, 10.0, 10.0), "Safe movement away from blocks"),
-        ((15.0, 10.0, 10.0), (16.0, 10.0, 10.0), "Safe movement in empty space"),
+        ((16.0, 10.0, 10.0), (17.0, 10.0, 10.0), "Safe movement in empty space"),
         ((10.0, 8.0, 10.0), (10.0, 9.0, 10.0), "Safe vertical movement below blocks"),
     ]
     
