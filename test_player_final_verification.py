@@ -70,10 +70,10 @@ def test_player_colors_positions_visibility():
                     
                     # Test 3: Render positions are elevated
                     local_render_pos = local_player.get_render_position()
-                    assert local_render_pos == (15, 25.4, 35), "Local player render position should be elevated by size (0.4)"
+                    assert local_render_pos == (15, 25.5, 35), "Local player render position should be elevated by size (0.5)"
                     
                     remote_render_pos = remote1.get_render_position()
-                    assert remote_render_pos == (55, 65.4, 75), "Remote player render position should be elevated by size (0.4)"
+                    assert remote_render_pos == (55, 65.5, 75), "Remote player render position should be elevated by size (0.5)"
                     
                     print("✅ Render positions are correctly elevated")
                     

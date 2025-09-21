@@ -44,7 +44,7 @@ def test_unified_cube_system():
                     assert local_player.id == "local_123", "Local player should have correct ID"
                     assert local_player.position == (10, 20, 30), "Local player should have correct position"
                     assert local_player.rotation == (45, -10), "Local player should have correct rotation"
-                    assert local_player.size == 0.4, "Local player should have default cube size"
+                    assert local_player.size == 0.5, "Local player should have standard 1x1x1 cube size"
                     
                     print("✅ Local player is properly created as a cube")
                     
@@ -78,10 +78,10 @@ def test_unified_cube_system():
                     
                     # Test 5: Cube render positions work
                     local_render_pos = local_player.get_render_position()
-                    assert local_render_pos == (10, 20.4, 30), "Local player render position should be elevated by size"
+                    assert local_render_pos == (10, 20.5, 30), "Local player render position should be elevated by size (0.5)"
                     
                     remote_render_pos = remote_player.get_render_position()
-                    assert remote_render_pos == (50, 60.4, 70), "Remote player render position should be elevated by size"
+                    assert remote_render_pos == (50, 60.5, 70), "Remote player render position should be elevated by size (0.5)"
                     
                     print("✅ Cube render positions work correctly")
                     
