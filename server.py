@@ -349,6 +349,17 @@ class MinecraftServer:
         player.position = new_position
         player.velocity = new_velocity
         player.on_ground = new_on_ground
+        
+        # Defensive validation: ensure physics didn't corrupt position
+        if not isinstance(new_position, (tuple, list)) or len(new_position) != 3:
+            self.logger.error(f"❌ PHYSICS ERROR: Physics corrupted position for {player.id}: {new_position}")
+            # Reset to previous valid position if available
+            return
+        
+        x, y, z = new_position
+        if not all(isinstance(coord, (int, float)) for coord in [x, y, z]):
+            self.logger.error(f"❌ PHYSICS ERROR: Physics generated non-numeric position for {player.id}: {new_position}")
+            return
 
     async def _physics_update_loop(self):
         """Main physics update loop running at PHYSICS_TICK_RATE."""
@@ -592,6 +603,27 @@ class MinecraftServer:
                 self.logger.warning(f"🚫 COLLISION: Player {player.name or player_id[:8]} blocked by other player at {new_position}")
                 raise InvalidPlayerDataError("Movement blocked by another player")
                 
+            # Enhanced position validation
+            if not isinstance(new_position, (tuple, list)) or len(new_position) != 3:
+                self.logger.warning(f"❌ VALIDATION: Invalid position format {new_position} for {player.name}")
+                raise InvalidPlayerDataError("Position must be a 3-element array")
+            
+            # Validate position coordinates are numeric
+            x, y, z = new_position
+            if not all(isinstance(coord, (int, float)) for coord in [x, y, z]):
+                self.logger.warning(f"❌ VALIDATION: Non-numeric position coordinates {new_position} for {player.name}")
+                raise InvalidPlayerDataError("Position coordinates must be numeric")
+            
+            # Validate rotation
+            if not isinstance(rotation, (tuple, list)) or len(rotation) != 2:
+                self.logger.warning(f"❌ VALIDATION: Invalid rotation format {rotation} for {player.name}")
+                raise InvalidPlayerDataError("Rotation must be a 2-element array")
+            
+            h, v = rotation
+            if not all(isinstance(angle, (int, float)) for angle in [h, v]):
+                self.logger.warning(f"❌ VALIDATION: Non-numeric rotation angles {rotation} for {player.name}")
+                raise InvalidPlayerDataError("Rotation angles must be numeric")
+            
             player.position = new_position
             player.rotation = tuple(rotation)
             
