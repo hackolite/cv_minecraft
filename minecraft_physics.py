@@ -709,70 +709,65 @@ class UnifiedCollisionManager:
                 return fallback
         
         return pos  # Last resort
-    
-    def _snap_to_safe_x_position(self, old_x: float, new_x: float, y: float, z: float, 
-                                player_id: str, clearance: float) -> float:
-        """Snap to safe X position with minimum clearance from block faces."""
-        # Find blocks that could cause collision in the X direction
-        player_half_width = PLAYER_WIDTH / 2
-        
-        # Get the Y and Z block coordinates where collision would occur
-        block_y = int(math.floor(y))
-        block_z = int(math.floor(z))
-        
-        # Check if we're moving right or left
-        if new_x > old_x:  # Moving right
-            # Find the first block that would cause collision
-            for block_x in range(int(math.floor(old_x)), int(math.floor(new_x)) + 2):
-                if (block_x, block_y, block_z) in self.world_blocks:
-                    block_type = self.world_blocks[(block_x, block_y, block_z)]
-                    if block_type != "air":
-                        # Snap to left side of this block with clearance
-                        safe_x = float(block_x) - player_half_width - clearance
-                        return max(safe_x, old_x)  # Don't go backwards
-        else:  # Moving left  
-            # Find the first block that would cause collision
-            for block_x in range(int(math.floor(new_x)), int(math.floor(old_x)) + 2):
-                if (block_x, block_y, block_z) in self.world_blocks:
-                    block_type = self.world_blocks[(block_x, block_y, block_z)]
-                    if block_type != "air":
-                        # Snap to right side of this block with clearance
-                        safe_x = float(block_x + 1) + player_half_width + clearance
-                        return min(safe_x, old_x)  # Don't go backwards
-        
-        return old_x  # No blocking block found
-    
-    def _snap_to_safe_z_position(self, x: float, old_z: float, new_z: float, y: float, 
-                                player_id: str, clearance: float) -> float:
-        """Snap to safe Z position with minimum clearance from block faces."""
-        # Find blocks that could cause collision in the Z direction
-        player_half_width = PLAYER_WIDTH / 2
-        
-        # Get the X and Y block coordinates where collision would occur
-        block_x = int(math.floor(x))
-        block_y = int(math.floor(y))
-        
-        # Check if we're moving forward or backward
-        if new_z > old_z:  # Moving forward
-            # Find the first block that would cause collision
-            for block_z in range(int(math.floor(old_z)), int(math.floor(new_z)) + 2):
-                if (block_x, block_y, block_z) in self.world_blocks:
-                    block_type = self.world_blocks[(block_x, block_y, block_z)]
-                    if block_type != "air":
-                        # Snap to back side of this block with clearance
-                        safe_z = float(block_z) - player_half_width - clearance
-                        return max(safe_z, old_z)  # Don't go backwards
-        else:  # Moving backward
-            # Find the first block that would cause collision
-            for block_z in range(int(math.floor(new_z)), int(math.floor(old_z)) + 2):
-                if (block_x, block_y, block_z) in self.world_blocks:
-                    block_type = self.world_blocks[(block_x, block_y, block_z)]
-                    if block_type != "air":
-                        # Snap to front side of this block with clearance
-                        safe_z = float(block_z + 1) + player_half_width + clearance
-                        return min(safe_z, old_z)  # Don't go backwards
-        
-        return old_z  # No blocking block found
+
+
+    def _snap_to_safe_x_position(self, old_x: float, new_x: float, y: float, z: float, player_id: str, clearance: float) -> float:
+          player_half_width = PLAYER_WIDTH / 2
+          block_y = int(math.floor(y))
+          block_z = int(math.floor(z))
+          safe_x = new_x  # Default to intended position
+      
+          if new_x > old_x:  # Moving right
+              for block_x in range(int(math.floor(old_x)), int(math.floor(new_x)) + 2):
+                  if (block_x, block_y, block_z) in self.world_blocks:
+                      block_type = self.world_blocks[(block_x, block_y, block_z)]
+                      if block_type != "air":
+                          safe_x = float(block_x) - player_half_width - clearance
+                          safe_x = max(safe_x, old_x)
+                          break
+          else:  # Moving left
+              for block_x in range(int(math.floor(new_x)), int(math.floor(old_x)) + 2):
+                  if (block_x, block_y, block_z) in self.world_blocks:
+                      block_type = self.world_blocks[(block_x, block_y, block_z)]
+                      if block_type != "air":
+                          safe_x = float(block_x + 1) + player_half_width + clearance
+                          safe_x = min(safe_x, old_x)
+                          break
+      
+          # Collision check: if still inside a block, fallback to previous position
+          if self.check_collision((safe_x, y, z), player_id):
+              return old_x
+          return safe_x
+
+    def _snap_to_safe_z_position(self, x: float, old_z: float, new_z: float, y: float, player_id: str, clearance: float) -> float:
+              player_half_width = PLAYER_WIDTH / 2
+              block_x = int(math.floor(x))
+              block_y = int(math.floor(y))
+              safe_z = new_z  # Default to intended position
+          
+              if new_z > old_z:  # Moving forward
+                  for block_z in range(int(math.floor(old_z)), int(math.floor(new_z)) + 2):
+                      if (block_x, block_y, block_z) in self.world_blocks:
+                          block_type = self.world_blocks[(block_x, block_y, block_z)]
+                          if block_type != "air":
+                              safe_z = float(block_z) - player_half_width - clearance
+                              safe_z = max(safe_z, old_z)
+                              break
+              else:  # Moving backward
+                  for block_z in range(int(math.floor(new_z)), int(math.floor(old_z)) + 2):
+                      if (block_x, block_y, block_z) in self.world_blocks:
+                          block_type = self.world_blocks[(block_x, block_y, block_z)]
+                          if block_type != "air":
+                              safe_z = float(block_z + 1) + player_half_width + clearance
+                              safe_z = min(safe_z, old_z)
+                              break
+          
+              # Collision check: if still inside a block, fallback to previous position
+              if self.check_collision((x, y, safe_z), player_id):
+                  return old_z
+              return safe_z
+  
+
     
     def _snap_to_safe_y_position(self, x: float, z: float, old_y: float, new_y: float, 
                                 player_id: str, clearance: float) -> float:
