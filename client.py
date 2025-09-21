@@ -2,9 +2,26 @@
 Client module - imports from minecraft_client_fr.py for compatibility with tests.
 """
 
-from minecraft_client_fr import *
+# Import only the necessary parts to avoid OpenGL dependencies in tests
 from protocol import PlayerState, Cube
+from collections import deque
 import random
+
+try:
+    # Try to import OpenGL-dependent parts only when needed
+    from minecraft_client_fr import EnhancedClientModel, cube_vertices as _cube_vertices
+    OPENGL_AVAILABLE = True
+except ImportError:
+    # Fallback for testing without OpenGL
+    OPENGL_AVAILABLE = False
+    
+    # Minimal ClientModel for testing
+    class EnhancedClientModel:
+        def __init__(self):
+            self.world, self.shown, self._shown, self.sectors = {}, {}, {}, {}
+            self.queue = deque()
+            self.other_players = {}
+            self.world_size, self.spawn_position = 128, [30, 50, 80]
 
 class ClientModel(EnhancedClientModel):
     """Extended client model with local player cube support."""
@@ -65,10 +82,7 @@ class ClientModel(EnhancedClientModel):
     
     def _generate_player_color(self, player_id: str):
         """Generate a unique color for a player based on their ID."""
-        # Use the player ID as a seed for consistent colors
-        random.seed(hash(player_id) % (2**32))
-        
-        # Generate a bright, distinguishable color
+        # Use a deterministic approach without affecting global random state
         colors = [
             (1.0, 0.3, 0.3),  # Red
             (0.3, 1.0, 0.3),  # Green  
@@ -80,18 +94,22 @@ class ClientModel(EnhancedClientModel):
             (0.6, 0.3, 1.0),  # Purple
         ]
         
-        # Select color based on hash
-        color_index = hash(player_id) % len(colors)
+        # Select color based on hash without using random.seed()
+        color_index = abs(hash(player_id)) % len(colors)
         return colors[color_index]
 
 # Export the cube_vertices function
 def cube_vertices(x, y, z, n):
     """Return vertices for a cube at position x, y, z with size 2*n."""
-    return [
-        x-n,y+n,z-n, x-n,y+n,z+n, x+n,y+n,z+n, x+n,y+n,z-n,  # top
-        x-n,y-n,z-n, x+n,y-n,z-n, x+n,y-n,z+n, x-n,y-n,z+n,  # bottom  
-        x-n,y-n,z-n, x-n,y-n,z+n, x-n,y+n,z+n, x-n,y+n,z-n,  # left
-        x+n,y-n,z+n, x+n,y-n,z-n, x+n,y+n,z-n, x+n,y+n,z+n,  # right
-        x-n,y-n,z+n, x+n,y-n,z+n, x+n,y+n,z+n, x-n,y+n,z+n,  # front
-        x+n,y-n,z-n, x-n,y-n,z-n, x-n,y+n,z-n, x+n,y+n,z-n,  # back
-    ]
+    if OPENGL_AVAILABLE:
+        return _cube_vertices(x, y, z, n)
+    else:
+        # Fallback implementation for testing
+        return [
+            x-n,y+n,z-n, x-n,y+n,z+n, x+n,y+n,z+n, x+n,y+n,z-n,  # top
+            x-n,y-n,z-n, x+n,y-n,z-n, x+n,y-n,z+n, x-n,y-n,z+n,  # bottom  
+            x-n,y-n,z-n, x-n,y-n,z+n, x-n,y+n,z+n, x-n,y+n,z-n,  # left
+            x+n,y-n,z+n, x+n,y-n,z-n, x+n,y+n,z-n, x+n,y+n,z+n,  # right
+            x-n,y-n,z+n, x+n,y-n,z+n, x+n,y+n,z+n, x-n,y+n,z+n,  # front
+            x+n,y-n,z-n, x-n,y-n,z-n, x-n,y+n,z-n, x+n,y+n,z-n,  # back
+        ]

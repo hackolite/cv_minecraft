@@ -188,6 +188,12 @@ class AdvancedNetworkClient:
         try:
             if message.type == MessageType.WORLD_INIT:
                 self.window.model.load_world_data(message.data)
+                # Create local player cube when world is initialized
+                if self.player_id and not self.window.local_player_cube:
+                    player_name = config.get("player", "name", "Joueur")
+                    self.window.local_player_cube = self.window.model.create_local_player(
+                        self.player_id, self.window.position, self.window.rotation, player_name
+                    )
             elif message.type == MessageType.WORLD_CHUNK:
                 self.window.model.load_world_chunk(message.data)
             elif message.type == MessageType.WORLD_UPDATE:
@@ -204,6 +210,11 @@ class AdvancedNetworkClient:
                     self.window.position = tuple(player_data["position"])
                     self.window.dy = player_data["velocity"][1]
                     self.window.on_ground = player_data.get("on_ground", False)
+                    # Update local player cube position
+                    if self.window.local_player_cube:
+                        self.window.local_player_cube.update_position(self.window.position)
+                        self.window.local_player_cube.velocity = player_data["velocity"]
+                        self.window.local_player_cube.on_ground = player_data.get("on_ground", False)
                 else:
                     self.window.model.other_players[player_id] = PlayerState.from_dict(player_data)
             elif message.type == MessageType.PLAYER_LIST:
@@ -472,8 +483,13 @@ class MinecraftWindow(pyglet.window.Window):
         self.num_keys = [key._1, key._2, key._3, key._4, key._5]
         
         # Modèle et réseau
-        self.model = EnhancedClientModel()
+        from client import ClientModel
+        self.model = ClientModel()
         self.network = AdvancedNetworkClient(self)
+        
+        # Local player as cube
+        self.local_player_cube = None
+        self.show_local_player = True  # Config to show/hide local player cube
         
         # Interface utilisateur
         self.show_debug = config.get("interface", "show_debug_info", True)
@@ -652,6 +668,12 @@ class MinecraftWindow(pyglet.window.Window):
             self.position = new_position
             self.dy = new_velocity[1]
             
+            # Update local player cube position
+            if self.local_player_cube:
+                self.local_player_cube.update_position(self.position)
+                self.local_player_cube.velocity = list(new_velocity)
+                self.local_player_cube.on_ground = new_on_ground
+            
             # Update collision types for compatibility
             self.collision_types["top"] = new_on_ground
     
@@ -804,6 +826,10 @@ Statut: {connection_status}"""
             self.show_message(status)
         elif symbol == key.F3:
             self.show_debug = not self.show_debug
+        elif symbol == key.F5:
+            self.show_local_player = not self.show_local_player
+            status = "Cube joueur affiché" if self.show_local_player else "Cube joueur masqué"
+            self.show_message(status)
         elif symbol == key.F11:
             self.set_fullscreen(not self.fullscreen)
         elif symbol in self.num_keys:
@@ -944,6 +970,7 @@ Statut: {connection_status}"""
     
     def draw_players(self):
         """Dessine tous les cubes des joueurs."""
+        # Draw other players
         for player_id, player in self.model.other_players.items():
             if isinstance(player, PlayerState):
                 color = self._get_player_color(player_id)
@@ -952,6 +979,15 @@ Statut: {connection_status}"""
                 
                 glColor3d(*color)
                 pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))
+        
+        # Draw local player cube if enabled and exists
+        if self.show_local_player and self.local_player_cube:
+            color = self.local_player_cube.color
+            x, y, z = self.local_player_cube.get_render_position()
+            vertex_data = cube_vertices(x, y, z, self.local_player_cube.size)
+            
+            glColor3d(*color)
+            pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))
     
     def draw_player_labels(self):
         """Dessine les noms des joueurs."""
