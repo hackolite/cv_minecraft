@@ -422,9 +422,8 @@ def block_texture_data(block_type):
         m_x, m_y = 1.0 / 4.0, 1.0 / 4.0
         dx, dy = x * m_x, y * m_y
         return [dx, dy, dx + m_x, dy, dx + m_x, dy + m_y, dx, dy + m_y]
-    
+    """BlockType.GRASS: tex_coord_4x3(1, 0) + tex_coord_4x3(0, 0) * 5,"""
     textures = {
-        """BlockType.GRASS: tex_coord_4x3(1, 0) + tex_coord_4x3(0, 0) * 5,"""
         BlockType.GRASS: tex_coord_4x3(1, 0) * 6 ,
         BlockType.SAND: tex_coord_4x3(1, 1) * 6,
         BlockType.BRICK: tex_coord_4x3(2, 0) * 6,
