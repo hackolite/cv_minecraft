@@ -235,12 +235,26 @@ class UnifiedCollisionManager:
         Simple, effective collision resolution to prevent cube face traversal.
         
         Inspired by fogleman but adapted to prevent traversal:
-        - Uses much smaller pad (0.01) to prevent face traversal
-        - Checks if player center will be inside any block
-        - If collision detected, keeps player at safe position
+        - Uses epsilon tolerance to prevent snapping from floating-point errors
+        - Only applies epsilon tolerance for very small movements (preventing snapping)
+        - Large movements (like falling) are processed normally
         - Simple and effective - no complex calculations
         """
         collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
+        
+        # Calculate movement deltas
+        old_x, old_y, old_z = old_pos
+        new_x, new_y, new_z = new_pos
+        dx = new_x - old_x
+        dy = new_y - old_y  
+        dz = new_z - old_z
+        
+        # Only apply epsilon tolerance for very small movements to prevent snapping
+        # Large movements (falling, jumping, etc.) should be processed normally
+        movement_magnitude = math.sqrt(dx*dx + dy*dy + dz*dz)
+        if movement_magnitude < COLLISION_EPSILON:
+            # Movement is tiny - this is likely floating-point error, don't process
+            return old_pos, collision_info
         
         # Check if new position would put player inside a block
         if self._is_position_in_block(new_pos):
@@ -248,21 +262,20 @@ class UnifiedCollisionManager:
             safe_pos = self._find_safe_position(old_pos, new_pos)
             
             # Determine which axis caused the collision
-            old_x, old_y, old_z = old_pos
             safe_x, safe_y, safe_z = safe_pos
             
-            if abs(safe_x - old_x) < abs(new_pos[0] - old_x):
+            if abs(safe_x - old_x) < abs(new_x - old_x):
                 collision_info['x'] = True
-            if abs(safe_y - old_y) < abs(new_pos[1] - old_y):
+            if abs(safe_y - old_y) < abs(new_y - old_y):
                 collision_info['y'] = True
-            if abs(safe_z - old_z) < abs(new_pos[2] - old_z):
+            if abs(safe_z - old_z) < abs(new_z - old_z):
                 collision_info['z'] = True
         else:
             # No collision, allow movement
             safe_pos = new_pos
         
-        # Check if on ground
-        ground_test_pos = (safe_pos[0], safe_pos[1] - 0.1, safe_pos[2])
+        # Check if on ground (with epsilon tolerance)
+        ground_test_pos = (safe_pos[0], safe_pos[1] - GROUND_TOLERANCE, safe_pos[2])
         if self._is_position_in_block(ground_test_pos):
             collision_info['ground'] = True
         
@@ -719,12 +732,20 @@ class TickBasedPhysicsManager:
         self.terminal_velocity = TERMINAL_VELOCITY # vitesse_terminale
         self.sub_steps = 8                       # nombre_etapes pour éviter tunneling
         
-    def apply_gravity_tick(self, velocity_y: float, dt: float) -> float:
+    def apply_gravity_tick(self, velocity_y: float, dt: float, on_ground: bool = False) -> float:
         """
         Appliquer la gravité selon la spécification:
         vy = vy - gravité * dt
         vy = max(vy, -vitesse_terminale)
+        
+        Avec amélioration pour éviter le snapping:
+        - Ne pas appliquer la gravité si le joueur est stable au sol
         """
+        # Si le joueur est au sol avec une vitesse très faible, ne pas appliquer la gravité
+        # Cela évite le snapping infini dû aux erreurs d'arrondi flottant
+        if on_ground and abs(velocity_y) < COLLISION_EPSILON:
+            return 0.0
+        
         # Appliquer la gravité
         vy = velocity_y - self.gravity * dt
         
@@ -788,16 +809,17 @@ class TickBasedPhysicsManager:
         x, y, z = position
         vx, vy, vz = velocity
         
+        # Vérifier si le joueur est au sol avec tolérance epsilon
+        ground_test = (x, y - GROUND_TOLERANCE, z)
+        on_ground = self.collision_manager.check_block_collision(ground_test)
+        
         # Gestion du saut
         if jumping:
-            # Vérifier si le joueur est au sol
-            ground_test = (x, y - 0.1, z)
-            on_ground = self.collision_manager.check_block_collision(ground_test)
             if on_ground:
                 vy = JUMP_VELOCITY
         
-        # 1. Appliquer la gravité
-        vy = self.apply_gravity_tick(vy, dt)
+        # 1. Appliquer la gravité (avec vérification du sol pour éviter le snapping)
+        vy = self.apply_gravity_tick(vy, dt, on_ground)
         
         # Position et vitesse actuelles pour les sous-étapes
         current_position = (x, y, z)
@@ -834,8 +856,8 @@ class TickBasedPhysicsManager:
             if final_collision_info['z']:
                 current_velocity = (current_velocity[0], current_velocity[1], 0.0)
         
-        # Vérifier le statut du sol après toutes les sous-étapes
-        ground_test = (current_position[0], current_position[1] - 0.1, current_position[2])
+        # Vérifier le statut du sol après toutes les sous-étapes (avec tolérance epsilon)
+        ground_test = (current_position[0], current_position[1] - GROUND_TOLERANCE, current_position[2])
         final_collision_info['ground'] = self.collision_manager.check_block_collision(ground_test)
         
         # 4. Résultat: position corrigée et vitesse mise à jour
