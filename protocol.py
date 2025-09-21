@@ -26,6 +26,7 @@ class MessageType(Enum):
     BLOCK_UPDATE = "block_update"
     CHAT_BROADCAST = "chat_broadcast"
     PLAYER_LIST = "player_list"
+    MOVEMENT_RESPONSE = "movement_response"  # Response to player movement with status
     ERROR = "error"
 
 class BlockType:
@@ -191,6 +192,17 @@ def create_chat_message(text: str) -> Message:
 def create_world_init_message(world_data: Dict[str, Any]) -> Message:
     """Create a world initialization message for new clients."""
     return Message(MessageType.WORLD_INIT, world_data)
+
+def create_movement_response_message(status: str, position: Tuple[float, float, float], 
+                                   rotation: Tuple[float, float] = None) -> Message:
+    """Create a movement response message with status and position."""
+    data = {
+        "status": status,  # 'ok' or 'forbidden'
+        "position": position
+    }
+    if rotation is not None:
+        data["rotation"] = rotation
+    return Message(MessageType.MOVEMENT_RESPONSE, data)
 
 def create_world_chunk_message(chunk_data: Dict[str, Any]) -> Message:
     """Create a world chunk message for streaming world data."""
