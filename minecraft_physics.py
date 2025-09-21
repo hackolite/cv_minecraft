@@ -269,48 +269,48 @@ class UnifiedCollisionManager:
         return safe_pos, collision_info
     
     def _is_position_in_block(self, position: Tuple[float, float, float]) -> bool:
-        """Check if position is inside any block (strict collision detection).""" 
+        """Check if position is inside any block (proper AABB collision detection).""" 
         px, py, pz = position
         
-        # Use very small margin to allow close movement but prevent face traversal
-        margin = 0.05  # Very small margin - only 5cm clearance
+        # Use proper player bounding box for accurate collision detection
+        player_half_width = PLAYER_WIDTH / 2  # 0.5 - proper player dimensions
         
-        # Check if player center + margin would be inside a block
-        block_x = int(math.floor(px))
-        block_y = int(math.floor(py))
-        block_z = int(math.floor(pz))
+        # Player bounding box
+        player_min_x = px - player_half_width
+        player_max_x = px + player_half_width
+        player_min_y = py               # Y is feet position
+        player_max_y = py + PLAYER_HEIGHT      # Head position
+        player_min_z = pz - player_half_width
+        player_max_z = pz + player_half_width
         
-        # Check the block the player center is in
-        if (block_x, block_y, block_z) in self.world_blocks:
-            return True
+        # Calculate which blocks might intersect with player bounding box
+        xmin = int(math.floor(player_min_x))
+        xmax = int(math.floor(player_max_x))
+        ymin = int(math.floor(player_min_y))
+        ymax = int(math.floor(player_max_y))
+        zmin = int(math.floor(player_min_z))
+        zmax = int(math.floor(player_max_z))
         
-        # Check player's full bounding box with very small margin
-        player_half_width = margin
-        
-        # Player occupies space from py to py + PLAYER_HEIGHT
-        min_x = int(math.floor(px - player_half_width))
-        max_x = int(math.floor(px + player_half_width))
-        min_y = int(math.floor(py))  # Player feet level
-        max_y = int(math.floor(py + PLAYER_HEIGHT - 0.01))  # Player head level
-        min_z = int(math.floor(pz - player_half_width))
-        max_z = int(math.floor(pz + player_half_width))
-        
-        # Check all blocks that player might intersect
-        for bx in range(min_x, max_x + 1):
-            for by in range(min_y, max_y + 1):
-                for bz in range(min_z, max_z + 1):
-                    if (bx, by, bz) in self.world_blocks:
-                        return True
-        
-        # Also check blocks immediately below player (for standing on blocks)
-        # This ensures player can't "float" just above a block
-        below_y = int(math.floor(py - 0.01))
-        if below_y >= min_y - 1:  # Only check one block below
-            for bx in range(min_x, max_x + 1):
-                for bz in range(min_z, max_z + 1):
-                    if (bx, below_y, bz) in self.world_blocks:
-                        # Player is too close to the top of a block
-                        if py - below_y < 1.1:  # Less than 1.1 blocks above the block
+        # Test blocks in the calculated range
+        for x in range(xmin, xmax + 1):
+            for y in range(ymin, ymax + 1):
+                for z in range(zmin, zmax + 1):
+                    if (x, y, z) in self.world_blocks:
+                        block_type = self.world_blocks[(x, y, z)]
+                        
+                        # AIR blocks should not cause collision - players can pass through
+                        if block_type == "air":
+                            continue
+                        
+                        # Block boundaries (1x1x1 voxel from x,y,z to x+1,y+1,z+1)
+                        block_min_x, block_max_x = float(x), float(x + 1)
+                        block_min_y, block_max_y = float(y), float(y + 1)
+                        block_min_z, block_max_z = float(z), float(z + 1)
+                        
+                        # AABB intersection test - proper collision detection
+                        if (player_min_x < block_max_x and player_max_x > block_min_x and
+                            player_min_y < block_max_y and player_max_y > block_min_y and
+                            player_min_z < block_max_z and player_max_z > block_min_z):
                             return True
         
         return False
