@@ -4,6 +4,7 @@ Minecraft Server - Server-side game world and client connections
 
 import asyncio
 import logging
+import math
 import random
 import time
 import uuid
@@ -15,7 +16,7 @@ from protocol import (
     MessageType, BlockType, Message, PlayerState, BlockUpdate,
     create_world_init_message, create_world_chunk_message, 
     create_world_update_message, create_player_list_message,
-    create_player_update_message
+    create_player_update_message, create_movement_response_message
 )
 from minecraft_physics import (
     MinecraftCollisionDetector, MinecraftPhysics,
@@ -303,6 +304,26 @@ class MinecraftServer:
         # Physics tick timing
         self.last_physics_update = time.time()
 
+    def _check_simple_collision(self, position: Tuple[float, float, float], player_id: str = None) -> bool:
+        """
+        Simple collision check: only checks if player center position is inside a solid block.
+        As specified in requirements, this is a very simple collision method.
+        """
+        px, py, pz = position
+        
+        # Check if the player's center position (feet) is in a solid block
+        foot_block = (int(math.floor(px)), int(math.floor(py)), int(math.floor(pz)))
+        if foot_block in self.world.world:
+            return True
+            
+        # Check if the player's head position is in a solid block
+        head_y = py + 1.8  # Standard player height
+        head_block = (int(math.floor(px)), int(math.floor(head_y)), int(math.floor(pz)))
+        if head_block in self.world.world:
+            return True
+            
+        return False
+
     def _check_ground_collision(self, position: Tuple[float, float, float]) -> bool:
         """Check ground collision using unified collision system."""
         return unified_check_collision(position, self.world.world)
@@ -547,28 +568,27 @@ class MinecraftServer:
         await self.broadcast_player_list()
 
     async def _handle_player_move(self, player_id: str, message: Message):
-        """Handle player movement with absolute position updates only."""
+        """Handle player movement with server-side collision checking and response."""
         if player_id not in self.players:
             raise InvalidPlayerDataError(f"Player {player_id} not found")
             
         try:
-            rotation = message.data["rotation"]
-            
-            if not isinstance(rotation, (list, tuple)) or len(rotation) != 2:
-                raise InvalidPlayerDataError("Invalid rotation format")
-            
-            player = self.players[player_id]
-            
-            # Only handle absolute position-based movement
+            # Validate message format
             if "position" not in message.data:
-                raise InvalidPlayerDataError("Missing required field: 'position' must be provided")
+                raise InvalidPlayerDataError("Missing required field: 'position'")
                 
             position = message.data["position"]
+            rotation = message.data.get("rotation", [0, 0])
             
             if not isinstance(position, (list, tuple)) or len(position) != 3:
                 raise InvalidPlayerDataError("Invalid position format")
                 
+            if not isinstance(rotation, (list, tuple)) or len(rotation) != 2:
+                raise InvalidPlayerDataError("Invalid rotation format")
+            
             new_position = tuple(position)
+            new_rotation = tuple(rotation)
+            player = self.players[player_id]
             
             # ENHANCED DEBUG: Log detailed movement information
             old_position = player.position
@@ -587,62 +607,53 @@ class MinecraftServer:
             # Anti-cheat: validate reasonable movement distance from current position
             if abs(dx) > 50 or abs(dy) > 50 or abs(dz) > 50:
                 self.logger.warning(f"❌ ANTI-CHEAT: Movement distance too large for {player.name}")
-                raise InvalidPlayerDataError("Movement distance too large")
+                # Send forbidden status with current position
+                response = create_movement_response_message("forbidden", old_position, player.rotation)
+                await self.send_to_client(player_id, response)
+                return
             
             if not validate_position(new_position):
                 self.logger.warning(f"❌ ANTI-CHEAT: Invalid position {new_position} for {player.name}")
-                raise InvalidPlayerDataError("Invalid target position")
+                # Send forbidden status with current position
+                response = create_movement_response_message("forbidden", old_position, player.rotation)
+                await self.send_to_client(player_id, response)
+                return
             
-            # Check for collision with blocks
-            if self._check_ground_collision(new_position):
-                self.logger.warning(f"🚫 COLLISION: Player {player.name or player_id[:8]} blocked by blocks at {new_position}")
-                raise InvalidPlayerDataError("Movement blocked by blocks")
+            # Server-side simple collision check
+            if self._check_simple_collision(new_position, player_id):
+                self.logger.warning(f"🚫 COLLISION: Player {player.name or player_id[:8]} blocked at {new_position}")
+                # Send forbidden status with current (last valid) position
+                response = create_movement_response_message("forbidden", old_position, player.rotation)
+                await self.send_to_client(player_id, response)
+                return
             
             # Check for player-to-player collision
             if self._check_player_collision(player_id, new_position):
                 self.logger.warning(f"🚫 COLLISION: Player {player.name or player_id[:8]} blocked by other player at {new_position}")
-                raise InvalidPlayerDataError("Movement blocked by another player")
-                
-            # Enhanced position validation
-            if not isinstance(new_position, (tuple, list)) or len(new_position) != 3:
-                self.logger.warning(f"❌ VALIDATION: Invalid position format {new_position} for {player.name}")
-                raise InvalidPlayerDataError("Position must be a 3-element array")
+                # Send forbidden status with current position
+                response = create_movement_response_message("forbidden", old_position, player.rotation)
+                await self.send_to_client(player_id, response)
+                return
             
-            # Validate position coordinates are numeric
-            x, y, z = new_position
-            if not all(isinstance(coord, (int, float)) for coord in [x, y, z]):
-                self.logger.warning(f"❌ VALIDATION: Non-numeric position coordinates {new_position} for {player.name}")
-                raise InvalidPlayerDataError("Position coordinates must be numeric")
-            
-            # Validate rotation
-            if not isinstance(rotation, (tuple, list)) or len(rotation) != 2:
-                self.logger.warning(f"❌ VALIDATION: Invalid rotation format {rotation} for {player.name}")
-                raise InvalidPlayerDataError("Rotation must be a 2-element array")
-            
-            h, v = rotation
-            if not all(isinstance(angle, (int, float)) for angle in [h, v]):
-                self.logger.warning(f"❌ VALIDATION: Non-numeric rotation angles {rotation} for {player.name}")
-                raise InvalidPlayerDataError("Rotation angles must be numeric")
-            
+            # Movement is valid - update player state
             player.position = new_position
-            player.rotation = tuple(rotation)
+            player.rotation = new_rotation
             
             # Reset velocity when player makes deliberate movement to prevent physics interference
-            # This prevents gravity from immediately affecting the player's intended position
             player.velocity = [0.0, 0.0, 0.0]
             player.on_ground = True  # Assume player is on ground after movement
             player.last_move_time = time.time()  # Mark when player last moved voluntarily
 
+            # Send 'ok' status with accepted position to the moving player
+            response = create_movement_response_message("ok", new_position, new_rotation)
+            await self.send_to_client(player_id, response)
+            
             # ENHANCED BROADCAST: Send to other players with debug logging
             other_players_count = len([p for p in self.clients.keys() if p != player_id])
             self.logger.info(f"📡 Broadcasting position update to {other_players_count} other players")
             
             update_message = create_player_update_message(player)
             await self.broadcast_message(update_message, exclude_player=player_id)
-
-            # Send updated position back to player (confirmation)
-            self.logger.debug(f"✅ Sending position confirmation to {player.name}")
-            await self.send_to_client(player_id, update_message)
             
         except KeyError as e:
             raise InvalidPlayerDataError(f"Missing required field: {e}")

@@ -203,6 +203,29 @@ class AdvancedNetworkClient:
                         self.window.model.remove_block(block_update.position)
                     else:
                         self.window.model.add_block(block_update.position, block_update.block_type)
+            elif message.type == MessageType.MOVEMENT_RESPONSE:
+                # Handle server response to movement with status
+                movement_data = message.data
+                status = movement_data.get("status", "forbidden")
+                server_position = tuple(movement_data["position"])
+                server_rotation = movement_data.get("rotation", self.window.rotation)
+                
+                if status == "ok":
+                    # Movement accepted - apply server position
+                    self.window.position = server_position
+                    self.window.rotation = server_rotation
+                    # Update local player cube position
+                    if self.window.local_player_cube:
+                        self.window.local_player_cube.update_position(self.window.position)
+                elif status == "forbidden":
+                    # Movement forbidden - revert to server position and show warning
+                    self.window.position = server_position
+                    self.window.rotation = server_rotation
+                    # Update local player cube position
+                    if self.window.local_player_cube:
+                        self.window.local_player_cube.update_position(self.window.position)
+                    # Show warning message
+                    self.window.show_message("⚠️ Mouvement bloqué par le serveur - collision détectée")
             elif message.type == MessageType.PLAYER_UPDATE:
                 player_data = message.data
                 player_id = player_data["id"]
@@ -623,11 +646,12 @@ class MinecraftWindow(pyglet.window.Window):
     
     def _update_physics(self, dt):
         """
-        Standard Minecraft physics update using the new physics system.
+        Simplified physics update - most physics now handled server-side.
+        Client only handles basic movement intent and sends to server.
         """
         dt = min(dt, 0.2)
         
-        # Vitesse selon le mode
+        # Calculate movement intent based on input
         if self.flying:
             speed = self.flying_speed
         elif self.sprinting:
@@ -642,82 +666,55 @@ class MinecraftWindow(pyglet.window.Window):
         dx, dy, dz = self.get_motion_vector()
         dx, dy, dz = dx * d, dy * d, dz * d
         
-        # Initialize or update physics system
-        if not hasattr(self, '_collision_detector'):
-            self._collision_detector = MinecraftCollisionDetector(self.model.world)
-            self._physics = MinecraftPhysics(self._collision_detector)
+        # Simple gravity for visual feedback (server will override)
+        if not self.flying:
+            self.dy -= dt * 20.0  # Gravity
+            self.dy = max(self.dy, -50.0)  # Terminal velocity
+            dy = self.dy * dt
         
-        # Update collision detector with current world
-        self._collision_detector.world_blocks = self.model.world
+        # Calculate intended new position
+        x, y, z = self.position
+        new_position = (x + dx, y + dy, z + dz)
         
-        # Current state
-        current_velocity = (dx / dt if dt > 0 else 0, self.dy, dz / dt if dt > 0 else 0)
-        on_ground = self.collision_types.get("top", False)
+        # Send movement to server (server will validate and respond)
+        if hasattr(self, 'client') and self.client.connected:
+            message = create_player_move_message(new_position, self.rotation)
+            self.client.send_message(message)
         
-        if self.flying:
-            # Flying mode - no physics, just direct movement
-            x, y, z = self.position
-            x, y, z = self.collide((x + dx, y + dy, z + dz), PLAYER_HEIGHT)
-            self.position = (x, y, z)
-        else:
-            # Standard physics with gravity and collision
-            new_position, new_velocity, new_on_ground = self._physics.update_position(
-                self.position, current_velocity, dt, on_ground, self.jumping
-            )
-            
-            self.position = new_position
-            self.dy = new_velocity[1]
-            
-            # Update local player cube position
-            if self.local_player_cube:
-                self.local_player_cube.update_position(self.position)
-                self.local_player_cube.velocity = list(new_velocity)
-                self.local_player_cube.on_ground = new_on_ground
-            
-            # Update collision types for compatibility
-            self.collision_types["top"] = new_on_ground
+        # For immediate visual feedback, temporarily update position
+        # Server response will override this if needed
+        self.position = new_position
+        
+        # Update local player cube position for visual consistency
+        if self.local_player_cube:
+            self.local_player_cube.update_position(self.position)
     
     def collide(self, position, height):
         """
-        Simplified collision detection with severe snapping to prevent 'seeing inside cubes'.
+        No longer performs collision detection - the server handles all collision checking.
+        This method now simply returns the requested position as-is.
         
-        This simplified approach:
-        - Validates the new position against the current position
-        - Uses severe snapping with minimum clearance from block faces
-        - Prevents visual penetration into blocks
-        - Maintains clean, simple code
+        All collision detection and snapping has been moved to the server side.
+        The client trusts the server's movement responses completely.
         
         Args:
             position: Intended new player position tuple (x, y, z)
-            height: Player height (ignored, uses standard height)
+            height: Player height (ignored)
             
         Returns:
-            Safe position after collision resolution with severe snapping
+            The requested position without any local collision checking
         """
-        # Use the simplified collision system 
-        collision_detector = MinecraftCollisionDetector(self.model.world)
-        
-        # Set other cubes for position validation
-        other_cubes = self.model.get_other_cubes()
-        collision_detector.set_other_cubes(other_cubes)
-        
-        # Resolve collision between current position and intended position
-        # This provides proper movement-based collision resolution with severe snapping
-        safe_position, collision_info = collision_detector.resolve_collision(self.position, position)
-        
-        # Update collision types for compatibility with existing code
+        # No local collision detection - server is authoritative
+        # Reset collision types since we don't do local collision checking
         self.collision_types = {
-            "top": collision_info.get('ground', False),
-            "bottom": collision_info.get('y', False) and position[1] < safe_position[1],
-            "right": collision_info.get('x', False),
-            "left": collision_info.get('x', False)
+            "top": False,
+            "bottom": False,
+            "right": False,
+            "left": False
         }
         
-        # Reset vertical velocity if we hit something (simple collision response)
-        if collision_info.get('y', False):
-            self.dy = 0
-        
-        return safe_position
+        # Return position as-is - server will validate and respond
+        return position
     
     def _send_position_update(self):
         """Envoie la mise à jour de position au serveur."""
