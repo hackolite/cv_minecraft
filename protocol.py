@@ -76,7 +76,14 @@ class Cube:
         self.color = None  # Will be set by the model
     
     def update_position(self, position: Tuple[float, float, float]):
-        """Update the cube's position."""
+        """Update the cube's position with validation."""
+        if not isinstance(position, (tuple, list)) or len(position) != 3:
+            raise ValueError(f"Position must be a 3-element tuple/list, got: {position}")
+        
+        x, y, z = position
+        if not all(isinstance(coord, (int, float)) for coord in [x, y, z]):
+            raise ValueError(f"Position coordinates must be numeric: {position}")
+        
         self.position = position
     
     def update_rotation(self, rotation: Tuple[float, float]):
@@ -86,7 +93,14 @@ class Cube:
     def get_render_position(self) -> Tuple[float, float, float]:
         """Get the position for rendering (positioned on ground with bottom touching surface)."""
         x, y, z = self.position
-        return (x, y + self.size, z)  # Elevate by half-size so bottom touches ground
+        
+        # Defensive validation: ensure position is valid
+        if not isinstance(x, (int, float)) or not isinstance(y, (int, float)) or not isinstance(z, (int, float)):
+            raise ValueError(f"Invalid position values: {self.position}")
+        
+        # Calculate render position: cube center is elevated by size so bottom touches surface at Y
+        render_y = y + self.size
+        return (x, render_y, z)  # Elevate by half-size so bottom touches ground
 
 class PlayerState(Cube):
     """Represents a player's state in the game world. Extends Cube for unified handling."""

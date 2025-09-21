@@ -32,7 +32,24 @@ class ClientModel(EnhancedClientModel):
         self.cubes = {}  # All cubes (local + remote)
         
     def create_local_player(self, player_id: str, position: tuple, rotation: tuple = (0, 0), name: str = None):
-        """Create a local player as a cube."""
+        """Create a local player as a cube with strict validation."""
+        # Validate input parameters
+        if not isinstance(position, (tuple, list)) or len(position) != 3:
+            raise ValueError(f"Position must be a 3-element tuple/list: {position}")
+        
+        if not isinstance(rotation, (tuple, list)) or len(rotation) != 2:
+            raise ValueError(f"Rotation must be a 2-element tuple/list: {rotation}")
+        
+        # Validate position coordinates
+        x, y, z = position
+        if not all(isinstance(coord, (int, float)) for coord in [x, y, z]):
+            raise ValueError(f"Position coordinates must be numeric: {position}")
+        
+        # Validate rotation values
+        h, v = rotation
+        if not all(isinstance(angle, (int, float)) for angle in [h, v]):
+            raise ValueError(f"Rotation angles must be numeric: {rotation}")
+        
         self.local_player = PlayerState(player_id, position, rotation, name)
         self.local_player.is_local = True
         self.local_player.size = 0.5  # Standard 1x1x1 cube size (0.5 half-size)
@@ -46,10 +63,22 @@ class ClientModel(EnhancedClientModel):
         return self.local_player
     
     def add_cube(self, cube):
-        """Add a cube (player) to the model."""
+        """Add a cube (player) to the model with strict validation."""
         if hasattr(cube, 'id'):
             # Ensure standard 1x1x1 cube size for consistency
             cube.size = 0.5  # Standard 1x1x1 cube size (0.5 half-size)
+            
+            # Validate cube position
+            if not hasattr(cube, 'position') or not isinstance(cube.position, (tuple, list)):
+                raise ValueError(f"Cube {cube.id} has invalid position: {getattr(cube, 'position', 'None')}")
+            
+            if len(cube.position) != 3:
+                raise ValueError(f"Cube {cube.id} position must have 3 coordinates: {cube.position}")
+            
+            # Validate position coordinates are numeric
+            x, y, z = cube.position
+            if not all(isinstance(coord, (int, float)) for coord in [x, y, z]):
+                raise ValueError(f"Cube {cube.id} coordinates must be numeric: {cube.position}")
             
             self.cubes[cube.id] = cube
             
@@ -100,6 +129,13 @@ class ClientModel(EnhancedClientModel):
 # Export the cube_vertices function
 def cube_vertices(x, y, z, n):
     """Return vertices for a cube at position x, y, z with size 2*n."""
+    # Defensive validation of input parameters
+    if not all(isinstance(coord, (int, float)) for coord in [x, y, z, n]):
+        raise ValueError(f"All cube parameters must be numeric: x={x}, y={y}, z={z}, n={n}")
+    
+    if n <= 0:
+        raise ValueError(f"Cube size (n) must be positive: {n}")
+    
     if OPENGL_AVAILABLE:
         return _cube_vertices(x, y, z, n)
     else:
