@@ -35,7 +35,7 @@ class ClientModel(EnhancedClientModel):
         """Create a local player as a cube."""
         self.local_player = PlayerState(player_id, position, rotation, name)
         self.local_player.is_local = True
-        self.local_player.size = 0.4  # Default cube size from tests
+        self.local_player.size = 0.5  # Standard 1x1x1 cube size (0.5 half-size)
         
         # Assign a unique color to the local player
         self.local_player.color = self._generate_player_color(player_id)
@@ -48,9 +48,8 @@ class ClientModel(EnhancedClientModel):
     def add_cube(self, cube):
         """Add a cube (player) to the model."""
         if hasattr(cube, 'id'):
-            # Set standard cube size if not already set
-            if not hasattr(cube, 'size') or cube.size == 0.5:  # Default PlayerState size
-                cube.size = 0.4  # Standard cube size for this system
+            # Ensure standard 1x1x1 cube size for consistency
+            cube.size = 0.5  # Standard 1x1x1 cube size (0.5 half-size)
             
             self.cubes[cube.id] = cube
             

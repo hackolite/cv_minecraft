@@ -70,10 +70,10 @@ def test_player_colors_positions_visibility():
                     
                     # Test 3: Render positions are elevated
                     local_render_pos = local_player.get_render_position()
-                    assert local_render_pos == (15, 25.4, 35), "Local player render position should be elevated by size (0.4)"
+                    assert local_render_pos == (15, 25.5, 35), "Local player render position should be elevated by size (0.5)"
                     
                     remote_render_pos = remote1.get_render_position()
-                    assert remote_render_pos == (55, 65.4, 75), "Remote player render position should be elevated by size (0.4)"
+                    assert remote_render_pos == (55, 65.5, 75), "Remote player render position should be elevated by size (0.5)"
                     
                     print("✅ Render positions are correctly elevated")
                     
@@ -97,9 +97,9 @@ def test_player_colors_positions_visibility():
                     print("✅ All cubes collection works correctly")
                     
                     # Test 6: Cube sizes are consistent
-                    assert local_player.size == 0.4, "Local player should have correct cube size"
-                    assert remote1.size == 0.4, "Remote player 1 should have correct cube size"
-                    assert remote2.size == 0.4, "Remote player 2 should have correct cube size"
+                    assert local_player.size == 0.5, "Local player should have correct cube size"
+                    assert remote1.size == 0.5, "Remote player 1 should have correct cube size"
+                    assert remote2.size == 0.5, "Remote player 2 should have correct cube size"
                     
                     print("✅ Cube sizes are consistent")
                     
@@ -140,8 +140,8 @@ def test_cube_rendering_data():
                     
                     # Test cube vertices generation
                     player = PlayerState("test_player", (10, 20, 30), (0, 0))
-                    player.size = 0.4  # Use cube system size
-                    render_pos = player.get_render_position()  # (10, 20.4, 30)
+                    player.size = 0.5  # Use standard 1x1x1 cube size
+                    render_pos = player.get_render_position()  # (10, 20.5, 30)
                     
                     vertices = cube_vertices(render_pos[0], render_pos[1], render_pos[2], player.size)
                     
@@ -150,9 +150,9 @@ def test_cube_rendering_data():
                     
                     # Check a few sample vertices for correct positioning
                     # First vertex should be at (x-size, y+size, z-size)
-                    expected_x = render_pos[0] - player.size  # 10 - 0.4 = 9.6
-                    expected_y = render_pos[1] + player.size  # 20.4 + 0.4 = 20.8
-                    expected_z = render_pos[2] - player.size  # 30 - 0.4 = 29.6
+                    expected_x = render_pos[0] - player.size  # 10 - 0.5 = 9.5
+                    expected_y = render_pos[1] + player.size  # 20.5 + 0.5 = 21.0
+                    expected_z = render_pos[2] - player.size  # 30 - 0.5 = 29.5
                     
                     assert abs(vertices[0] - expected_x) < 0.01, "First vertex X should be correct"
                     assert abs(vertices[1] - expected_y) < 0.01, "First vertex Y should be correct"
