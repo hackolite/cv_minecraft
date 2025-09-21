@@ -510,11 +510,18 @@ class MinecraftWindow(pyglet.window.Window):
     
     def setup_ui(self):
         """Configure l'interface utilisateur."""
-        # Labels
+        # Labels de debug
         self.label = pyglet.text.Label(
             '', font_name='Arial', font_size=12,
             x=10, y=self.height - 10, anchor_x='left', anchor_y='top',
             color=(255, 255, 255, 255)
+        )
+        
+        # Label de position permanent (toujours visible)
+        self.position_label = pyglet.text.Label(
+            '', font_name='Arial', font_size=14,
+            x=10, y=self.height - 60, anchor_x='left', anchor_y='top',
+            color=(0, 255, 255, 255)  # Couleur cyan pour se distinguer
         )
         
         self.message_label = pyglet.text.Label(
@@ -726,8 +733,16 @@ class MinecraftWindow(pyglet.window.Window):
             move_msg = create_player_move_message(self.position, self.rotation)
             self.network.send_message(move_msg)
     
+    def update_position_display(self):
+        """Met à jour l'affichage permanent de la position."""
+        x, y, z = self.position
+        self.position_label.text = f"x:{x:.1f}, y:{y:.1f}, z:{z:.1f}"
+    
     def update_ui(self):
         """Met à jour l'interface utilisateur."""
+        # Toujours mettre à jour la position (affichage permanent)
+        self.update_position_display()
+        
         if not self.show_debug:
             self.label.text = ""
             return
@@ -1147,6 +1162,9 @@ Statut: {connection_status}"""
     
     def draw_ui(self):
         """Dessine l'interface utilisateur."""
+        # Position permanente (toujours affichée)
+        self.position_label.draw()
+        
         # Labels de debug
         if self.show_debug:
             self.label.draw()
