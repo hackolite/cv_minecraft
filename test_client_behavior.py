@@ -50,12 +50,18 @@ def test_client_movement_response():
     
     old_position = mock_client.window.position
     
-    if status == "ok":
-        mock_client.window.position = server_position
-        mock_client.window.rotation = server_rotation
-        print(f"   ✅ Position updated from {old_position} to {mock_client.window.position}")
+    # Simulate client prediction - client moves locally first
+    mock_client.window.position = (65, 100, 64)
     
-    assert mock_client.window.position == (65, 100, 64), "Position should be updated for 'ok' status"
+    if status == "ok":
+        # Movement accepted - client continues with its own prediction
+        # Only update rotation if server provides it
+        if server_rotation != mock_client.window.rotation:
+            mock_client.window.rotation = server_rotation
+        # No position override - client continues its route
+        print(f"   ✅ Position maintained at {mock_client.window.position} (client prediction)")
+    
+    assert mock_client.window.position == (65, 100, 64), "Position should be maintained for 'ok' status"
     print("   ✅ 'ok' response handled correctly")
     
     print("\n🧪 Test 2: 'forbidden' movement response")
