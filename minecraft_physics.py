@@ -238,7 +238,7 @@ class UnifiedCollisionManager:
         - Tests each axis independently (X, Y, Z)
         - Uses severe snapping with minimum clearance from block faces
         - Prevents visual penetration into blocks
-        - Handles cases where player is already inside a block
+        - Handles cases where player is already inside a block by moving them to safety
         - Maintains clean, simple code without over-engineering
         """
         collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
@@ -249,10 +249,10 @@ class UnifiedCollisionManager:
         old_x, old_y, old_z = old_pos
         new_x, new_y, new_z = new_pos
         
-        # Special case: if old position has collision, find safe position first
+        # Special case: if old position has collision, snap to completely safe position
         if self.check_collision(old_pos, player_id):
-            # Player is already inside a block - find the nearest safe position
-            safe_pos = self._find_nearest_safe_position(old_pos, player_id, SNAP_CLEARANCE)
+            # Player is already inside a block - snap to a completely safe position
+            safe_pos = self._snap_out_of_block(old_pos, player_id, SNAP_CLEARANCE)
             # Set all axes as having collision for compatibility
             collision_info = {'x': True, 'y': True, 'z': True, 'ground': False}
         else:
@@ -288,51 +288,91 @@ class UnifiedCollisionManager:
         
         return safe_pos, collision_info
     
-    def _find_nearest_safe_position(self, pos: Tuple[float, float, float], 
-                                   player_id: str, clearance: float) -> Tuple[float, float, float]:
-        """Find the nearest safe position when player is already inside a block."""
+    def _snap_out_of_block(self, pos: Tuple[float, float, float], 
+                          player_id: str, clearance: float) -> Tuple[float, float, float]:
+        """Snap player out of block ensuring minimum clearance from all block faces."""
         px, py, pz = pos
         player_half_width = PLAYER_WIDTH / 2
         
-        # Try moving in each direction to find a safe position with proper clearance
-        directions = [
-            (clearance + player_half_width, 0, 0),      # Move right
-            (-clearance - player_half_width, 0, 0),     # Move left  
-            (0, clearance + PLAYER_HEIGHT, 0),          # Move up
-            (0, -clearance, 0),                         # Move down
-            (0, 0, clearance + player_half_width),      # Move forward
-            (0, 0, -clearance - player_half_width),     # Move backward
+        # Find all blocks that the player is currently intersecting
+        player_min_x = px - player_half_width
+        player_max_x = px + player_half_width
+        player_min_y = py
+        player_max_y = py + PLAYER_HEIGHT
+        player_min_z = pz - player_half_width
+        player_max_z = pz + player_half_width
+        
+        # Find intersecting blocks
+        xmin = int(math.floor(player_min_x))
+        xmax = int(math.floor(player_max_x))
+        ymin = int(math.floor(player_min_y))
+        ymax = int(math.floor(player_max_y))
+        zmin = int(math.floor(player_min_z))
+        zmax = int(math.floor(player_max_z))
+        
+        # For simplicity, focus on the primary intersecting block
+        # In most cases, the player will be intersecting with just one block
+        intersecting_blocks = []
+        for x in range(xmin, xmax + 1):
+            for y in range(ymin, ymax + 1):
+                for z in range(zmin, zmax + 1):
+                    if (x, y, z) in self.world_blocks and self.world_blocks[(x, y, z)] != "air":
+                        intersecting_blocks.append((x, y, z))
+        
+        if not intersecting_blocks:
+            return pos  # No intersecting blocks found
+        
+        # Use the first intersecting block (most common case)
+        block_x, block_y, block_z = intersecting_blocks[0]
+        block_min_x, block_max_x = float(block_x), float(block_x + 1)
+        block_min_y, block_max_y = float(block_y), float(block_y + 1)
+        block_min_z, block_max_z = float(block_z), float(block_z + 1)
+        
+        # Calculate candidates that ensure COMPLETE separation with clearance
+        candidates = [
+            # Move completely left of block
+            (block_min_x - player_half_width - clearance, py, pz),
+            # Move completely right of block
+            (block_max_x + player_half_width + clearance, py, pz),
+            # Move completely below block
+            (px, block_min_y - PLAYER_HEIGHT - clearance, pz),
+            # Move completely above block
+            (px, block_max_y + clearance, pz),
+            # Move completely in front of block
+            (px, py, block_min_z - player_half_width - clearance),
+            # Move completely behind block
+            (px, py, block_max_z + player_half_width + clearance),
         ]
         
-        # Try each direction and return the first safe position
-        for dx, dy, dz in directions:
-            test_pos = (px + dx, py + dy, pz + dz)
-            if not self.check_collision(test_pos, player_id):
-                return test_pos
+        # Find the candidate with minimum displacement that has no collision
+        best_candidate = None
+        min_distance = float('inf')
         
-        # If no safe position found nearby, move further away with increasing distance
-        for multiplier in [2.0, 3.0, 4.0]:
-            for dx, dy, dz in directions:
-                test_pos = (px + dx * multiplier, py + dy * multiplier, pz + dz * multiplier)
-                if not self.check_collision(test_pos, player_id):
-                    return test_pos
+        for candidate in candidates:
+            if not self.check_collision(candidate, player_id):
+                # Calculate distance from original position
+                distance = math.sqrt((candidate[0] - px)**2 + (candidate[1] - py)**2 + (candidate[2] - pz)**2)
+                if distance < min_distance:
+                    min_distance = distance
+                    best_candidate = candidate
         
-        # Last resort - try fixed safe positions
-        safe_positions = [
-            (px + 2.0, py, pz),  # Far right
-            (px - 2.0, py, pz),  # Far left
-            (px, py + 2.0, pz),  # Far up
-            (px, py - 2.0, pz),  # Far down
-            (px, py, pz + 2.0),  # Far forward
-            (px, py, pz - 2.0),  # Far backward
+        if best_candidate:
+            return best_candidate
+        
+        # Fallback: move far away in the safest direction
+        fallback_positions = [
+            (px - 3.0, py, pz),    # Far left
+            (px + 3.0, py, pz),    # Far right
+            (px, py + 3.0, pz),    # Far up
+            (px, py, pz - 3.0),    # Far back
+            (px, py, pz + 3.0),    # Far forward
         ]
         
-        for test_pos in safe_positions:
-            if not self.check_collision(test_pos, player_id):
-                return test_pos
+        for fallback in fallback_positions:
+            if not self.check_collision(fallback, player_id):
+                return fallback
         
-        # Absolute last resort - return original position (should not happen in normal gameplay)
-        return pos
+        return pos  # Last resort
     
     def _snap_to_safe_x_position(self, old_x: float, new_x: float, y: float, z: float, 
                                 player_id: str, clearance: float) -> float:
