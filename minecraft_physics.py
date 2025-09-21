@@ -86,31 +86,37 @@ class UnifiedCollisionManager:
     
     def check_block_collision(self, position: Tuple[float, float, float]) -> bool:
         """
-        Check collision with world blocks using server-side voxel collision detection.
+        Check collision with world blocks using robust AABB collision detection.
         
-        Implements the exact formulas specified:
-        - xmin = floor(px - largeur/2)
-        - xmax = floor(px + largeur/2) 
-        - ymin = floor(py)
-        - ymax = floor(py + hauteur)
-        - zmin = floor(pz - profondeur/2)
-        - zmax = floor(pz + profondeur/2)
+        Player is a 1x1x1 cube with dimensions:
+        - Width (X): 1.0 (±0.5 from center)
+        - Height (Y): 1.0 (from feet to head) 
+        - Depth (Z): 1.0 (±0.5 from center)
         """
         px, py, pz = position
-        largeur = PLAYER_WIDTH      # 0.6
-        hauteur = PLAYER_HEIGHT     # 1.8
-        profondeur = PLAYER_WIDTH   # 0.6 (same as width for square base)
         
-        # Calculate voxel bounds using exact formulas from problem statement
-        xmin = int(math.floor(px - largeur / 2))
-        xmax = int(math.floor(px + largeur / 2))
-        ymin = int(math.floor(py))
-        ymax = int(math.floor(py + hauteur))
-        zmin = int(math.floor(pz - profondeur / 2))
-        zmax = int(math.floor(pz + profondeur / 2))
+        # Player dimensions (1x1x1 cube)
+        half_width = PLAYER_WIDTH / 2    # 0.5
+        height = PLAYER_HEIGHT           # 1.0
+        half_depth = PLAYER_WIDTH / 2    # 0.5
         
-        # Test only the voxels in the calculated range (neighboring voxels)
-        # This avoids testing the entire world - only relevant blocks
+        # Player bounding box
+        player_min_x = px - half_width
+        player_max_x = px + half_width
+        player_min_y = py               # Y is feet position
+        player_max_y = py + height      # Head position
+        player_min_z = pz - half_depth
+        player_max_z = pz + half_depth
+        
+        # Calculate which blocks might intersect with player bounding box
+        xmin = int(math.floor(player_min_x))
+        xmax = int(math.floor(player_max_x))
+        ymin = int(math.floor(player_min_y))
+        ymax = int(math.floor(player_max_y))
+        zmin = int(math.floor(player_min_z))
+        zmax = int(math.floor(player_max_z))
+        
+        # Test blocks in the calculated range
         for x in range(xmin, xmax + 1):
             for y in range(ymin, ymax + 1):
                 for z in range(zmin, zmax + 1):
@@ -121,34 +127,23 @@ class UnifiedCollisionManager:
                         if block_type == "air":
                             continue
                         
-                        # All other blocks (grass, stone, wood, sand, water, leaf, brick) are solid
-                        # Player bounding box vs voxel (1x1x1 block)
-                        player_min_x = px - largeur / 2
-                        player_max_x = px + largeur / 2
-                        player_min_y = py
-                        player_max_y = py + hauteur
-                        player_min_z = pz - profondeur / 2
-                        player_max_z = pz + profondeur / 2
-                        
-                        # Block boundaries (voxel from x,y,z to x+1,y+1,z+1)
+                        # Block boundaries (1x1x1 voxel from x,y,z to x+1,y+1,z+1)
                         block_min_x, block_max_x = float(x), float(x + 1)
                         block_min_y, block_max_y = float(y), float(y + 1)
                         block_min_z, block_max_z = float(z), float(z + 1)
                         
-                        # AABB intersection test
+                        # AABB intersection test - robust face collision detection
                         if (player_min_x < block_max_x and player_max_x > block_min_x and
                             player_min_y < block_max_y and player_max_y > block_min_y and
                             player_min_z < block_max_z and player_max_z > block_min_z):
                             
-                            # Log collision with AABB coordinates, time and coordinates
+                            # Log collision for debugging
                             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-                            collision_logger.info(f"🚫 COLLISION DÉTECTÉE - Bloc")
-                            collision_logger.info(f"   Heure: {current_time}")
-                            collision_logger.info(f"   Position joueur: ({px:.3f}, {py:.3f}, {pz:.3f})")
-                            collision_logger.info(f"   Position bloc: ({x}, {y}, {z})")
-                            collision_logger.info(f"   Type bloc: {block_type}")
-                            collision_logger.info(f"   AABB Joueur: min=({player_min_x:.3f}, {player_min_y:.3f}, {player_min_z:.3f}) max=({player_max_x:.3f}, {player_max_y:.3f}, {player_max_z:.3f})")
-                            collision_logger.info(f"   AABB Bloc: min=({block_min_x:.3f}, {block_min_y:.3f}, {block_min_z:.3f}) max=({block_max_x:.3f}, {block_max_y:.3f}, {block_max_z:.3f})")
+                            collision_logger.debug(f"🚫 COLLISION DÉTECTÉE - Bloc")
+                            collision_logger.debug(f"   Position joueur: ({px:.3f}, {py:.3f}, {pz:.3f})")
+                            collision_logger.debug(f"   Position bloc: ({x}, {y}, {z}) type: {block_type}")
+                            collision_logger.debug(f"   AABB Joueur: ({player_min_x:.3f},{player_min_y:.3f},{player_min_z:.3f}) to ({player_max_x:.3f},{player_max_y:.3f},{player_max_z:.3f})")
+                            collision_logger.debug(f"   AABB Bloc: ({block_min_x:.1f},{block_min_y:.1f},{block_min_z:.1f}) to ({block_max_x:.1f},{block_max_y:.1f},{block_max_z:.1f})")
                             
                             return True
         return False
@@ -237,19 +232,19 @@ class UnifiedCollisionManager:
                                   new_pos: Tuple[float, float, float],
                                   player_id: str = None) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
         """
-        Collision resolution using proper bounding box detection.
+        Collision resolution with comprehensive face traversal prevention.
         
-        This method uses comprehensive collision detection approach:
-        - Tests the player's full bounding box against blocks
-        - Backs up the player on collision by adjusting position on the affected axis
-        - Uses per-axis testing to allow sliding along walls
-        - Maintains consistent collision detection throughout
+        This method prevents all forms of face traversal while maintaining movement fluidity:
+        - First checks if destination has collision, uses per-axis resolution if so
+        - For clear destinations, checks the actual movement path to prevent tunneling
+        - Uses step-by-step collision detection along the actual movement vector
+        - Balances traversal prevention with movement performance
         """
         collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
         
-        # Check if new position has collision using proper bounding box detection
+        # First check if destination has collision - if so, use original per-axis logic
         if self.check_collision(new_pos, player_id):
-            # Collision detected - try each axis independently to find which one caused it
+            # Collision detected at destination - try each axis independently
             old_x, old_y, old_z = old_pos
             new_x, new_y, new_z = new_pos
             final_pos = list(old_pos)  # Start with safe old position
@@ -275,8 +270,53 @@ class UnifiedCollisionManager:
             else:
                 collision_info['y'] = True
         else:
-            # No collision, can move to new position
-            final_pos = list(new_pos)
+            # Destination is clear, but check the actual movement path for traversal
+            old_x, old_y, old_z = old_pos
+            new_x, new_y, new_z = new_pos
+            
+            # Calculate movement distance
+            dx = new_x - old_x
+            dy = new_y - old_y
+            dz = new_z - old_z
+            max_distance = max(abs(dx), abs(dy), abs(dz))
+            
+            # For movements longer than 0.8 blocks, check the path to prevent tunneling
+            if max_distance > 0.8:
+                # Use enough steps to catch traversal, but not too many for performance
+                num_steps = min(16, int(max_distance * 4) + 1)
+                
+                # Test points along the actual movement path
+                for step in range(1, num_steps + 1):
+                    t = step / num_steps
+                    test_x = old_x + dx * t
+                    test_y = old_y + dy * t
+                    test_z = old_z + dz * t
+                    test_pos = (test_x, test_y, test_z)
+                    
+                    if self.check_collision(test_pos, player_id):
+                        # Collision detected along path - stop at previous safe position
+                        safe_t = (step - 1) / num_steps
+                        final_pos = [
+                            old_x + dx * safe_t,
+                            old_y + dy * safe_t,
+                            old_z + dz * safe_t
+                        ]
+                        
+                        # Determine which axis was blocked
+                        if abs(dx) > abs(dy) and abs(dx) > abs(dz):
+                            collision_info['x'] = True
+                        elif abs(dy) > abs(dz):
+                            collision_info['y'] = True
+                        else:
+                            collision_info['z'] = True
+                        
+                        break
+                else:
+                    # No collision along path, allow full movement
+                    final_pos = [new_x, new_y, new_z]
+            else:
+                # Short movement, destination is clear, allow it
+                final_pos = [new_x, new_y, new_z]
         
         # Check if on ground (test position slightly below)
         ground_test = (final_pos[0], final_pos[1] - 0.1, final_pos[2])
