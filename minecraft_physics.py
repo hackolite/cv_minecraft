@@ -102,21 +102,27 @@ class UnifiedCollisionManager:
         height = PLAYER_HEIGHT           # 1.0
         half_depth = PLAYER_WIDTH / 2    # 0.5
         
-        # Player bounding box
+        # Player bounding box - calculate range without epsilon to avoid missing blocks
         player_min_x = px - half_width
-        player_max_x = px + half_width - COLLISION_EPSILON
+        player_max_x_range = px + half_width  # For range calculation without epsilon
         player_min_y = py               # Y is feet position
-        player_max_y = py + height      # Head position
+        player_max_y_range = py + height      # For range calculation without epsilon
         player_min_z = pz - half_depth
+        player_max_z_range = pz + half_depth  # For range calculation without epsilon
+        
+        # Player bounding box for AABB test - with epsilon to prevent floating point issues
+        player_max_x = px + half_width - COLLISION_EPSILON
+        player_max_y = py + height      # Head position
         player_max_z = pz + half_depth - COLLISION_EPSILON
         
         # Calculate which blocks might intersect with player bounding box
+        # Use coordinates without epsilon to ensure we don't miss adjacent blocks
         xmin = int(math.floor(player_min_x))
-        xmax = int(math.floor(player_max_x))
+        xmax = int(math.floor(player_max_x_range))
         ymin = int(math.floor(player_min_y))
-        ymax = int(math.floor(player_max_y))
+        ymax = int(math.floor(player_max_y_range))
         zmin = int(math.floor(player_min_z))
-        zmax = int(math.floor(player_max_z))
+        zmax = int(math.floor(player_max_z_range))
         
         # Test blocks in the calculated range
         for x in range(xmin, xmax + 1):
@@ -134,11 +140,17 @@ class UnifiedCollisionManager:
                         block_min_y, block_max_y = float(y), float(y + 1)
                         block_min_z, block_max_z = float(z), float(z + 1)
                         
-                        # AABB intersection test - robust face collision detection
-                        # Use < and > for proper boundary collision detection
-                        if (player_min_x < block_max_x and player_max_x > block_min_x and
-                            player_min_y < block_max_y and player_max_y > block_min_y and
-                            player_min_z < block_max_z and player_max_z > block_min_z):
+                        # AABB intersection test - robust face collision detection with boundary contact detection
+                        # Use the range coordinates (without epsilon) for the actual intersection test
+                        # to ensure we detect boundary contact properly
+                        player_max_x_test = px + half_width         # Without epsilon for boundary detection
+                        player_max_y_test = py + height             # Without epsilon for boundary detection
+                        player_max_z_test = pz + half_depth         # Without epsilon for boundary detection
+                        
+                        # Use < and >= for proper boundary collision detection (>= to catch exact boundary contact)
+                        if (player_min_x < block_max_x and player_max_x_test >= block_min_x and
+                            player_min_y < block_max_y and player_max_y_test >= block_min_y and
+                            player_min_z < block_max_z and player_max_z_test >= block_min_z):
                             
                             # Log collision for debugging
                             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
@@ -420,21 +432,27 @@ class UnifiedCollisionManager:
         # Use proper player bounding box for accurate collision detection
         player_half_width = PLAYER_WIDTH / 2  # 0.5 - proper player dimensions
         
-        # Player bounding box
+        # Player bounding box - calculate range without epsilon to avoid missing blocks
         player_min_x = px - player_half_width
-        player_max_x = px + player_half_width - COLLISION_EPSILON
+        player_max_x_range = px + player_half_width  # For range calculation without epsilon
         player_min_y = py               # Y is feet position
-        player_max_y = py + PLAYER_HEIGHT      # Head position
+        player_max_y_range = py + PLAYER_HEIGHT      # For range calculation without epsilon
         player_min_z = pz - player_half_width
+        player_max_z_range = pz + player_half_width  # For range calculation without epsilon
+        
+        # Player bounding box for AABB test - with epsilon to prevent floating point issues
+        player_max_x = px + player_half_width - COLLISION_EPSILON
+        player_max_y = py + PLAYER_HEIGHT
         player_max_z = pz + player_half_width - COLLISION_EPSILON
         
         # Calculate which blocks might intersect with player bounding box
+        # Use coordinates without epsilon to ensure we don't miss adjacent blocks
         xmin = int(math.floor(player_min_x))
-        xmax = int(math.floor(player_max_x))
+        xmax = int(math.floor(player_max_x_range))
         ymin = int(math.floor(player_min_y))
-        ymax = int(math.floor(player_max_y))
+        ymax = int(math.floor(player_max_y_range))
         zmin = int(math.floor(player_min_z))
-        zmax = int(math.floor(player_max_z))
+        zmax = int(math.floor(player_max_z_range))
         
         # Test blocks in the calculated range
         for x in range(xmin, xmax + 1):
@@ -452,11 +470,17 @@ class UnifiedCollisionManager:
                         block_min_y, block_max_y = float(y), float(y + 1)
                         block_min_z, block_max_z = float(z), float(z + 1)
                         
-                        # AABB intersection test - proper collision detection
-                        # Use < and > for proper boundary collision detection  
-                        if (player_min_x < block_max_x and player_max_x > block_min_x and
-                            player_min_y < block_max_y and player_max_y > block_min_y and
-                            player_min_z < block_max_z and player_max_z > block_min_z):
+                        # AABB intersection test - proper collision detection with boundary contact detection
+                        # Use the range coordinates (without epsilon) for the actual intersection test
+                        # to ensure we detect boundary contact properly
+                        player_max_x_test = px + player_half_width  # Without epsilon for boundary detection
+                        player_max_y_test = py + PLAYER_HEIGHT      # Without epsilon for boundary detection  
+                        player_max_z_test = pz + player_half_width  # Without epsilon for boundary detection
+                        
+                        # Use < and >= for proper boundary collision detection (>= to catch exact boundary contact)
+                        if (player_min_x < block_max_x and player_max_x_test >= block_min_x and
+                            player_min_y < block_max_y and player_max_y_test >= block_min_y and
+                            player_min_z < block_max_z and player_max_z_test >= block_min_z):
                             return True
         
         return False
