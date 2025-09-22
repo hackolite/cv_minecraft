@@ -104,11 +104,11 @@ class UnifiedCollisionManager:
         
         # Player bounding box
         player_min_x = px - half_width
-        player_max_x = px + half_width
+        player_max_x = px + half_width - COLLISION_EPSILON
         player_min_y = py               # Y is feet position
         player_max_y = py + height      # Head position
         player_min_z = pz - half_depth
-        player_max_z = pz + half_depth
+        player_max_z = pz + half_depth - COLLISION_EPSILON
         
         # Calculate which blocks might intersect with player bounding box
         xmin = int(math.floor(player_min_x))
@@ -135,10 +135,10 @@ class UnifiedCollisionManager:
                         block_min_z, block_max_z = float(z), float(z + 1)
                         
                         # AABB intersection test - robust face collision detection
-                        # Use <= and >= for proper boundary collision detection
-                        if (player_min_x < block_max_x and player_max_x >= block_min_x and
-                            player_min_y < block_max_y and player_max_y >= block_min_y and
-                            player_min_z < block_max_z and player_max_z >= block_min_z):
+                        # Use < and > for proper boundary collision detection
+                        if (player_min_x < block_max_x and player_max_x > block_min_x and
+                            player_min_y < block_max_y and player_max_y > block_min_y and
+                            player_min_z < block_max_z and player_max_z > block_min_z):
                             
                             # Log collision for debugging
                             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
@@ -422,11 +422,11 @@ class UnifiedCollisionManager:
         
         # Player bounding box
         player_min_x = px - player_half_width
-        player_max_x = px + player_half_width
+        player_max_x = px + player_half_width - COLLISION_EPSILON
         player_min_y = py               # Y is feet position
         player_max_y = py + PLAYER_HEIGHT      # Head position
         player_min_z = pz - player_half_width
-        player_max_z = pz + player_half_width
+        player_max_z = pz + player_half_width - COLLISION_EPSILON
         
         # Calculate which blocks might intersect with player bounding box
         xmin = int(math.floor(player_min_x))
@@ -453,10 +453,10 @@ class UnifiedCollisionManager:
                         block_min_z, block_max_z = float(z), float(z + 1)
                         
                         # AABB intersection test - proper collision detection
-                        # Use <= and >= for proper boundary collision detection  
-                        if (player_min_x < block_max_x and player_max_x >= block_min_x and
-                            player_min_y < block_max_y and player_max_y >= block_min_y and
-                            player_min_z < block_max_z and player_max_z >= block_min_z):
+                        # Use < and > for proper boundary collision detection  
+                        if (player_min_x < block_max_x and player_max_x > block_min_x and
+                            player_min_y < block_max_y and player_max_y > block_min_y and
+                            player_min_z < block_max_z and player_max_z > block_min_z):
                             return True
         
         return False
@@ -984,7 +984,7 @@ def get_player_bounding_box(position: Tuple[float, float, float]) -> Tuple[Tuple
     half_width = PLAYER_WIDTH / 2
     
     min_corner = (x - half_width, y, z - half_width)
-    max_corner = (x + half_width, y + PLAYER_HEIGHT, z + half_width)
+    max_corner = (x + half_width - COLLISION_EPSILON, y + PLAYER_HEIGHT, z + half_width - COLLISION_EPSILON)
     
     return min_corner, max_corner
 
