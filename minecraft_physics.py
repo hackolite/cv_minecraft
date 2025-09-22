@@ -389,100 +389,230 @@ class UnifiedCollisionManager:
                                   new_pos: Tuple[float, float, float],
                                   player_id: str = None) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
         """
-        Simple, effective collision resolution to prevent cube face traversal.
+        Strict axis-by-axis collision resolution to prevent any block penetration.
         
-        This method prevents both direct collision and diagonal traversal by:
-        1. Checking if the starting position is already in a block and snapping out if needed
-        2. Checking if the direct path would go through any blocks
-        3. If so, using axis-by-axis movement that prevents traversal
-        4. Ensuring the final position is safe and reachable without traversal
+        This method implements the solution described in the problem statement:
+        1. Apply strict per-axis resolution (X, Y, Z separately)
+        2. Calculate complete player bounding box and detect intersection with block AABBs
+        3. When collision detected on x+ or z+, snap position to outer block limit (bloc_x - width/2)
+        4. Ensure perfectly symmetric logic for positive and negative axes
+        5. Prevent any penetration even at high speeds
         """
         collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
         
         # CRITICAL FIX: Check if starting position is already in a block
-        # This prevents the player from being stuck inside blocks
         if self._is_position_in_block(old_pos):
             # Player is already inside a block - snap them to nearest safe position
             safe_start_pos = self._snap_out_of_block(old_pos, player_id or "player", 0.01)
-            # Use the snapped position as the new starting point
             old_pos = safe_start_pos
-            # Mark collision on all axes since we had to snap
             collision_info['x'] = True
             collision_info['z'] = True
         
-        # Check if new position would put player inside a block
-        if self._is_position_in_block(new_pos):
-            # Player would be inside a block - find safe position
-            safe_pos = self._find_safe_position_axis_by_axis(old_pos, new_pos)
-            
-            # Determine which axis caused the collision
-            old_x, old_y, old_z = old_pos
-            safe_x, safe_y, safe_z = safe_pos
-            
-            if abs(safe_x - old_x) < abs(new_pos[0] - old_x):
-                collision_info['x'] = True
-            if abs(safe_y - old_y) < abs(new_pos[1] - old_y):
-                collision_info['y'] = True
-            if abs(safe_z - old_z) < abs(new_pos[2] - old_z):
-                collision_info['z'] = True
-        else:
-            # Target position is safe, but check for traversal along the path
-            if self._path_intersects_blocks(old_pos, new_pos):
-                # Path goes through blocks - use safe axis-by-axis movement with traversal check
-                safe_pos = self._find_safe_position_with_traversal_check(old_pos, new_pos)
-                
-                # Mark axes as collided if movement was restricted
-                old_x, old_y, old_z = old_pos
-                safe_x, safe_y, safe_z = safe_pos
-                
-                if abs(safe_x - old_x) < abs(new_pos[0] - old_x):
-                    collision_info['x'] = True
-                if abs(safe_y - old_y) < abs(new_pos[1] - old_y):
-                    collision_info['y'] = True
-                if abs(safe_z - old_z) < abs(new_pos[2] - old_z):
-                    collision_info['z'] = True
-            else:
-                # No collision and no traversal, allow movement
-                safe_pos = new_pos
-        
-        # Check if on ground
-        ground_test_pos = (safe_pos[0], safe_pos[1] - 0.1, safe_pos[2])
-        if self._is_position_in_block(ground_test_pos):
-            collision_info['ground'] = True
-        
-        return safe_pos, collision_info
-    
-    def _find_safe_position_axis_by_axis(self, old_pos: Tuple[float, float, float], 
-                                        new_pos: Tuple[float, float, float]) -> Tuple[float, float, float]:
-        """
-        Find safe position using simple axis-by-axis movement (original behavior).
-        This is used when the target position is inside a block.
-        """
+        # NEW IMPLEMENTATION: Direct axis-by-axis resolution with exact boundary snapping
         old_x, old_y, old_z = old_pos
         new_x, new_y, new_z = new_pos
         
-        # Start with old position
-        safe_pos = list(old_pos)
+        # Resolve each axis independently with strict boundary checking
+        safe_x = self._snap_x_movement_to_boundary(old_x, new_x, new_y, new_z)
+        safe_y = self._snap_y_movement_to_boundary(old_y, new_y, safe_x, new_z)
+        safe_z = self._snap_z_movement_to_boundary(old_z, new_z, safe_x, safe_y)
         
-        # Test X movement only (if different)
-        if new_x != old_x:
-            test_x_pos = (new_x, safe_pos[1], safe_pos[2])
-            if not self._is_position_in_block(test_x_pos):
-                safe_pos[0] = new_x
+        # Mark collisions
+        if abs(safe_x - new_x) > 0.001:
+            collision_info['x'] = True
+        if abs(safe_y - new_y) > 0.001:
+            collision_info['y'] = True
+        if abs(safe_z - new_z) > 0.001:
+            collision_info['z'] = True
         
-        # Test Y movement only (if different)  
-        if new_y != old_y:
-            test_y_pos = (safe_pos[0], new_y, safe_pos[2])
-            if not self._is_position_in_block(test_y_pos):
-                safe_pos[1] = new_y
+        # Final safety check: ensure no collision at final position
+        final_pos = (safe_x, safe_y, safe_z)
+        if self._is_position_in_block(final_pos):
+            # If still in collision, fall back to old position
+            final_pos = old_pos
+            collision_info['x'] = True
+            collision_info['y'] = True
+            collision_info['z'] = True
         
-        # Test Z movement only (if different)
-        if new_z != old_z:
-            test_z_pos = (safe_pos[0], safe_pos[1], new_z)
-            if not self._is_position_in_block(test_z_pos):
-                safe_pos[2] = new_z
+        # Check if on ground
+        ground_test_pos = (final_pos[0], final_pos[1] - 0.1, final_pos[2])
+        if self._is_position_in_block(ground_test_pos):
+            collision_info['ground'] = True
         
-        return tuple(safe_pos)
+        return final_pos, collision_info
+    
+    def _snap_x_movement_to_boundary(self, old_x: float, new_x: float, y: float, z: float) -> float:
+        """
+        Snap X movement to block boundary when collision is detected.
+        Implementation as per problem statement: bloc_x - largeur/2 for x+ movement.
+        """
+        if old_x == new_x:
+            return new_x
+        
+        player_half_width = PLAYER_WIDTH / 2
+        
+        # Calculate player bounding box at the target position
+        player_min_y = y
+        player_max_y = y + PLAYER_HEIGHT
+        player_min_z = z - player_half_width
+        player_max_z = z + player_half_width
+        
+        # Movement direction
+        direction = 1 if new_x > old_x else -1
+        
+        # Check for collision with any block along the X axis
+        x_min = min(old_x, new_x) - player_half_width
+        x_max = max(old_x, new_x) + player_half_width
+        
+        blocking_blocks = []
+        
+        # Find all blocks that could block this movement
+        for block_x in range(int(math.floor(x_min)), int(math.floor(x_max)) + 1):
+            for block_y in range(int(math.floor(player_min_y)), int(math.floor(player_max_y)) + 1):
+                for block_z in range(int(math.floor(player_min_z)), int(math.floor(player_max_z)) + 1):
+                    if (block_x, block_y, block_z) in self.world_blocks:
+                        block_type = self.world_blocks[(block_x, block_y, block_z)]
+                        if block_type != "air":
+                            blocking_blocks.append(block_x)
+        
+        # Remove duplicates and sort
+        blocking_blocks = sorted(set(blocking_blocks))
+        
+        if direction > 0:  # Moving X+
+            # Find the first block that would block X+ movement
+            for block_x in blocking_blocks:
+                if block_x >= math.floor(old_x):  # Block is ahead in movement direction
+                    # Snap to left face of block: player center = block_min_x - player_half_width
+                    snap_x = float(block_x) - player_half_width
+                    if snap_x <= old_x:  # Don't move backwards
+                        return old_x
+                    return min(snap_x, new_x)  # Don't exceed intended position
+        else:  # Moving X-
+            # Find the first block that would block X- movement
+            for block_x in reversed(blocking_blocks):
+                if block_x <= math.floor(old_x):  # Block is ahead in movement direction
+                    # Snap to right face of block: player center = block_max_x + player_half_width
+                    snap_x = float(block_x + 1) + player_half_width
+                    if snap_x >= old_x:  # Don't move backwards
+                        return old_x
+                    return max(snap_x, new_x)  # Don't exceed intended position
+        
+        return new_x  # No collision, allow movement
+    
+    def _snap_z_movement_to_boundary(self, old_z: float, new_z: float, x: float, y: float) -> float:
+        """
+        Snap Z movement to block boundary when collision is detected.
+        Implementation as per problem statement: bloc_z - largeur/2 for z+ movement.
+        """
+        if old_z == new_z:
+            return new_z
+        
+        player_half_width = PLAYER_WIDTH / 2
+        
+        # Calculate player bounding box at the target position
+        player_min_x = x - player_half_width
+        player_max_x = x + player_half_width
+        player_min_y = y
+        player_max_y = y + PLAYER_HEIGHT
+        
+        # Movement direction
+        direction = 1 if new_z > old_z else -1
+        
+        # Check for collision with any block along the Z axis
+        z_min = min(old_z, new_z) - player_half_width
+        z_max = max(old_z, new_z) + player_half_width
+        
+        blocking_blocks = []
+        
+        # Find all blocks that could block this movement
+        for block_x in range(int(math.floor(player_min_x)), int(math.floor(player_max_x)) + 1):
+            for block_y in range(int(math.floor(player_min_y)), int(math.floor(player_max_y)) + 1):
+                for block_z in range(int(math.floor(z_min)), int(math.floor(z_max)) + 1):
+                    if (block_x, block_y, block_z) in self.world_blocks:
+                        block_type = self.world_blocks[(block_x, block_y, block_z)]
+                        if block_type != "air":
+                            blocking_blocks.append(block_z)
+        
+        # Remove duplicates and sort
+        blocking_blocks = sorted(set(blocking_blocks))
+        
+        if direction > 0:  # Moving Z+
+            # Find the first block that would block Z+ movement
+            for block_z in blocking_blocks:
+                if block_z >= math.floor(old_z):  # Block is ahead in movement direction
+                    # Snap to back face of block: player center = block_min_z - player_half_width
+                    snap_z = float(block_z) - player_half_width
+                    if snap_z <= old_z:  # Don't move backwards
+                        return old_z
+                    return min(snap_z, new_z)  # Don't exceed intended position
+        else:  # Moving Z-
+            # Find the first block that would block Z- movement
+            for block_z in reversed(blocking_blocks):
+                if block_z <= math.floor(old_z):  # Block is ahead in movement direction
+                    # Snap to front face of block: player center = block_max_z + player_half_width
+                    snap_z = float(block_z + 1) + player_half_width
+                    if snap_z >= old_z:  # Don't move backwards
+                        return old_z
+                    return max(snap_z, new_z)  # Don't exceed intended position
+        
+        return new_z  # No collision, allow movement
+    
+    def _snap_y_movement_to_boundary(self, old_y: float, new_y: float, x: float, z: float) -> float:
+        """
+        Snap Y movement to block boundary when collision is detected.
+        """
+        if old_y == new_y:
+            return new_y
+        
+        player_half_width = PLAYER_WIDTH / 2
+        
+        # Calculate player bounding box at the target position
+        player_min_x = x - player_half_width
+        player_max_x = x + player_half_width
+        player_min_z = z - player_half_width
+        player_max_z = z + player_half_width
+        
+        # Movement direction
+        direction = 1 if new_y > old_y else -1
+        
+        # Check for collision with any block along the Y axis
+        y_min = min(old_y, new_y)
+        y_max = max(old_y, new_y) + PLAYER_HEIGHT
+        
+        blocking_blocks = []
+        
+        # Find all blocks that could block this movement
+        for block_x in range(int(math.floor(player_min_x)), int(math.floor(player_max_x)) + 1):
+            for block_y in range(int(math.floor(y_min)), int(math.floor(y_max)) + 1):
+                for block_z in range(int(math.floor(player_min_z)), int(math.floor(player_max_z)) + 1):
+                    if (block_x, block_y, block_z) in self.world_blocks:
+                        block_type = self.world_blocks[(block_x, block_y, block_z)]
+                        if block_type != "air":
+                            blocking_blocks.append(block_y)
+        
+        # Remove duplicates and sort
+        blocking_blocks = sorted(set(blocking_blocks))
+        
+        if direction > 0:  # Moving Y+ (upward)
+            # Find the first block that would block Y+ movement
+            for block_y in blocking_blocks:
+                if block_y >= math.floor(old_y):  # Block is ahead in movement direction
+                    # Snap to bottom face of block: player feet = block_min_y - player_height
+                    snap_y = float(block_y) - PLAYER_HEIGHT
+                    if snap_y <= old_y:  # Don't move backwards
+                        return old_y
+                    return min(snap_y, new_y)  # Don't exceed intended position
+        else:  # Moving Y- (downward)
+            # Find the first block that would block Y- movement
+            for block_y in reversed(blocking_blocks):
+                if block_y <= math.floor(old_y + PLAYER_HEIGHT):  # Block is ahead in movement direction
+                    # Snap to top face of block: player feet = block_max_y
+                    snap_y = float(block_y + 1)
+                    if snap_y >= old_y:  # Don't move backwards
+                        return old_y
+                    return max(snap_y, new_y)  # Don't exceed intended position
+        
+        return new_y  # No collision, allow movement
     
     def _path_intersects_blocks(self, start_pos: Tuple[float, float, float], 
                                end_pos: Tuple[float, float, float]) -> bool:
