@@ -1,32 +1,50 @@
 #!/usr/bin/env python3
 """
-Unified Minecraft Physics System
-================================
+Simplified Minecraft Physics System (inspired by fogleman/Minecraft)
+==================================================================
 
-This module implements a unified, simplified Minecraft-style physics system 
-that consolidates all collision detection into a single, clean interface.
-Used by both client and server for consistent behavior.
+This module implements a simplified Minecraft-style physics system inspired by 
+the fogleman/Minecraft approach, consolidating collision detection into a simple,
+clean interface. Used by both client and server for consistent behavior.
 
 COLLISION SYSTEM APPROACH:
 =========================
-The collision detection system has been simplified and is inspired by the
-fogleman/Minecraft implementation (https://github.com/fogleman/Minecraft/blob/master/main.py#L596-L679).
+The collision detection system has been dramatically simplified and is inspired by the
+fogleman/Minecraft implementation (https://github.com/fogleman/Minecraft/blob/master/main.py).
 
-This simple approach:
-- Tests only the player's central position and height (no complex bounding box)
-- Backs up the player on collision by adjusting position on the affected axis  
-- Blocks falling/rising if collision with ground/ceiling
-- Uses simple collision logic without sweeping AABB or complex per-axis resolution
-- Eliminates diagonal tunneling prevention for simplicity
-- Provides better performance through simplified calculations
+This simplified approach:
+- Tests ONLY the player's center position (floor coordinates) for block collision
+- Tests ONLY the player's head position (center + height) for block collision  
+- NO complex AABB (Axis-Aligned Bounding Box) calculations
+- NO complex boundary thickness or clearance calculations
+- NO complex path traversal or diagonal tunneling prevention
+- Simple axis-by-axis collision resolution without complex snapping
+- Much better performance through dramatically simplified calculations
 
 Key Features:
 - Unified collision management in a single module
-- Simplified algorithms without over-engineering  
+- Maximum simplification inspired by fogleman/Minecraft approach
 - Clean interfaces for both client and server
-- Elimination of code duplication
+- Elimination of code duplication and complexity
 - Standard Minecraft physics constants
-- Simple collision detection inspired by fogleman/Minecraft
+- Simple collision detection using only center position + height checking
+
+WHAT WAS REMOVED:
+================
+- Complex AABB bounding box collision detection
+- Player width/depth collision calculations  
+- Complex path intersection and traversal prevention
+- Complex snapping and clearance algorithms
+- Multi-sample collision detection along movement paths
+- Boundary thickness considerations
+
+WHAT REMAINS:
+============
+- Simple center position collision (floor of X, Y, Z coordinates)
+- Simple head position collision (center + player height)
+- Basic axis-by-axis movement resolution
+- Air block filtering (air blocks don't cause collision)
+- Basic ground detection for physics
 """
 
 import math
@@ -88,68 +106,10 @@ class UnifiedCollisionManager:
     
     def check_block_collision(self, position: Tuple[float, float, float]) -> bool:
         """
-        Check collision with world blocks using robust AABB collision detection.
-        
-        Player is a 1x1x1 cube with dimensions:
-        - Width (X): 1.0 (±0.5 from center)
-        - Height (Y): 1.0 (from feet to head) 
-        - Depth (Z): 1.0 (±0.5 from center)
+        Simplified collision check inspired by fogleman/Minecraft.
+        Only checks the player's center position and height, not complex bounding box.
         """
-        px, py, pz = position
-        
-        # Player dimensions (1x1x1 cube)
-        half_width = PLAYER_WIDTH / 2    # 0.5
-        height = PLAYER_HEIGHT           # 1.0
-        half_depth = PLAYER_WIDTH / 2    # 0.5
-        
-        # Player bounding box
-        player_min_x = px - half_width
-        player_max_x = px + half_width
-        player_min_y = py               # Y is feet position
-        player_max_y = py + height      # Head position
-        player_min_z = pz - half_depth
-        player_max_z = pz + half_depth
-        
-        # Calculate which blocks might intersect with player bounding box
-        xmin = int(math.floor(player_min_x))
-        xmax = int(math.floor(player_max_x))
-        ymin = int(math.floor(player_min_y))
-        ymax = int(math.floor(player_max_y))
-        zmin = int(math.floor(player_min_z))
-        zmax = int(math.floor(player_max_z))
-        
-        # Test blocks in the calculated range
-        for x in range(xmin, xmax + 1):
-            for y in range(ymin, ymax + 1):
-                for z in range(zmin, zmax + 1):
-                    if (x, y, z) in self.world_blocks:
-                        block_type = self.world_blocks[(x, y, z)]
-                        
-                        # AIR blocks should not cause collision - players can pass through
-                        if block_type == "air":
-                            continue
-                        
-                        # Block boundaries (1x1x1 voxel from x,y,z to x+1,y+1,z+1)
-                        block_min_x, block_max_x = float(x), float(x + 1)
-                        block_min_y, block_max_y = float(y), float(y + 1)
-                        block_min_z, block_max_z = float(z), float(z + 1)
-                        
-                        # AABB intersection test - robust face collision detection
-                        # Use <= and >= for proper boundary collision detection
-                        if (player_min_x < block_max_x and player_max_x >= block_min_x and
-                            player_min_y < block_max_y and player_max_y >= block_min_y and
-                            player_min_z < block_max_z and player_max_z >= block_min_z):
-                            
-                            # Log collision for debugging
-                            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-                            collision_logger.debug(f"🚫 COLLISION DÉTECTÉE - Bloc")
-                            collision_logger.debug(f"   Position joueur: ({px:.3f}, {py:.3f}, {pz:.3f})")
-                            collision_logger.debug(f"   Position bloc: ({x}, {y}, {z}) type: {block_type}")
-                            collision_logger.debug(f"   AABB Joueur: ({player_min_x:.3f},{player_min_y:.3f},{player_min_z:.3f}) to ({player_max_x:.3f},{player_max_y:.3f},{player_max_z:.3f})")
-                            collision_logger.debug(f"   AABB Bloc: ({block_min_x:.1f},{block_min_y:.1f},{block_min_z:.1f}) to ({block_max_x:.1f},{block_max_y:.1f},{block_max_z:.1f})")
-                            
-                            return True
-        return False
+        return self.simple_collision_check(position)
 
 
     
@@ -241,31 +201,20 @@ class UnifiedCollisionManager:
                                   new_pos: Tuple[float, float, float],
                                   player_id: str = None) -> Tuple[Tuple[float, float, float], Dict[str, bool]]:
         """
-        Simple, effective collision resolution to prevent cube face traversal.
+        Simplified collision resolution inspired by fogleman/Minecraft.
         
-        This method prevents both direct collision and diagonal traversal by:
-        1. Checking if the starting position is already in a block and snapping out if needed
-        2. Checking if the direct path would go through any blocks
-        3. If so, using axis-by-axis movement that prevents traversal
-        4. Ensuring the final position is safe and reachable without traversal
+        This simplified approach:
+        - Only checks final destination for collision (no path intersection)
+        - Uses simple axis-by-axis backtracking if collision detected
+        - Eliminates complex traversal prevention for simplicity
+        - Much faster and simpler than complex AABB collision resolution
         """
         collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
         
-        # CRITICAL FIX: Check if starting position is already in a block
-        # This prevents the player from being stuck inside blocks
-        if self._is_position_in_block(old_pos):
-            # Player is already inside a block - snap them to nearest safe position
-            safe_start_pos = self._snap_out_of_block(old_pos, player_id or "player", 0.01)
-            # Use the snapped position as the new starting point
-            old_pos = safe_start_pos
-            # Mark collision on all axes since we had to snap
-            collision_info['x'] = True
-            collision_info['z'] = True
-        
-        # Check if new position would put player inside a block
-        if self._is_position_in_block(new_pos):
-            # Player would be inside a block - find safe position
-            safe_pos = self._find_safe_position_axis_by_axis(old_pos, new_pos)
+        # Simple approach: if destination has collision, try axis-by-axis movement
+        if self.simple_collision_check(new_pos, player_id):
+            # Find safe position using simple axis-by-axis movement
+            safe_pos = self._find_safe_position_simple(old_pos, new_pos)
             
             # Determine which axis caused the collision
             old_x, old_y, old_z = old_pos
@@ -278,37 +227,21 @@ class UnifiedCollisionManager:
             if abs(safe_z - old_z) < abs(new_pos[2] - old_z):
                 collision_info['z'] = True
         else:
-            # Target position is safe, but check for traversal along the path
-            if self._path_intersects_blocks(old_pos, new_pos):
-                # Path goes through blocks - use safe axis-by-axis movement with traversal check
-                safe_pos = self._find_safe_position_with_traversal_check(old_pos, new_pos)
-                
-                # Mark axes as collided if movement was restricted
-                old_x, old_y, old_z = old_pos
-                safe_x, safe_y, safe_z = safe_pos
-                
-                if abs(safe_x - old_x) < abs(new_pos[0] - old_x):
-                    collision_info['x'] = True
-                if abs(safe_y - old_y) < abs(new_pos[1] - old_y):
-                    collision_info['y'] = True
-                if abs(safe_z - old_z) < abs(new_pos[2] - old_z):
-                    collision_info['z'] = True
-            else:
-                # No collision and no traversal, allow movement
-                safe_pos = new_pos
+            # No collision detected, allow movement
+            safe_pos = new_pos
         
-        # Check if on ground
+        # Check if on ground (simple check)
         ground_test_pos = (safe_pos[0], safe_pos[1] - 0.1, safe_pos[2])
-        if self._is_position_in_block(ground_test_pos):
+        if self.simple_collision_check(ground_test_pos, player_id):
             collision_info['ground'] = True
         
         return safe_pos, collision_info
     
-    def _find_safe_position_axis_by_axis(self, old_pos: Tuple[float, float, float], 
-                                        new_pos: Tuple[float, float, float]) -> Tuple[float, float, float]:
+    def _find_safe_position_simple(self, old_pos: Tuple[float, float, float], 
+                                  new_pos: Tuple[float, float, float]) -> Tuple[float, float, float]:
         """
-        Find safe position using simple axis-by-axis movement (original behavior).
-        This is used when the target position is inside a block.
+        Simple axis-by-axis movement inspired by fogleman/Minecraft.
+        Try each axis independently and stop at the first collision.
         """
         old_x, old_y, old_z = old_pos
         new_x, new_y, new_z = new_pos
@@ -316,362 +249,75 @@ class UnifiedCollisionManager:
         # Start with old position
         safe_pos = list(old_pos)
         
-        # Test X movement only (if different)
+        # Test X movement first
         if new_x != old_x:
             test_x_pos = (new_x, safe_pos[1], safe_pos[2])
-            if not self._is_position_in_block(test_x_pos):
+            if not self.simple_collision_check(test_x_pos):
                 safe_pos[0] = new_x
         
-        # Test Y movement only (if different)  
+        # Test Y movement second
         if new_y != old_y:
             test_y_pos = (safe_pos[0], new_y, safe_pos[2])
-            if not self._is_position_in_block(test_y_pos):
+            if not self.simple_collision_check(test_y_pos):
                 safe_pos[1] = new_y
         
-        # Test Z movement only (if different)
+        # Test Z movement third
         if new_z != old_z:
             test_z_pos = (safe_pos[0], safe_pos[1], new_z)
-            if not self._is_position_in_block(test_z_pos):
+            if not self.simple_collision_check(test_z_pos):
                 safe_pos[2] = new_z
         
         return tuple(safe_pos)
     
-    def _path_intersects_blocks(self, start_pos: Tuple[float, float, float], 
-                               end_pos: Tuple[float, float, float]) -> bool:
-        """
-        Check if the direct path from start to end intersects any blocks.
-        This prevents diagonal traversal through blocks.
-        """
-        # Sample points along the path to check for intersections
-        samples = 16  # Higher sample count for more accuracy
-        
-        for i in range(1, samples):  # Skip start point (i=0)
-            t = i / samples
-            sample_x = start_pos[0] + t * (end_pos[0] - start_pos[0])
-            sample_y = start_pos[1] + t * (end_pos[1] - start_pos[1])
-            sample_z = start_pos[2] + t * (end_pos[2] - start_pos[2])
-            sample_pos = (sample_x, sample_y, sample_z)
-            
-            if self._is_position_in_block(sample_pos):
-                return True
-        
-        return False
-    
-    def _find_safe_position_with_traversal_check(self, old_pos: Tuple[float, float, float], 
-                                                new_pos: Tuple[float, float, float]) -> Tuple[float, float, float]:
-        """
-        Find safe position with traversal prevention.
-        
-        This method ensures that:
-        1. Movement is tried axis by axis
-        2. Each intermediate position is safe
-        3. No traversal through blocks occurs
-        4. The overall movement doesn't allow diagonal traversal
-        """
-        old_x, old_y, old_z = old_pos
-        new_x, new_y, new_z = new_pos
-        
-        # Start with old position
-        safe_pos = list(old_pos)
-        
-        # Test X movement only (if different)
-        if new_x != old_x:
-            test_x_pos = (new_x, safe_pos[1], safe_pos[2])
-            # Check both that position is safe AND path to it is clear
-            if (not self._is_position_in_block(test_x_pos) and 
-                not self._path_intersects_blocks((safe_pos[0], safe_pos[1], safe_pos[2]), test_x_pos)):
-                safe_pos[0] = new_x
-        
-        # Test Y movement only (if different)  
-        if new_y != old_y:
-            test_y_pos = (safe_pos[0], new_y, safe_pos[2])
-            # Check both that position is safe AND path to it is clear
-            if (not self._is_position_in_block(test_y_pos) and 
-                not self._path_intersects_blocks((safe_pos[0], safe_pos[1], safe_pos[2]), test_y_pos)):
-                safe_pos[1] = new_y
-        
-        # Test Z movement only (if different)
-        if new_z != old_z:
-            test_z_pos = (safe_pos[0], safe_pos[1], new_z)
-            # Check both that position is safe AND path to it is clear
-            if (not self._is_position_in_block(test_z_pos) and 
-                not self._path_intersects_blocks((safe_pos[0], safe_pos[1], safe_pos[2]), test_z_pos)):
-                safe_pos[2] = new_z
-        
-        # CRITICAL FIX: Check that the final movement from old_pos to safe_pos doesn't traverse
-        # This prevents cases where axis-by-axis movement is safe but overall path traverses
-        final_pos = tuple(safe_pos)
-        if self._path_intersects_blocks(old_pos, final_pos):
-            # If the overall path would traverse, don't allow any movement
-            return old_pos
-        
-        # Final verification that the position is safe
-        if self._is_position_in_block(final_pos):
-            # If the final position is not safe, revert to old position
-            return old_pos
-        
-        return final_pos
-    
     def _is_position_in_block(self, position: Tuple[float, float, float]) -> bool:
-        """Check if position is inside any block (proper AABB collision detection).""" 
-        # Original AABB implementation
-        px, py, pz = position
-        
-        # Use proper player bounding box for accurate collision detection
-        player_half_width = PLAYER_WIDTH / 2  # 0.5 - proper player dimensions
-        
-        # Player bounding box
-        player_min_x = px - player_half_width
-        player_max_x = px + player_half_width
-        player_min_y = py               # Y is feet position
-        player_max_y = py + PLAYER_HEIGHT      # Head position
-        player_min_z = pz - player_half_width
-        player_max_z = pz + player_half_width
-        
-        # Calculate which blocks might intersect with player bounding box
-        xmin = int(math.floor(player_min_x))
-        xmax = int(math.floor(player_max_x))
-        ymin = int(math.floor(player_min_y))
-        ymax = int(math.floor(player_max_y))
-        zmin = int(math.floor(player_min_z))
-        zmax = int(math.floor(player_max_z))
-        
-        # Test blocks in the calculated range
-        for x in range(xmin, xmax + 1):
-            for y in range(ymin, ymax + 1):
-                for z in range(zmin, zmax + 1):
-                    if (x, y, z) in self.world_blocks:
-                        block_type = self.world_blocks[(x, y, z)]
-                        
-                        # AIR blocks should not cause collision - players can pass through
-                        if block_type == "air":
-                            continue
-                        
-                        # Block boundaries (1x1x1 voxel from x,y,z to x+1,y+1,z+1)
-                        block_min_x, block_max_x = float(x), float(x + 1)
-                        block_min_y, block_max_y = float(y), float(y + 1)
-                        block_min_z, block_max_z = float(z), float(z + 1)
-                        
-                        # AABB intersection test - proper collision detection
-                        # Use <= and >= for proper boundary collision detection  
-                        if (player_min_x < block_max_x and player_max_x >= block_min_x and
-                            player_min_y < block_max_y and player_max_y >= block_min_y and
-                            player_min_z < block_max_z and player_max_z >= block_min_z):
-                            return True
-        
-        return False
+        """
+        Simplified collision check inspired by fogleman/Minecraft.
+        Only checks the player's center position and height, not complex bounding box.
+        """
+        return self.simple_collision_check(position)
     
-
     def _normalize_position(self, position: Tuple[float, float, float]) -> Tuple[int, int, int]:
-        """Normalize position to block coordinates (like fogleman's normalize function).""" 
+        """Normalize position to block coordinates (inspired by fogleman's normalize function).""" 
         x, y, z = position
         x, y, z = (int(round(x)), int(round(y)), int(round(z)))
         return (x, y, z)
     
     def _check_block_at_position(self, position: Tuple[float, float, float]) -> bool:
-        """Check if there's a block at the given position."""
+        """Check if there's a block at the given position (simplified)."""
         block_pos = self._normalize_position(position)
-        return block_pos in self.world_blocks
-    
-    def _snap_out_of_block(self, pos: Tuple[float, float, float], 
-                          player_id: str, clearance: float) -> Tuple[float, float, float]:
-        """Snap player out of block ensuring minimum clearance from all block faces."""
-        px, py, pz = pos
-        player_half_width = PLAYER_WIDTH / 2
-        
-        # Find all blocks that the player is currently intersecting
-        player_min_x = px - player_half_width
-        player_max_x = px + player_half_width
-        player_min_y = py
-        player_max_y = py + PLAYER_HEIGHT
-        player_min_z = pz - player_half_width
-        player_max_z = pz + player_half_width
-        
-        # Find intersecting blocks
-        xmin = int(math.floor(player_min_x))
-        xmax = int(math.floor(player_max_x))
-        ymin = int(math.floor(player_min_y))
-        ymax = int(math.floor(player_max_y))
-        zmin = int(math.floor(player_min_z))
-        zmax = int(math.floor(player_max_z))
-        
-        # For simplicity, focus on the primary intersecting block
-        # In most cases, the player will be intersecting with just one block
-        intersecting_blocks = []
-        for x in range(xmin, xmax + 1):
-            for y in range(ymin, ymax + 1):
-                for z in range(zmin, zmax + 1):
-                    if (x, y, z) in self.world_blocks and self.world_blocks[(x, y, z)] != "air":
-                        intersecting_blocks.append((x, y, z))
-        
-        if not intersecting_blocks:
-            return pos  # No intersecting blocks found
-        
-        # Use the first intersecting block (most common case)
-        block_x, block_y, block_z = intersecting_blocks[0]
-        block_min_x, block_max_x = float(block_x), float(block_x + 1)
-        block_min_y, block_max_y = float(block_y), float(block_y + 1)
-        block_min_z, block_max_z = float(block_z), float(block_z + 1)
-        
-        # Calculate candidates that ensure COMPLETE separation with clearance
-        candidates = [
-            # Move completely left of block
-            (block_min_x - player_half_width - clearance, py, pz),
-            # Move completely right of block
-            (block_max_x + player_half_width + clearance, py, pz),
-            # Move completely below block
-            (px, block_min_y - PLAYER_HEIGHT - clearance, pz),
-            # Move completely above block
-            (px, block_max_y + clearance, pz),
-            # Move completely in front of block
-            (px, py, block_min_z - player_half_width - clearance),
-            # Move completely behind block
-            (px, py, block_max_z + player_half_width + clearance),
-        ]
-        
-        # Find the candidate with minimum displacement that has no collision
-        best_candidate = None
-        min_distance = float('inf')
-        
-        for candidate in candidates:
-            if not self.check_collision(candidate, player_id):
-                # Calculate distance from original position
-                distance = math.sqrt((candidate[0] - px)**2 + (candidate[1] - py)**2 + (candidate[2] - pz)**2)
-                if distance < min_distance:
-                    min_distance = distance
-                    best_candidate = candidate
-        
-        if best_candidate:
-            return best_candidate
-        
-        # Fallback: move far away in the safest direction
-        fallback_positions = [
-            (px - 3.0, py, pz),    # Far left
-            (px + 3.0, py, pz),    # Far right
-            (px, py + 3.0, pz),    # Far up
-            (px, py, pz - 3.0),    # Far back
-            (px, py, pz + 3.0),    # Far forward
-        ]
-        
-        for fallback in fallback_positions:
-            if not self.check_collision(fallback, player_id):
-                return fallback
-        
-        return pos  # Last resort
-
-
-    def _snap_to_safe_x_position(self, old_x: float, new_x: float, y: float, z: float, player_id: str, clearance: float) -> float:
-          player_half_width = PLAYER_WIDTH / 2
-          block_y = int(math.floor(y))
-          block_z = int(math.floor(z))
-          safe_x = new_x  # Default to intended position
-      
-          if new_x > old_x:  # Moving right
-              for block_x in range(int(math.floor(old_x)), int(math.floor(new_x)) + 2):
-                  if (block_x, block_y, block_z) in self.world_blocks:
-                      block_type = self.world_blocks[(block_x, block_y, block_z)]
-                      if block_type != "air":
-                          safe_x = float(block_x) - player_half_width - clearance
-                          safe_x = max(safe_x, old_x)
-                          break
-          else:  # Moving left
-              for block_x in range(int(math.floor(new_x)), int(math.floor(old_x)) + 2):
-                  if (block_x, block_y, block_z) in self.world_blocks:
-                      block_type = self.world_blocks[(block_x, block_y, block_z)]
-                      if block_type != "air":
-                          safe_x = float(block_x + 1) + player_half_width + clearance
-                          safe_x = min(safe_x, old_x)
-                          break
-      
-          # Collision check: if still inside a block, fallback to previous position
-          if self.check_collision((safe_x, y, z), player_id):
-              return old_x
-          return safe_x
-
-    def _snap_to_safe_z_position(self, x: float, old_z: float, new_z: float, y: float, player_id: str, clearance: float) -> float:
-              player_half_width = PLAYER_WIDTH / 2
-              block_x = int(math.floor(x))
-              block_y = int(math.floor(y))
-              safe_z = new_z  # Default to intended position
-          
-              if new_z > old_z:  # Moving forward
-                  for block_z in range(int(math.floor(old_z)), int(math.floor(new_z)) + 2):
-                      if (block_x, block_y, block_z) in self.world_blocks:
-                          block_type = self.world_blocks[(block_x, block_y, block_z)]
-                          if block_type != "air":
-                              safe_z = float(block_z) - player_half_width - clearance
-                              safe_z = max(safe_z, old_z)
-                              break
-              else:  # Moving backward
-                  for block_z in range(int(math.floor(new_z)), int(math.floor(old_z)) + 2):
-                      if (block_x, block_y, block_z) in self.world_blocks:
-                          block_type = self.world_blocks[(block_x, block_y, block_z)]
-                          if block_type != "air":
-                              safe_z = float(block_z + 1) + player_half_width + clearance
-                              safe_z = min(safe_z, old_z)
-                              break
-          
-              # Collision check: if still inside a block, fallback to previous position
-              if self.check_collision((x, y, safe_z), player_id):
-                  return old_z
-              return safe_z
-  
-
-    
-    def _snap_to_safe_y_position(self, x: float, z: float, old_y: float, new_y: float, 
-                                player_id: str, clearance: float) -> float:
-        """Snap to safe Y position with minimum clearance from block faces."""
-        # Find blocks that could cause collision in the Y direction
-        
-        # Get the X and Z block coordinates where collision would occur
-        block_x = int(math.floor(x))
-        block_z = int(math.floor(z))
-        
-        # Check if we're moving up or down
-        if new_y > old_y:  # Moving up
-            # Find the first block that would cause collision with player's head
-            for block_y in range(int(math.floor(old_y)), int(math.floor(new_y + PLAYER_HEIGHT)) + 2):
-                if (block_x, block_y, block_z) in self.world_blocks:
-                    block_type = self.world_blocks[(block_x, block_y, block_z)]
-                    if block_type != "air":
-                        # Snap player feet to below this block with clearance
-                        safe_y = float(block_y) - PLAYER_HEIGHT - clearance
-                        return max(safe_y, old_y)  # Don't go backwards
-        else:  # Moving down
-            # Find the first block that would cause collision with player's feet
-            for block_y in range(int(math.floor(new_y)), int(math.floor(old_y)) + 2):
-                if (block_x, block_y, block_z) in self.world_blocks:
-                    block_type = self.world_blocks[(block_x, block_y, block_z)]
-                    if block_type != "air":
-                        # Snap player feet to on top of this block with clearance
-                        safe_y = float(block_y + 1) + clearance
-                        return min(safe_y, old_y)  # Don't go backwards
-        
-        return old_y  # No blocking block found
+        return block_pos in self.world_blocks and self.world_blocks[block_pos] != "air"
     
     def simple_collision_check(self, position: Tuple[float, float, float], 
                               player_id: str = None) -> bool:
         """
         Simple collision check inspired by fogleman/Minecraft.
-        Only checks the player's center position and height, not a complex bounding box.
         
-        This is much simpler than the complex AABB collision detection.
+        This simplified approach only checks:
+        - Player's center position (feet) for block collision
+        - Player's head position (center + height) for block collision
+        - No complex AABB bounding box calculations
+        - No boundary thickness considerations
+        
+        This matches the fogleman/Minecraft approach for simplicity and performance.
         """
         px, py, pz = position
         
-        # Simple approach: check if the player's feet and head positions collide with blocks
-        # Check player's foot position (center)
+        # Check player's foot position (center point)
         foot_block = (int(math.floor(px)), int(math.floor(py)), int(math.floor(pz)))
         if foot_block in self.world_blocks:
-            return True
+            block_type = self.world_blocks[foot_block]
+            if block_type != "air":  # Air blocks don't cause collision
+                return True
             
         # Check player's head position (center + height)
         head_y = py + PLAYER_HEIGHT
         head_block = (int(math.floor(px)), int(math.floor(head_y)), int(math.floor(pz)))
         if head_block in self.world_blocks:
-            return True
+            block_type = self.world_blocks[head_block]
+            if block_type != "air":  # Air blocks don't cause collision
+                return True
             
-        # Check for player-to-player collision (simplified)
+        # Check for player-to-player collision (optional, can be simplified further)
         if self.check_player_collision(position, player_id):
             return True
             
