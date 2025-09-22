@@ -712,6 +712,10 @@ class MinecraftWindow(pyglet.window.Window):
         # This provides proper movement-based collision resolution with severe snapping
         safe_position, collision_info = collision_detector.resolve_collision(self.position, position)
         
+        # Check for X or Z axis collision and display message
+        if collision_info.get('x', False) or collision_info.get('z', False):
+            self.show_message("collision detected")
+        
         # Update collision types for compatibility with existing code
         self.collision_types = {
             "top": collision_info.get('ground', False),
