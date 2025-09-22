@@ -61,94 +61,7 @@ BLOCK_SIZE = 1.0            # Each block is 1×1×1
 collision_logger = logging.getLogger('minecraft_collision')
 collision_logger.setLevel(logging.INFO)
 
-# ============================================================================
-# IOU (INTERSECTION OVER UNION) COLLISION DETECTION
-# ============================================================================
 
-def compute_iou(player_bbox: Tuple[Tuple[float, float, float], Tuple[float, float, float]], 
-                block_bbox: Tuple[Tuple[float, float, float], Tuple[float, float, float]]) -> float:
-    """
-    Calcule l'Intersection over Union (IOU) entre les bounding boxes du joueur et du bloc.
-    
-    Args:
-        player_bbox: ((min_x, min_y, min_z), (max_x, max_y, max_z)) du joueur
-        block_bbox: ((min_x, min_y, min_z), (max_x, max_y, max_z)) du bloc
-    
-    Returns:
-        float: Valeur IOU (0.0 = pas d'intersection, >0.0 = collision détectée)
-               IOU = volume_intersection / volume_union
-    """
-    (player_min_x, player_min_y, player_min_z), (player_max_x, player_max_y, player_max_z) = player_bbox
-    (block_min_x, block_min_y, block_min_z), (block_max_x, block_max_y, block_max_z) = block_bbox
-    
-    # Calculer l'intersection 3D
-    intersection_min_x = max(player_min_x, block_min_x)
-    intersection_max_x = min(player_max_x, block_max_x)
-    intersection_min_y = max(player_min_y, block_min_y)
-    intersection_max_y = min(player_max_y, block_max_y)
-    intersection_min_z = max(player_min_z, block_min_z)
-    intersection_max_z = min(player_max_z, block_max_z)
-    
-    # Si pas d'intersection, retourner 0
-    if (intersection_min_x >= intersection_max_x or 
-        intersection_min_y >= intersection_max_y or 
-        intersection_min_z >= intersection_max_z):
-        return 0.0
-    
-    # Calculer le volume d'intersection
-    intersection_volume = ((intersection_max_x - intersection_min_x) * 
-                          (intersection_max_y - intersection_min_y) * 
-                          (intersection_max_z - intersection_min_z))
-    
-    # Calculer les volumes individuels
-    player_volume = ((player_max_x - player_min_x) * 
-                     (player_max_y - player_min_y) * 
-                     (player_max_z - player_min_z))
-    
-    block_volume = ((block_max_x - block_min_x) * 
-                    (block_max_y - block_min_y) * 
-                    (block_max_z - block_min_z))
-    
-    # Calculer le volume d'union (somme des volumes - intersection)
-    union_volume = player_volume + block_volume - intersection_volume
-    
-    # Éviter la division par zéro
-    if union_volume <= 0.0:
-        return 0.0
-    
-    # Retourner l'IOU
-    iou = intersection_volume / union_volume
-    return iou
-
-def check_collision_iou(player_position: Tuple[float, float, float],
-                       block_position: Tuple[int, int, int]) -> float:
-    """
-    Vérifie la collision entre le joueur et un bloc spécifique en utilisant IOU.
-    
-    Args:
-        player_position: Position du joueur (x, y, z)
-        block_position: Position du bloc (x, y, z)
-    
-    Returns:
-        float: Valeur IOU (>0 si collision détectée)
-    """
-    px, py, pz = player_position
-    bx, by, bz = block_position
-    
-    # Bounding box du joueur (1x1x1 cube)
-    half_width = PLAYER_WIDTH / 2  # 0.5
-    player_bbox = (
-        (px - half_width, py, pz - half_width),  # min corner
-        (px + half_width, py + PLAYER_HEIGHT, pz + half_width)  # max corner
-    )
-    
-    # Bounding box du bloc (1x1x1 voxel)
-    block_bbox = (
-        (float(bx), float(by), float(bz)),  # min corner
-        (float(bx + 1), float(by + 1), float(bz + 1))  # max corner
-    )
-    
-    return compute_iou(player_bbox, block_bbox)
 
 # ============================================================================
 # UNIFIED COLLISION MANAGER
@@ -238,64 +151,7 @@ class UnifiedCollisionManager:
                             return True
         return False
 
-    def check_block_collision_iou(self, position: Tuple[float, float, float]) -> bool:
-        """
-        Check collision with world blocks using IOU (Intersection over Union) method.
-        
-        Cette méthode utilise l'IOU pour détecter les collisions, complétant la détection AABB existante.
-        Si IOU > 0, une collision est détectée (même sur les arêtes et coins).
-        
-        Args:
-            position: Position du joueur (x, y, z)
-            
-        Returns:
-            bool: True si collision détectée (IOU > 0), False sinon
-        """
-        px, py, pz = position
-        
-        # Player dimensions (1x1x1 cube)
-        half_width = PLAYER_WIDTH / 2    # 0.5
-        
-        # Calculate which blocks might intersect with player bounding box
-        player_min_x = px - half_width
-        player_max_x = px + half_width
-        player_min_y = py               # Y is feet position
-        player_max_y = py + PLAYER_HEIGHT      # Head position
-        player_min_z = pz - half_width
-        player_max_z = pz + half_width
-        
-        xmin = int(math.floor(player_min_x))
-        xmax = int(math.floor(player_max_x))
-        ymin = int(math.floor(player_min_y))
-        ymax = int(math.floor(player_max_y))
-        zmin = int(math.floor(player_min_z))
-        zmax = int(math.floor(player_max_z))
-        
-        # Test blocks in the calculated range using IOU
-        for x in range(xmin, xmax + 1):
-            for y in range(ymin, ymax + 1):
-                for z in range(zmin, zmax + 1):
-                    if (x, y, z) in self.world_blocks:
-                        block_type = self.world_blocks[(x, y, z)]
-                        
-                        # AIR blocks should not cause collision - players can pass through
-                        if block_type == "air":
-                            continue
-                        
-                        # Calculate IOU between player and block
-                        iou = check_collision_iou(position, (x, y, z))
-                        
-                        # Si IOU > 0, collision détectée
-                        if iou > 0.0:
-                            # Log collision for debugging
-                            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-                            collision_logger.debug(f"🚫 COLLISION IOU DÉTECTÉE - Bloc")
-                            collision_logger.debug(f"   Position joueur: ({px:.3f}, {py:.3f}, {pz:.3f})")
-                            collision_logger.debug(f"   Position bloc: ({x}, {y}, {z}) type: {block_type}")
-                            collision_logger.debug(f"   IOU: {iou:.6f}")
-                            
-                            return True
-        return False
+
     
     def check_player_collision(self, position: Tuple[float, float, float], player_id: str = None) -> bool:
         """Check collision with other players."""
@@ -349,21 +205,17 @@ class UnifiedCollisionManager:
                 return True
         return False
     
-    def check_collision(self, position: Tuple[float, float, float], player_id: str = None, use_iou: bool = False) -> bool:
+    def check_collision(self, position: Tuple[float, float, float], player_id: str = None) -> bool:
         """
         Comprehensive collision check using proper bounding box detection.
-        Uses both block collision (AABB or IOU) and player collision for complete accuracy.
+        Uses both block collision (AABB) and player collision for complete accuracy.
         
         Args:
             position: Position to check
             player_id: Player ID for player-to-player collision avoidance
-            use_iou: If True, use IOU method instead of AABB for block collision
         """
-        # Use either IOU or AABB collision detection for blocks
-        if use_iou:
-            block_collision = self.check_block_collision_iou(position)
-        else:
-            block_collision = self.check_block_collision(position)
+        # Use AABB collision detection for blocks
+        block_collision = self.check_block_collision(position)
         
         # Check player-to-player collision  
         player_collision = self.check_player_collision(position, player_id)
@@ -560,57 +412,54 @@ class UnifiedCollisionManager:
         
         return final_pos
     
-    def _is_position_in_block(self, position: Tuple[float, float, float], use_iou: bool = False) -> bool:
-        """Check if position is inside any block (proper AABB or IOU collision detection).""" 
-        if use_iou:
-            return self.check_block_collision_iou(position)
-        else:
-            # Original AABB implementation
-            px, py, pz = position
-            
-            # Use proper player bounding box for accurate collision detection
-            player_half_width = PLAYER_WIDTH / 2  # 0.5 - proper player dimensions
-            
-            # Player bounding box
-            player_min_x = px - player_half_width
-            player_max_x = px + player_half_width
-            player_min_y = py               # Y is feet position
-            player_max_y = py + PLAYER_HEIGHT      # Head position
-            player_min_z = pz - player_half_width
-            player_max_z = pz + player_half_width
-            
-            # Calculate which blocks might intersect with player bounding box
-            xmin = int(math.floor(player_min_x))
-            xmax = int(math.floor(player_max_x))
-            ymin = int(math.floor(player_min_y))
-            ymax = int(math.floor(player_max_y))
-            zmin = int(math.floor(player_min_z))
-            zmax = int(math.floor(player_max_z))
-            
-            # Test blocks in the calculated range
-            for x in range(xmin, xmax + 1):
-                for y in range(ymin, ymax + 1):
-                    for z in range(zmin, zmax + 1):
-                        if (x, y, z) in self.world_blocks:
-                            block_type = self.world_blocks[(x, y, z)]
-                            
-                            # AIR blocks should not cause collision - players can pass through
-                            if block_type == "air":
-                                continue
-                            
-                            # Block boundaries (1x1x1 voxel from x,y,z to x+1,y+1,z+1)
-                            block_min_x, block_max_x = float(x), float(x + 1)
-                            block_min_y, block_max_y = float(y), float(y + 1)
-                            block_min_z, block_max_z = float(z), float(z + 1)
-                            
-                            # AABB intersection test - proper collision detection
-                            # Use <= and >= for proper boundary collision detection  
-                            if (player_min_x < block_max_x and player_max_x >= block_min_x and
-                                player_min_y < block_max_y and player_max_y >= block_min_y and
-                                player_min_z < block_max_z and player_max_z >= block_min_z):
-                                return True
-            
-            return False
+    def _is_position_in_block(self, position: Tuple[float, float, float]) -> bool:
+        """Check if position is inside any block (proper AABB collision detection).""" 
+        # Original AABB implementation
+        px, py, pz = position
+        
+        # Use proper player bounding box for accurate collision detection
+        player_half_width = PLAYER_WIDTH / 2  # 0.5 - proper player dimensions
+        
+        # Player bounding box
+        player_min_x = px - player_half_width
+        player_max_x = px + player_half_width
+        player_min_y = py               # Y is feet position
+        player_max_y = py + PLAYER_HEIGHT      # Head position
+        player_min_z = pz - player_half_width
+        player_max_z = pz + player_half_width
+        
+        # Calculate which blocks might intersect with player bounding box
+        xmin = int(math.floor(player_min_x))
+        xmax = int(math.floor(player_max_x))
+        ymin = int(math.floor(player_min_y))
+        ymax = int(math.floor(player_max_y))
+        zmin = int(math.floor(player_min_z))
+        zmax = int(math.floor(player_max_z))
+        
+        # Test blocks in the calculated range
+        for x in range(xmin, xmax + 1):
+            for y in range(ymin, ymax + 1):
+                for z in range(zmin, zmax + 1):
+                    if (x, y, z) in self.world_blocks:
+                        block_type = self.world_blocks[(x, y, z)]
+                        
+                        # AIR blocks should not cause collision - players can pass through
+                        if block_type == "air":
+                            continue
+                        
+                        # Block boundaries (1x1x1 voxel from x,y,z to x+1,y+1,z+1)
+                        block_min_x, block_max_x = float(x), float(x + 1)
+                        block_min_y, block_max_y = float(y), float(y + 1)
+                        block_min_z, block_max_z = float(z), float(z + 1)
+                        
+                        # AABB intersection test - proper collision detection
+                        # Use <= and >= for proper boundary collision detection  
+                        if (player_min_x < block_max_x and player_max_x >= block_min_x and
+                            player_min_y < block_max_y and player_max_y >= block_min_y and
+                            player_min_z < block_max_z and player_max_z >= block_min_z):
+                            return True
+        
+        return False
     
 
     def _normalize_position(self, position: Tuple[float, float, float]) -> Tuple[int, int, int]:
@@ -947,162 +796,6 @@ class SimplePhysicsManager:
         return new_position, (final_vx, final_vy, final_vz), collision_info['ground']
 
 # ============================================================================
-# TICK-BASED PHYSICS MANAGER (IA-FRIENDLY VERSION)
-# ============================================================================
-
-class TickBasedPhysicsManager:
-    """
-    Physics manager implementing tick-based movement with sub-steps as specified.
-    
-    🔹 Logique de la collision (version IA-friendly)
-    
-    1. Représentation:
-    - Monde = grille 3D où chaque cellule peut être vide ou solide
-    - Joueur = boîte rectangulaire verticale (AABB)
-    - Vitesse du joueur = (vx, vy, vz) mise à jour à chaque tick
-    - Paramètres: gravité, vitesse terminale, pad (tolérance)
-    
-    2. Mise à jour par tick:
-    - Appliquer la gravité: vy = vy - gravité * dt
-    - Limiter la vitesse terminale: vy = max(vy, -vitesse_terminale)
-    - Calculer translation: dx = vx * dt, dy = vy * dt, dz = vz * dt
-    - Diviser en sous-étapes pour éviter tunneling
-    
-    3. Déplacement et collisions:
-    - Position candidate = (x+dx, y+dy, z+dz)
-    - Correction par axe (X, Y, Z indépendamment)
-    - Si collision → repositionner et mettre vitesse = 0 sur cet axe
-    """
-    
-    def __init__(self, collision_manager: UnifiedCollisionManager):
-        self.collision_manager = collision_manager
-        self.gravity = GRAVITY                    # gravité
-        self.terminal_velocity = TERMINAL_VELOCITY # vitesse_terminale
-        self.sub_steps = 8                       # nombre_etapes pour éviter tunneling
-        
-    def apply_gravity_tick(self, velocity_y: float, dt: float) -> float:
-        """
-        Appliquer la gravité selon la spécification:
-        vy = vy - gravité * dt
-        vy = max(vy, -vitesse_terminale)
-        """
-        # Appliquer la gravité
-        vy = velocity_y - self.gravity * dt
-        
-        # Appliquer la vitesse terminale
-        vy = max(vy, -self.terminal_velocity)
-        
-        return vy
-    
-    def apply_movement_substep(self, position: Tuple[float, float, float], 
-                              velocity: Tuple[float, float, float],
-                              dt_substep: float,
-                              player_id: str = None) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
-        """
-        Appliquer un déplacement en sous-étape avec collision.
-        
-        Pour chaque sous-étape:
-        - Position candidate = (x+dx, y+dy, z+dz)
-        - Vérifier collisions avec les blocs voisins
-        - Corriger par axe et remettre vitesse = 0 si collision
-        """
-        x, y, z = position
-        vx, vy, vz = velocity
-        
-        # Calculer la translation souhaitée pour cette sous-étape
-        dx = vx * dt_substep
-        dy = vy * dt_substep  
-        dz = vz * dt_substep
-        
-        # Position candidate
-        new_position = (x + dx, y + dy, z + dz)
-        
-        # Résolution des collisions par axe avec le système existant
-        safe_position, collision_info = self.collision_manager.resolve_collision(
-            position, new_position, player_id
-        )
-        
-        # Corriger la vitesse selon les collisions détectées
-        # Si collision → replacer position au bord du bloc, mettre vitesse = 0
-        final_vx = 0.0 if collision_info['x'] else vx
-        final_vy = 0.0 if collision_info['y'] else vy  
-        final_vz = 0.0 if collision_info['z'] else vz
-        
-        return safe_position, (final_vx, final_vy, final_vz)
-    
-    def update_tick(self, position: Tuple[float, float, float],
-                   velocity: Tuple[float, float, float], 
-                   dt: float,
-                   jumping: bool = False,
-                   player_id: str = None) -> Tuple[Tuple[float, float, float], Tuple[float, float, float], Dict[str, bool]]:
-        """
-        Mise à jour complète par tick selon la spécification.
-        
-        À chaque tick (ex. toutes les 16 ms):
-        1. Appliquer la gravité
-        2. Calculer la translation souhaitée  
-        3. Diviser le déplacement en sous-étapes
-        4. Pour chaque sous-étape: appliquer_deplacement()
-        
-        Retourne: (nouvelle_position, nouvelle_vitesse, info_collision)
-        """
-        x, y, z = position
-        vx, vy, vz = velocity
-        
-        # Gestion du saut
-        if jumping:
-            # Vérifier si le joueur est au sol
-            ground_test = (x, y - 0.1, z)
-            on_ground = self.collision_manager.check_block_collision(ground_test)
-            if on_ground:
-                vy = JUMP_VELOCITY
-        
-        # 1. Appliquer la gravité
-        vy = self.apply_gravity_tick(vy, dt)
-        
-        # Position et vitesse actuelles pour les sous-étapes
-        current_position = (x, y, z)
-        current_velocity = (vx, vy, vz)
-        
-        # 2. Diviser le déplacement en sous-étapes pour éviter le tunneling
-        dt_substep = dt / self.sub_steps
-        
-        # Information sur les collisions détectées
-        final_collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
-        
-        # 3. Pour chaque sous-étape: appliquer_deplacement()
-        for step in range(self.sub_steps):
-            old_velocity = current_velocity
-            current_position, current_velocity = self.apply_movement_substep(
-                current_position, current_velocity, dt_substep, player_id
-            )
-            
-            # Accumuler les informations de collision
-            # Si la vitesse a été réinitialisée, cela indique une collision
-            if current_velocity[0] == 0.0 and old_velocity[0] != 0.0:
-                final_collision_info['x'] = True
-            if current_velocity[1] == 0.0 and old_velocity[1] != 0.0:
-                final_collision_info['y'] = True  
-            if current_velocity[2] == 0.0 and old_velocity[2] != 0.0:
-                final_collision_info['z'] = True
-                
-            # Si une collision est détectée sur un axe, arrêter le mouvement sur cet axe
-            # pour toutes les sous-étapes restantes
-            if final_collision_info['x']:
-                current_velocity = (0.0, current_velocity[1], current_velocity[2])
-            if final_collision_info['y']:
-                current_velocity = (current_velocity[0], 0.0, current_velocity[2])
-            if final_collision_info['z']:
-                current_velocity = (current_velocity[0], current_velocity[1], 0.0)
-        
-        # Vérifier le statut du sol après toutes les sous-étapes
-        ground_test = (current_position[0], current_position[1] - 0.1, current_position[2])
-        final_collision_info['ground'] = self.collision_manager.check_block_collision(ground_test)
-        
-        # 4. Résultat: position corrigée et vitesse mise à jour
-        return current_position, current_velocity, final_collision_info
-
-# ============================================================================
 # LEGACY COMPATIBILITY LAYER
 # ============================================================================
 
@@ -1182,7 +875,6 @@ class MinecraftPhysics:
 # Create global instances for backwards compatibility
 _global_collision_manager = None
 _global_physics_manager = None
-_global_tick_physics_manager = None
 
 def get_collision_manager(world_blocks: Dict[Tuple[int, int, int], str]) -> UnifiedCollisionManager:
     """Get or create global collision manager."""
@@ -1199,13 +891,7 @@ def get_physics_manager(world_blocks: Dict[Tuple[int, int, int], str]) -> Simple
         _global_physics_manager = SimplePhysicsManager(collision_manager)
     return _global_physics_manager
 
-def get_tick_physics_manager(world_blocks: Dict[Tuple[int, int, int], str]) -> TickBasedPhysicsManager:
-    """Get or create global tick-based physics manager."""
-    global _global_tick_physics_manager, _global_collision_manager
-    collision_manager = get_collision_manager(world_blocks)
-    if _global_tick_physics_manager is None or _global_tick_physics_manager.collision_manager != collision_manager:
-        _global_tick_physics_manager = TickBasedPhysicsManager(collision_manager)
-    return _global_tick_physics_manager
+
 
 # ============================================================================
 # UNIFIED API FUNCTIONS
@@ -1214,8 +900,7 @@ def get_tick_physics_manager(world_blocks: Dict[Tuple[int, int, int], str]) -> T
 def unified_check_collision(position: Tuple[float, float, float], 
                            world_blocks: Dict[Tuple[int, int, int], str],
                            other_players: List = None,
-                           player_id: str = None,
-                           use_iou: bool = False) -> bool:
+                           player_id: str = None) -> bool:
     """
     Unified collision check for both blocks and players.
     
@@ -1224,41 +909,12 @@ def unified_check_collision(position: Tuple[float, float, float],
         world_blocks: World block dictionary
         other_players: List of other players
         player_id: Player ID for collision avoidance
-        use_iou: If True, use IOU method for block collision detection
     """
     manager = get_collision_manager(world_blocks)
     if other_players:
         manager.set_other_players(other_players)
-    return manager.check_collision(position, player_id, use_iou)
+    return manager.check_collision(position, player_id)
 
-def unified_check_collision_iou(position: Tuple[float, float, float], 
-                               world_blocks: Dict[Tuple[int, int, int], str]) -> bool:
-    """
-    Unified collision check using IOU method specifically.
-    
-    Args:
-        position: Position to check
-        world_blocks: World block dictionary
-        
-    Returns:
-        bool: True if IOU > 0 (collision detected)
-    """
-    manager = get_collision_manager(world_blocks)
-    return manager.check_block_collision_iou(position)
-
-def get_collision_iou_value(position: Tuple[float, float, float], 
-                           block_position: Tuple[int, int, int]) -> float:
-    """
-    Get the IOU value between player at position and a specific block.
-    
-    Args:
-        position: Player position
-        block_position: Block position
-        
-    Returns:
-        float: IOU value (0.0 = no collision, >0.0 = collision detected)
-    """
-    return check_collision_iou(position, block_position)
 
 def unified_check_player_collision(position: Tuple[float, float, float],
                                   other_players: List,
