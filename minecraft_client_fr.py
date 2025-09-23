@@ -947,9 +947,9 @@ Statut: {connection_status}"""
         """
         Calculate a safe camera position that doesn't penetrate blocks.
         
-        This method implements camera collision detection to prevent the camera
-        from going inside blocks, which was causing the issue where the player
-        could see inside cubes during collision.
+        Enhanced version that handles collision boundary conditions better,
+        especially when moving in positive X and Z directions where the
+        player can be very close to block faces.
         
         Args:
             player_x, player_y, player_z: Player position
@@ -960,38 +960,44 @@ Statut: {connection_status}"""
         Returns:
             Tuple (camera_x, camera_y, camera_z) of safe camera position
         """
-        # Start with desired camera position
-        initial_camera_x = player_x + sight_dx * desired_offset
-        initial_camera_z = player_z + sight_dz * desired_offset
-        
         # Set Y position based on crouch state
         if self.crouch:
             camera_y = cube_center_y - 0.2  # Slightly lower when crouching
         else:
             camera_y = cube_center_y
         
-        # Get collision detector
-        if not hasattr(self, '_camera_collision_detector'):
-            self._camera_collision_detector = UnifiedCollisionManager(self.model.world)
-        else:
-            # Update world state
-            self._camera_collision_detector.world_blocks = self.model.world
+        # ENHANCED COLLISION DETECTION FOR BOUNDARY CONDITIONS
+        # When player is very close to block boundaries (due to collision resolution),
+        # we need to be more careful about camera positioning
         
-        # Check if initial camera position collides with blocks
-        initial_pos = (initial_camera_x, camera_y, initial_camera_z)
+        # Calculate maximum safe offset based on distance to nearest block faces
+        safe_offset_x = self._calculate_max_safe_offset_axis(player_x, sight_dx, 'x')
+        safe_offset_z = self._calculate_max_safe_offset_axis(player_z, sight_dz, 'z')
         
-        if not self._check_camera_point_collision(initial_pos):
-            # No collision - use desired position
-            return initial_camera_x, camera_y, initial_camera_z
+        # Use the minimum of desired offset and what's actually safe
+        max_safe_offset = min(desired_offset, safe_offset_x, safe_offset_z)
         
-        # Collision detected - find safe position by pulling camera back
+        # Apply a small additional margin for safety
+        final_offset = max(0.1, max_safe_offset - 0.05)  # At least 0.1 units, with 0.05 safety margin
+        
+        # Calculate camera position with safe offset
+        camera_x = player_x + sight_dx * final_offset
+        camera_z = player_z + sight_dz * final_offset
+        
+        # Double-check the calculated position doesn't collide
+        test_pos = (camera_x, camera_y, camera_z)
+        
+        if not self._check_camera_point_collision(test_pos):
+            return camera_x, camera_y, camera_z
+        
+        # If still colliding, fall back to progressive pullback method
         max_pullback_distance = 3.0  # Maximum distance to pull back camera
-        min_camera_distance = 0.2    # Minimum distance from player
-        pullback_step = 0.1          # Step size for finding safe position
+        min_camera_distance = 0.1    # Minimum distance from player (reduced for tighter control)
+        pullback_step = 0.05         # Smaller step size for more precise positioning
         
         for pullback in range(int(max_pullback_distance / pullback_step)):
             # Calculate pull-back distance
-            current_offset = max(min_camera_distance, desired_offset - (pullback * pullback_step))
+            current_offset = max(min_camera_distance, final_offset - (pullback * pullback_step))
             
             # Calculate new camera position
             camera_x = player_x + sight_dx * current_offset
@@ -1005,7 +1011,7 @@ Statut: {connection_status}"""
         # If we can't find a safe position, place camera very close to player
         # This prevents seeing inside blocks even in tight spaces
         # Try moving camera slightly behind the player if forward is blocked
-        for alternative_offset in [0.15, 0.1, 0.05]:
+        for alternative_offset in [0.08, 0.05, 0.02]:  # Smaller offsets for tighter control
             safe_camera_x = player_x - sight_dx * alternative_offset  # Behind player
             safe_camera_z = player_z - sight_dz * alternative_offset
             test_pos = (safe_camera_x, camera_y, safe_camera_z)
@@ -1015,6 +1021,46 @@ Statut: {connection_status}"""
         
         # Last resort: place camera at player position (very close)
         return player_x, camera_y, player_z
+    
+    def _calculate_max_safe_offset_axis(self, player_coord, sight_direction, axis):
+        """
+        Calculate the maximum safe camera offset along a specific axis.
+        
+        This prevents the camera from penetrating blocks when the player is very close
+        to block boundaries, which was causing the "seeing inside blocks" issue.
+        
+        Args:
+            player_coord: Player coordinate on the axis (x or z)
+            sight_direction: Sight direction component for this axis (dx or dz)
+            axis: 'x' or 'z' to indicate which axis we're checking
+            
+        Returns:
+            Maximum safe offset distance for this axis
+        """
+        if abs(sight_direction) < 0.001:  # Not moving significantly on this axis
+            return 999.0  # No limit from this axis
+        
+        # Calculate which block face we're moving towards
+        if sight_direction > 0:
+            # Moving in positive direction - check distance to next integer boundary
+            next_block_face = math.ceil(player_coord)
+            if next_block_face == player_coord:  # Exactly on boundary
+                next_block_face += 1
+        else:
+            # Moving in negative direction - check distance to previous integer boundary  
+            next_block_face = math.floor(player_coord)
+            if next_block_face == player_coord:  # Exactly on boundary
+                next_block_face -= 1
+        
+        # Calculate distance to the block face
+        distance_to_face = abs(next_block_face - player_coord)
+        
+        # Calculate maximum offset before hitting the face
+        # Add small margin to stay slightly away from the block face
+        margin = 0.02  # Small margin to prevent floating point precision issues
+        max_offset = max(0.1, (distance_to_face - margin) / abs(sight_direction))
+        
+        return max_offset
     
     def _check_camera_point_collision(self, camera_pos):
         """
