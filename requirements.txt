@@ -1,5 +1,3 @@
-Panda3D
-websockets==12.0
-asyncio
-PyOpenGL
 pyglet==1.5.27
+websockets==12.0
+PyOpenGL
