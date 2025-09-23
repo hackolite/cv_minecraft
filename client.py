@@ -22,6 +22,10 @@ class EnhancedClientModel:
         """Retire un bloc du monde."""
         if position in self.world:
             del self.world[position]
+    
+    def process_queue(self):
+        """Traite la queue de rendu."""
+        pass
 
 class ClientModel(EnhancedClientModel):
     """Modèle client étendu avec support joueur local."""
