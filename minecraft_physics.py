@@ -51,6 +51,7 @@ FLYING_SPEED = 10.89        # Blocks per second
 
 # Collision constants
 COLLISION_EPSILON = 0.001   # Small value for floating point precision
+COLLISION_CLEARANCE = 0.05  # Minimum clearance from block faces to prevent visual penetration
 STEP_HEIGHT = 0.5625        # Maximum step up height (9/16 blocks)
 GROUND_TOLERANCE = 0.05     # Distance to consider "on ground"
 
@@ -267,7 +268,7 @@ class UnifiedCollisionManager:
         # This prevents the player from being stuck inside blocks
         if self._is_position_in_block(old_pos):
             # Player is already inside a block - snap them to nearest safe position
-            safe_start_pos = self._snap_out_of_block(old_pos, player_id or "player", 0.01)
+            safe_start_pos = self._snap_out_of_block(old_pos, player_id or "player", COLLISION_CLEARANCE)
             # Use the snapped position as the new starting point
             old_pos = safe_start_pos
             # Mark collision on all axes since we had to snap
@@ -432,27 +433,23 @@ class UnifiedCollisionManager:
         # Use proper player bounding box for accurate collision detection
         player_half_width = PLAYER_WIDTH / 2  # 0.5 - proper player dimensions
         
-        # Player bounding box - calculate range without epsilon to avoid missing blocks
-        player_min_x = px - player_half_width
-        player_max_x_range = px + player_half_width  # For range calculation without epsilon
-        player_min_y = py               # Y is feet position
-        player_max_y_range = py + PLAYER_HEIGHT      # For range calculation without epsilon
-        player_min_z = pz - player_half_width
-        player_max_z_range = pz + player_half_width  # For range calculation without epsilon
+        # Calculate expanded player bounding box with clearance
+        # This determines which blocks we need to check for collision
+        player_min_x_with_clearance = px - player_half_width - COLLISION_CLEARANCE
+        player_max_x_with_clearance = px + player_half_width + COLLISION_CLEARANCE
+        player_min_y_with_clearance = py  # No clearance needed for Y (feet position)
+        player_max_y_with_clearance = py + PLAYER_HEIGHT
+        player_min_z_with_clearance = pz - player_half_width - COLLISION_CLEARANCE
+        player_max_z_with_clearance = pz + player_half_width + COLLISION_CLEARANCE
         
-        # Player bounding box for AABB test - with epsilon to prevent floating point issues
-        player_max_x = px + player_half_width - COLLISION_EPSILON
-        player_max_y = py + PLAYER_HEIGHT
-        player_max_z = pz + player_half_width - COLLISION_EPSILON
-        
-        # Calculate which blocks might intersect with player bounding box
-        # Use coordinates without epsilon to ensure we don't miss adjacent blocks
-        xmin = int(math.floor(player_min_x))
-        xmax = int(math.floor(player_max_x_range))
-        ymin = int(math.floor(player_min_y))
-        ymax = int(math.floor(player_max_y_range))
-        zmin = int(math.floor(player_min_z))
-        zmax = int(math.floor(player_max_z_range))
+        # Calculate which blocks might intersect with the expanded player bounding box
+        # Use the expanded coordinates to ensure we don't miss blocks we need clearance from
+        xmin = int(math.floor(player_min_x_with_clearance))
+        xmax = int(math.floor(player_max_x_with_clearance))
+        ymin = int(math.floor(player_min_y_with_clearance))
+        ymax = int(math.floor(player_max_y_with_clearance))
+        zmin = int(math.floor(player_min_z_with_clearance))
+        zmax = int(math.floor(player_max_z_with_clearance))
         
         # Test blocks in the calculated range
         for x in range(xmin, xmax + 1):
@@ -470,17 +467,13 @@ class UnifiedCollisionManager:
                         block_min_y, block_max_y = float(y), float(y + 1)
                         block_min_z, block_max_z = float(z), float(z + 1)
                         
-                        # AABB intersection test - proper collision detection with boundary contact detection
-                        # Use the range coordinates (without epsilon) for the actual intersection test
-                        # to ensure we detect boundary contact properly
-                        player_max_x_test = px + player_half_width  # Without epsilon for boundary detection
-                        player_max_y_test = py + PLAYER_HEIGHT      # Without epsilon for boundary detection  
-                        player_max_z_test = pz + player_half_width  # Without epsilon for boundary detection
-                        
-                        # Use < and >= for proper boundary collision detection (>= to catch exact boundary contact)
-                        if (player_min_x < block_max_x and player_max_x_test >= block_min_x and
-                            player_min_y < block_max_y and player_max_y_test >= block_min_y and
-                            player_min_z < block_max_z and player_max_z_test >= block_min_z):
+                        # AABB intersection test with clearance buffer to prevent visual penetration
+                        # The player needs to maintain at least COLLISION_CLEARANCE distance from block faces
+                        # Check if the expanded bounding box (including clearance) intersects with the block
+                        # This ensures the player maintains the required clearance from block faces
+                        if (player_min_x_with_clearance < block_max_x and player_max_x_with_clearance > block_min_x and
+                            player_min_y_with_clearance < block_max_y and player_max_y_with_clearance > block_min_y and
+                            player_min_z_with_clearance < block_max_z and player_max_z_with_clearance > block_min_z):
                             return True
         
         return False
