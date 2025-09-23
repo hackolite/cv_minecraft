@@ -55,7 +55,7 @@ except NameError:
 from protocol import *
 from client_config import config
 from minecraft_physics import (
-    MinecraftCollisionDetector, MinecraftPhysics, UnifiedCollisionManager,
+    MinecraftCollisionDetector, MinecraftPhysics,
     PLAYER_WIDTH, PLAYER_HEIGHT as PHYSICS_PLAYER_HEIGHT,
     GRAVITY as PHYSICS_GRAVITY, TERMINAL_VELOCITY as PHYSICS_TERMINAL_VELOCITY,
     JUMP_VELOCITY, unified_check_player_collision, unified_get_player_collision_info
