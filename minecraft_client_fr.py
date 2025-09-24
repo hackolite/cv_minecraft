@@ -55,7 +55,7 @@ except NameError:
 from protocol import *
 from client_config import config
 from minecraft_physics import (
-    MinecraftCollisionDetector, MinecraftPhysics, UnifiedCollisionManager,
+    MinecraftCollisionDetector, MinecraftPhysics,
     PLAYER_WIDTH, PLAYER_HEIGHT as PHYSICS_PLAYER_HEIGHT,
     GRAVITY as PHYSICS_GRAVITY, TERMINAL_VELOCITY as PHYSICS_TERMINAL_VELOCITY,
     JUMP_VELOCITY, unified_check_player_collision, unified_get_player_collision_info
@@ -912,117 +912,66 @@ Statut: {connection_status}"""
         glRotatef(-y, math.cos(math.radians(x)), 0, math.sin(math.radians(x)))
         x, y, z = self.position
 
-        # Position camera at the front face of the player cube
-        # This centers the view on the front face of the cube in the direction the player is looking
-        cube_center_y = y + 0.5  # Cube center (y + half_size) for 1x1x1 cube
-        cube_half_size = 0.5
-
-        # Calculate sight vector to determine front face direction
-        rotation_x, rotation_y = self.rotation
-        m = math.cos(math.radians(rotation_y))
-        sight_dx = math.cos(math.radians(rotation_x - 90)) * m
-        sight_dz = math.sin(math.radians(rotation_x - 90)) * m
-
-        # Calculate offset to position camera slightly outside the cube
-        # Use a slightly larger offset than cube_half_size to prevent view from entering cube
-        camera_offset = cube_half_size + 0.1  # 0.1 units outside the cube surface
-        front_face_offset_x = sight_dx * camera_offset
-        front_face_offset_z = sight_dz * camera_offset
-
+        # CAMERA POSITIONING LOGIC:
+        # The camera is ALWAYS positioned at the exact center of the player cube.
+        # For a player at position (x, y, z), the camera is at (x+0.5, y+0.5, z+0.5).
+        # This ensures the camera never enters adjacent blocks, preventing the issue
+        # where players could see inside blocks when positioned against them.
+        # This approach is simpler and more reliable than complex collision detection.
+        
+        camera_x = x + 0.5  # Always at cube center X
+        camera_z = z + 0.5  # Always at cube center Z
+        
         if self.crouch:
             # When crouching, position slightly lower within the cube
-            camera_y = cube_center_y - 0.2  # Slightly lower when crouching
+            camera_y = y + 0.3  # Slightly lower when crouching, but still within cube
         else:
-            # Normal stance - position at cube center height
-            camera_y = cube_center_y
+            # Normal stance - position at exact cube center height
+            camera_y = y + 0.5  # Always at cube center Y
 
-        # Apply camera positioning with collision detection
-        camera_x, camera_y, camera_z = self._calculate_safe_camera_position(
-            x, y, z, sight_dx, sight_dz, camera_offset, cube_center_y
-        )
         glTranslatef(-camera_x, -camera_y, -camera_z)
 
     def _calculate_safe_camera_position(self, player_x, player_y, player_z,
                                        sight_dx, sight_dz, desired_offset, cube_center_y):
         """
-        Calculate a safe camera position that doesn't penetrate blocks.
-
-        This method implements camera collision detection to prevent the camera
-        from going inside blocks, which was causing the issue where the player
-        could see inside cubes during collision.
-
+        DEPRECATED: This method is no longer used with the new fixed-center camera approach.
+        
+        The camera is now always positioned at the exact center of the player cube
+        (player_x + 0.5, player_y + 0.5, player_z + 0.5) to prevent seeing inside
+        adjacent blocks. This eliminates the need for complex collision detection.
+        
+        This method is kept for backward compatibility but always returns the
+        fixed center position.
+        
         Args:
             player_x, player_y, player_z: Player position
-            sight_dx, sight_dz: Sight direction vector (normalized)
-            desired_offset: Desired camera distance from player
+            sight_dx, sight_dz: Sight direction vector (not used anymore)
+            desired_offset: Desired camera distance (not used anymore)
             cube_center_y: Y position for camera (considering crouch)
 
         Returns:
-            Tuple (camera_x, camera_y, camera_z) of safe camera position
+            Tuple (camera_x, camera_y, camera_z) of camera position at cube center
         """
-        # Start with desired camera position
-        initial_camera_x = player_x + sight_dx * desired_offset
-        initial_camera_z = player_z + sight_dz * desired_offset
-
-        # Set Y position based on crouch state
+        # Always return the exact center of the player cube
+        camera_x = player_x + 0.5
+        camera_z = player_z + 0.5
+        
         if self.crouch:
-            camera_y = cube_center_y - 0.2  # Slightly lower when crouching
+            camera_y = player_y + 0.3  # Slightly lower when crouching, but still within cube
         else:
-            camera_y = cube_center_y
-
-        # Get collision detector
-        if not hasattr(self, '_camera_collision_detector'):
-            self._camera_collision_detector = UnifiedCollisionManager(self.model.world)
-        else:
-            # Update world state
-            self._camera_collision_detector.world_blocks = self.model.world
-
-        # Check if initial camera position collides with blocks
-        initial_pos = (initial_camera_x, camera_y, initial_camera_z)
-
-        if not self._check_camera_point_collision(initial_pos):
-            # No collision - use desired position
-            return initial_camera_x, camera_y, initial_camera_z
-
-        # Collision detected - find safe position by pulling camera back
-        max_pullback_distance = 3.0  # Maximum distance to pull back camera
-        min_camera_distance = 0.2    # Minimum distance from player
-        pullback_step = 0.1          # Step size for finding safe position
-
-        for pullback in range(int(max_pullback_distance / pullback_step)):
-            # Calculate pull-back distance
-            current_offset = max(min_camera_distance, desired_offset - (pullback * pullback_step))
-
-            # Calculate new camera position
-            camera_x = player_x + sight_dx * current_offset
-            camera_z = player_z + sight_dz * current_offset
-            test_pos = (camera_x, camera_y, camera_z)
-
-            # Test if this position is safe
-            if not self._check_camera_point_collision(test_pos):
-                return camera_x, camera_y, camera_z
-
-        # If we can't find a safe position, place camera very close to player
-        # This prevents seeing inside blocks even in tight spaces
-        # Try moving camera slightly behind the player if forward is blocked
-        for alternative_offset in [0.15, 0.1, 0.05]:
-            safe_camera_x = player_x - sight_dx * alternative_offset  # Behind player
-            safe_camera_z = player_z - sight_dz * alternative_offset
-            test_pos = (safe_camera_x, camera_y, safe_camera_z)
-
-            if not self._check_camera_point_collision(test_pos):
-                return safe_camera_x, camera_y, safe_camera_z
-
-        # Last resort: place camera at player position (very close)
-        return player_x, camera_y, player_z
+            camera_y = player_y + 0.5  # Exact cube center Y
+            
+        return camera_x, camera_y, camera_z
 
     def _check_camera_point_collision(self, camera_pos):
         """
-        Check if a camera point is inside any block.
-
-        This is different from player collision detection as it only checks
-        if a single point (the camera) is inside a solid block, rather than
-        checking bounding box overlap.
+        DEPRECATED: Check if a camera point is inside any block.
+        
+        This method is no longer used with the new fixed-center camera approach.
+        The camera now always stays at the player cube center, eliminating the
+        need for collision detection.
+        
+        Kept for backward compatibility only.
 
         Args:
             camera_pos: Tuple (x, y, z) of camera position
