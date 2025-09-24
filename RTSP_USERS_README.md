@@ -15,7 +15,11 @@ Ce système permet la création automatique d'utilisateurs au démarrage du serv
 - **Serveur RTSP individuel** pour chaque utilisateur
 - **Ports RTSP uniques**: 8554, 8555, 8556
 - **URLs RTSP**: `rtsp://localhost:8554/stream`, etc.
-- Streaming simulé de la vision de chaque utilisateur
+- **Streaming vidéo réel** de la vision de chaque utilisateur
+- **Capture d'images**: Frames générés depuis la perspective de l'observateur
+- **Protocol RTP**: Transmission vidéo via RTP/RTCP
+- **Résolution configurable**: 640x480 par défaut, personnalisable
+- **30 FPS** : Streaming fluide en temps réel
 
 ### 3. Intégration Serveur
 - Les utilisateurs RTSP apparaissent dans la liste des joueurs
@@ -162,14 +166,31 @@ if config.is_rtsp_enabled():
     rtsp_config = config.get_rtsp_config()
 ```
 
-## Implémentation Future
+## Implémentation Actuelle
 
-Le système actuel utilise des **serveurs RTSP simulés** pour la démonstration. Pour une implémentation complète:
+Le système utilise maintenant des **serveurs RTSP réels avec streaming vidéo** :
 
-1. **Capture de rendu**: Intégrer avec le moteur de rendu 3D pour capturer la vision de chaque utilisateur
-2. **Encodage vidéo**: Utiliser des encodeurs H.264/H.265 pour la compression
-3. **Serveur RTSP réel**: Implémenter un serveur RTSP complet (ex: utiliser `opencv-python` avec `gstreamer`)
-4. **Streaming réseau**: Support de clients RTSP distants
+1. **Capture de rendu**: Système de caméras d'observateurs qui génèrent des frames depuis leur perspective
+2. **Encodage vidéo**: Frames JPEG transmis via RTP (extensible vers H.264/H.265)
+3. **Serveur RTSP complet**: Implémentation complète du protocole RTSP avec streaming RTP
+4. **Streaming réseau**: Support des clients RTSP standards (VLC, ffmpeg, etc.)
+
+### Fonctionnalités Techniques
+
+- **ObserverCamera**: Système de capture d'images depuis la perspective des observateurs
+- **RTP Streaming**: Transmission vidéo en temps réel via le protocole RTP
+- **Multi-threading**: Capture et streaming asynchrones pour performance optimale
+- **Buffer Management**: Gestion intelligente des frames pour streaming fluide
+- **Position Tracking**: Mise à jour en temps réel de la position/rotation des caméras
+
+### Architecture de Streaming
+
+```
+Observateur RTSP → ObserverCamera → Frame Buffer → RTP Stream → Client RTSP
+     ↓                ↓               ↓             ↓
+  Position(x,y,z)  Capture(30fps)  Buffer(30s)  RTP Packets
+  Rotation(yaw,pitch) JPEG Frames   Threading    UDP Stream
+```
 
 ## Exemples d'Usage
 
@@ -197,7 +218,24 @@ const player = new RTSPPlayer({
 
 Le système fournit des logs détaillés:
 - Création des utilisateurs RTSP
-- État des serveurs RTSP  
+- État des serveurs RTSP
+- **Capture de frames**: Logs de capture d'images depuis les caméras
+- **Streaming RTP**: Logs de transmission vidéo en temps réel
+- **Connexions clients**: Logs des clients RTSP connectés
+- **Performance**: Métriques de FPS et taille des buffers
+
+### Tests de Validation
+
+```bash
+# Test complet du système avec streaming vidéo
+python3 test_camera_streaming.py
+
+# Test d'intégration utilisateurs RTSP
+python3 test_rtsp_users.py
+
+# Test d'intégration serveur complet
+python3 test_integration_final.py
+```  
 - Intégration avec le serveur principal
 - Messages de player_list
 

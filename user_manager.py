@@ -192,6 +192,9 @@ class UserManager:
                     resolution=(640, 480)
                 )
                 
+                # Démarrer la capture de la caméra
+                camera.start_capture(None)  # Pas de modèle du monde pour l'instant
+                
                 # Créer le serveur RTSP amélioré avec streaming vidéo
                 rtsp_server = EnhancedRTSPServer(user, camera)
                 await rtsp_server.start()
