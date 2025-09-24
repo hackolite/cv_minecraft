@@ -11,6 +11,10 @@ import uuid
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
 
+# Import des nouveaux modules pour le streaming vidéo
+from observer_camera import camera_manager, ObserverCamera
+from rtsp_video_streamer import EnhancedRTSPServer
+
 @dataclass
 class RTSPUser:
     """Représente un utilisateur avec un serveur RTSP pour sa vision."""
@@ -180,10 +184,19 @@ class UserManager:
         """Démarre les serveurs RTSP pour tous les utilisateurs actifs."""
         for user in self.get_active_users():
             try:
-                rtsp_server = RTSPServer(user)
+                # Créer une caméra d'observateur pour cet utilisateur
+                camera = camera_manager.create_camera(
+                    observer_id=user.id,
+                    position=user.position,
+                    rotation=user.rotation,
+                    resolution=(640, 480)
+                )
+                
+                # Créer le serveur RTSP amélioré avec streaming vidéo
+                rtsp_server = EnhancedRTSPServer(user, camera)
                 await rtsp_server.start()
                 self.rtsp_servers[user.id] = rtsp_server
-                self.logger.info(f"Serveur RTSP démarré pour {user.name} sur {user.rtsp_url}")
+                self.logger.info(f"Serveur RTSP avec streaming vidéo démarré pour {user.name} sur {user.rtsp_url}")
             except Exception as e:
                 self.logger.error(f"Erreur lors du démarrage du serveur RTSP pour {user.name}: {e}")
     
@@ -196,11 +209,25 @@ class UserManager:
             except Exception as e:
                 self.logger.error(f"Erreur lors de l'arrêt du serveur RTSP: {e}")
         
+        # Arrêter toutes les caméras
+        camera_manager.stop_all_cameras()
         self.rtsp_servers.clear()
     
     def get_rtsp_urls(self) -> Dict[str, str]:
         """Retourne les URLs RTSP de tous les utilisateurs actifs."""
         return {user.name: user.rtsp_url for user in self.get_active_users()}
+    
+    def set_world_model(self, world_model):
+        """Définit le modèle du monde pour les caméras."""
+        camera_manager.set_world_model(world_model)
+        
+    def update_observer_position(self, user_id: str, position: Tuple[float, float, float], 
+                               rotation: Tuple[float, float] = None) -> bool:
+        """Met à jour la position d'un observateur et de sa caméra."""
+        success = self.update_user_position(user_id, position, rotation)
+        if success:
+            camera_manager.update_camera_position(user_id, position, rotation)
+        return success
 
 
 class RTSPServer:

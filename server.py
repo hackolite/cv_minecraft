@@ -785,6 +785,9 @@ class MinecraftServer:
         self.logger.info(f"Starting Minecraft server on {self.host}:{self.port}")
         
         try:
+            # Configurer le modèle du monde pour les caméras RTSP
+            user_manager.set_world_model(self.world)
+            
             # Start RTSP servers for all users 
             self.logger.info("Démarrage des serveurs RTSP...")
             await user_manager.start_rtsp_servers()
