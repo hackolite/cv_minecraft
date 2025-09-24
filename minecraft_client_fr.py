@@ -14,27 +14,90 @@ Usage:
 """
 
 # Standard library imports
-import sys, math, random, time, json, argparse, asyncio, threading
+import sys, math, random, time, json, argparse, asyncio, threading, os
 from collections import deque
 from typing import Optional, Tuple, Dict, Any
 
-# Third-party imports
-import pyglet, websockets
-from pyglet.gl import *
-from pyglet import image
-from pyglet.graphics import TextureGroup
-from pyglet.window import key, mouse
+# Third-party imports with display environment handling
+def setup_display_environment():
+    """Configure display environment for headless operation if needed."""
+    import os
+    if not os.environ.get('DISPLAY'):
+        print("⚠️  Aucun affichage détecté. Configuration pour mode headless...")
+        os.environ['DISPLAY'] = ':99'  # Défaut Xvfb
+        
+        # Essayer de démarrer Xvfb si disponible
+        try:
+            import subprocess
+            import shutil
+            if shutil.which('Xvfb'):
+                # Vérifier si Xvfb tourne déjà sur :99
+                try:
+                    result = subprocess.run(['ps', 'aux'], capture_output=True, text=True)
+                    if 'Xvfb :99' in result.stdout:
+                        print("💡 Xvfb déjà actif sur :99")
+                    else:
+                        print("🖥️  Démarrage de Xvfb...")
+                        subprocess.Popen(['Xvfb', ':99', '-screen', '0', '1024x768x24'], 
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        import time
+                        time.sleep(2)  # Attendre que Xvfb démarre
+                        print("✅ Xvfb démarré sur :99")
+                except Exception as e:
+                    print(f"⚠️  Impossible de démarrer Xvfb: {e}")
+            else:
+                print("💡 Xvfb non disponible. Installez avec: sudo apt-get install xvfb")
+        except ImportError:
+            pass
+
+# Configurer l'environnement avant d'importer Pyglet
+setup_display_environment()
+
+try:
+    import pyglet, websockets
+    from pyglet.gl import *
+    from pyglet import image
+    from pyglet.graphics import TextureGroup
+    from pyglet.window import key, mouse
+    PYGLET_AVAILABLE = True
+except Exception as e:
+    print(f"⚠️  Erreur lors de l'import Pyglet: {e}")
+    print("🔧 Fonctionnement en mode dégradé sans rendu graphique")
+    PYGLET_AVAILABLE = False
+    
+    # Définir des classes stub pour la compatibilité
+    class DummyTextureGroup:
+        pass
+    
+    class DummyImage:
+        def load(self, path):
+            return self
+        def get_texture(self):
+            return None
+    
+    TextureGroup = DummyTextureGroup
+    image = DummyImage()
 
 # OpenGL constants fallback
-try:
-    GL_FOG
-except NameError:
-    from OpenGL.GL import (GL_FOG, GL_FOG_COLOR, GL_FOG_HINT, GL_DONT_CARE,
-                          GL_FOG_MODE, GL_LINEAR, GL_FOG_START, GL_FOG_END,
-                          GL_QUADS, GL_DEPTH_TEST, GL_PROJECTION, GL_MODELVIEW,
-                          GL_FRONT_AND_BACK, GL_LINE, GL_FILL, GL_LINES,
-                          GL_CULL_FACE, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-                          GL_NEAREST, GL_TEXTURE_MAG_FILTER, GLfloat)
+if PYGLET_AVAILABLE:
+    try:
+        GL_FOG
+    except NameError:
+        from OpenGL.GL import (GL_FOG, GL_FOG_COLOR, GL_FOG_HINT, GL_DONT_CARE,
+                              GL_FOG_MODE, GL_LINEAR, GL_FOG_START, GL_FOG_END,
+                              GL_QUADS, GL_DEPTH_TEST, GL_PROJECTION, GL_MODELVIEW,
+                              GL_FRONT_AND_BACK, GL_LINE, GL_FILL, GL_LINES,
+                              GL_CULL_FACE, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                              GL_NEAREST, GL_TEXTURE_MAG_FILTER, GLfloat)
+else:
+    # Définir des constantes stub pour le mode dégradé
+    GL_FOG = GL_FOG_COLOR = GL_FOG_HINT = GL_DONT_CARE = 0
+    GL_FOG_MODE = GL_LINEAR = GL_FOG_START = GL_FOG_END = 0
+    GL_QUADS = GL_DEPTH_TEST = GL_PROJECTION = GL_MODELVIEW = 0
+    GL_FRONT_AND_BACK = GL_LINE = GL_FILL = GL_LINES = 0
+    GL_CULL_FACE = GL_TEXTURE_2D = GL_TEXTURE_MIN_FILTER = 0
+    GL_NEAREST = GL_TEXTURE_MAG_FILTER = 0
+    GLfloat = float
 
 # Project imports
 from protocol import *
@@ -253,12 +316,41 @@ class EnhancedClientModel:
     """Modèle client simplifié avec gestion optimisée des blocs."""
 
     def __init__(self):
-        self.batch = pyglet.graphics.Batch()
+        if PYGLET_AVAILABLE:
+            self.batch = pyglet.graphics.Batch()
+        else:
+            self.batch = None
+        self.group = self._load_texture_group()
+
+    def _load_texture_group(self):
+        """Charge le groupe de texture avec gestion d'erreur améliorée."""
+        if not PYGLET_AVAILABLE:
+            print("⚠️  Pyglet non disponible - mode sans texture")
+            return None
+            
         try:
-            self.group = TextureGroup(image.load(TEXTURE_PATH).get_texture())
+            # Vérifier si le fichier texture existe
+            if not os.path.exists(TEXTURE_PATH):
+                print(f"⚠️  Fichier texture manquant: {TEXTURE_PATH}")
+                return None
+            
+            # Essayer de charger la texture
+            texture_image = image.load(TEXTURE_PATH)
+            return TextureGroup(texture_image.get_texture())
+            
         except Exception as e:
-            print(f"Erreur texture: {e}")
-            self.group = None
+            error_msg = str(e)
+            if "Cannot connect to" in error_msg or "NoSuchDisplayException" in error_msg:
+                print(f"⚠️  Pas d'environnement graphique disponible pour charger les textures")
+                print(f"💡 Utilisez 'xvfb-run python3 {sys.argv[0]}' pour un affichage virtuel")
+            elif "GLU" in error_msg or "OpenGL" in error_msg:
+                print(f"⚠️  Bibliothèques OpenGL manquantes")
+                print(f"💡 Installez: sudo apt-get install libglu1-mesa libglu1-mesa-dev")
+            else:
+                print(f"⚠️  Erreur lors du chargement de la texture: {e}")
+            
+            print(f"🔧 Fonctionnement en mode sans texture")
+            return None
 
         # Données du monde
         self.world, self.shown, self._shown, self.sectors = {}, {}, {}, {}
@@ -312,7 +404,7 @@ class EnhancedClientModel:
     def show_block(self, position, immediate=True):
         """Affiche un bloc."""
         block_type = self.world.get(position)
-        if not (block_type and position not in self.shown and self.group):
+        if not (block_type and position not in self.shown and self.group and self.batch):
             return
 
         x, y, z = position
