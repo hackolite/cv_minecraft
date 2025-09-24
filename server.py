@@ -516,6 +516,9 @@ class MinecraftServer:
         """Broadcast updated player list to all clients."""
         # Include both connected players and RTSP users in the player list
         all_players = list(self.players.values())
+        self.logger.info(f"Broadcasting player list with {len(all_players)} players")
+        for player in all_players:
+            self.logger.info(f"  - {player.name} (RTSP: {player.is_rtsp_user}, Connected: {player.is_connected})")
         message = create_player_list_message(all_players)
         await self.broadcast_message(message)
 

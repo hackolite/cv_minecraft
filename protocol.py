@@ -214,6 +214,16 @@ def create_player_update_message(player: PlayerState) -> Message:
 
 def create_player_list_message(players: List[PlayerState]) -> Message:
     """Create a player list message."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    player_dicts = []
+    for player in players:
+        player_dict = player.to_dict()
+        player_dicts.append(player_dict)
+        logger.info(f"Creating player list entry: {player.name} -> {player_dict}")
+    
+    logger.info(f"Player list message created with {len(player_dicts)} players")
     return Message(MessageType.PLAYER_LIST, {
-        "players": [player.to_dict() for player in players]
+        "players": player_dicts
     })

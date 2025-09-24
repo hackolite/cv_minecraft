@@ -78,7 +78,7 @@ async def test_server_with_rtsp_users():
                 logging.info(f"Reçu <- {data['type']}")
                 
                 if data["type"] == "player_list":
-                    players = data.get("players", [])
+                    players = data.get("data", {}).get("players", [])
                     rtsp_users = [p for p in players if p.get("is_rtsp_user", False)]
                     
                     logging.info(f"Joueurs trouvés: {len(players)}")
