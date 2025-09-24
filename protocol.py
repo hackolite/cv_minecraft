@@ -105,14 +105,17 @@ class Cube:
 class PlayerState(Cube):
     """Represents a player's state in the game world. Extends Cube for unified handling."""
 
-    def __init__(self, player_id: str, position: Tuple[float, float, float],
-                 rotation: Tuple[float, float], name: Optional[str] = None):
-        super().__init__(player_id, position, rotation, size=0.5)
-        self.name = name or f"Player_{player_id[:8]}"
+    def __init__(self, id: str, position: Tuple[float, float, float],
+                 rotation: Tuple[float, float], name: Optional[str] = None, 
+                 is_connected: bool = True, is_rtsp_user: bool = False):
+        super().__init__(id, position, rotation, size=0.5)
+        self.name = name or f"Player_{id[:8]}"
         self.flying = False
         self.sprinting = False
         self.on_ground = False
         self.is_local = False  # Flag to identify local player
+        self.is_connected = is_connected  # Flag for connected WebSocket clients
+        self.is_rtsp_user = is_rtsp_user  # Flag for RTSP users
         self.last_move_time = 0.0  # Timestamp of last voluntary movement
 
     def to_dict(self) -> Dict[str, Any]:
@@ -126,13 +129,16 @@ class PlayerState(Cube):
             "sprinting": self.sprinting,
             "velocity": self.velocity,
             "on_ground": self.on_ground,
-            "size": self.size
+            "size": self.size,
+            "is_connected": self.is_connected,
+            "is_rtsp_user": self.is_rtsp_user
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'PlayerState':
         """Create from dictionary."""
-        player = cls(data["id"], tuple(data["position"]), tuple(data["rotation"]), data.get("name"))
+        player = cls(data["id"], tuple(data["position"]), tuple(data["rotation"]), 
+                    data.get("name"), data.get("is_connected", True), data.get("is_rtsp_user", False))
         player.flying = data.get("flying", False)
         player.sprinting = data.get("sprinting", False)
         player.size = data.get("size", 0.5)
@@ -208,6 +214,16 @@ def create_player_update_message(player: PlayerState) -> Message:
 
 def create_player_list_message(players: List[PlayerState]) -> Message:
     """Create a player list message."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    player_dicts = []
+    for player in players:
+        player_dict = player.to_dict()
+        player_dicts.append(player_dict)
+        logger.info(f"Creating player list entry: {player.name} -> {player_dict}")
+    
+    logger.info(f"Player list message created with {len(player_dicts)} players")
     return Message(MessageType.PLAYER_LIST, {
-        "players": [player.to_dict() for player in players]
+        "players": player_dicts
     })

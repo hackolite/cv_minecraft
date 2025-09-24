@@ -22,6 +22,7 @@ from minecraft_physics import (
     PLAYER_WIDTH, PLAYER_HEIGHT, GRAVITY, TERMINAL_VELOCITY, JUMP_VELOCITY,
     unified_check_collision, unified_check_player_collision
 )
+from user_manager import user_manager, RTSPUser
 
 # ---------- Constants ----------
 SECTOR_SIZE = 16
@@ -298,10 +299,35 @@ class MinecraftServer:
         self.world = GameWorld()
         self.clients: Dict[str, websockets.WebSocketServerProtocol] = {}
         self.players: Dict[str, PlayerState] = {}
+        self.rtsp_users: Dict[str, RTSPUser] = {}
         self.running = False
         self.logger = logging.getLogger(__name__)
         # Physics tick timing
         self.last_physics_update = time.time()
+        
+        # Initialiser les utilisateurs RTSP au démarrage
+        self._initialize_rtsp_users()
+
+    def _initialize_rtsp_users(self):
+        """Initialise les utilisateurs RTSP au démarrage du serveur."""
+        try:
+            created_users = user_manager.create_startup_users()
+            for user in created_users:
+                # Créer un PlayerState pour chaque utilisateur RTSP
+                player_state = PlayerState(
+                    id=user.id,
+                    name=user.name,
+                    position=user.position,
+                    rotation=user.rotation,
+                    is_connected=False,  # RTSP users ne sont pas des connexions WebSocket
+                    is_rtsp_user=True
+                )
+                self.players[user.id] = player_state
+                self.rtsp_users[user.id] = user
+                
+            self.logger.info(f"Initialisé {len(created_users)} utilisateurs RTSP")
+        except Exception as e:
+            self.logger.error(f"Erreur lors de l'initialisation des utilisateurs RTSP: {e}")
 
     def _check_ground_collision(self, position: Tuple[float, float, float]) -> bool:
         """Check ground collision using unified collision system."""
@@ -412,7 +438,8 @@ class MinecraftServer:
         """Register a new client connection."""
         player_id = str(uuid.uuid4())
         self.clients[player_id] = websocket
-        self.players[player_id] = PlayerState(player_id, DEFAULT_SPAWN_POSITION, (0, 0))
+        # Create a new connected player (not overwriting RTSP users)
+        self.players[player_id] = PlayerState(player_id, DEFAULT_SPAWN_POSITION, (0, 0), is_connected=True, is_rtsp_user=False)
         self.logger.info(f"Player {player_id} connected from {websocket.remote_address}")
         return player_id
 
@@ -420,8 +447,10 @@ class MinecraftServer:
         """Unregister a client connection and clean up."""
         if player_id in self.clients:
             self.clients.pop(player_id, None)
-            player = self.players.pop(player_id, None)
-            if player:
+            # Only remove connected players, not RTSP users
+            player = self.players.get(player_id)
+            if player and not player.is_rtsp_user:
+                self.players.pop(player_id, None)
                 self.logger.info(f"Player {player.name} ({player_id}) disconnected")
                 await self.broadcast_player_list()
 
@@ -485,7 +514,12 @@ class MinecraftServer:
 
     async def broadcast_player_list(self):
         """Broadcast updated player list to all clients."""
-        message = create_player_list_message(list(self.players.values()))
+        # Include both connected players and RTSP users in the player list
+        all_players = list(self.players.values())
+        self.logger.info(f"Broadcasting player list with {len(all_players)} players")
+        for player in all_players:
+            self.logger.info(f"  - {player.name} (RTSP: {player.is_rtsp_user}, Connected: {player.is_connected})")
+        message = create_player_list_message(all_players)
         await self.broadcast_message(message)
 
     async def handle_client_message(self, player_id: str, message: Message):
@@ -751,6 +785,13 @@ class MinecraftServer:
         self.logger.info(f"Starting Minecraft server on {self.host}:{self.port}")
         
         try:
+            # Start RTSP servers for all users 
+            self.logger.info("Démarrage des serveurs RTSP...")
+            await user_manager.start_rtsp_servers()
+            rtsp_urls = user_manager.get_rtsp_urls()
+            for name, url in rtsp_urls.items():
+                self.logger.info(f"Serveur RTSP actif - {name}: {url}")
+            
             # Start physics update loop
             physics_task = asyncio.create_task(self._physics_update_loop())
             
@@ -764,6 +805,8 @@ class MinecraftServer:
             self.logger.error(f"Server error: {e}")
         finally:
             self.running = False
+            # Stop RTSP servers
+            await user_manager.stop_rtsp_servers()
             raise
 
     def stop_server(self):

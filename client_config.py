@@ -68,6 +68,17 @@ class ClientConfig:
             "movement_speed": 5.0,
             "jump_speed": 8.0,
             "flying_speed": 15.0
+        },
+        
+        # Configuration RTSP / RTSP configuration
+        "rtsp": {
+            "enabled": True,
+            "host": "localhost",
+            "base_port": 8554,
+            "resolution": "1280x720",
+            "fps": 30,
+            "bitrate": 2000000,
+            "auto_start_users": True
         }
     }
     
@@ -162,6 +173,22 @@ class ClientConfig:
     def is_azerty_layout(self) -> bool:
         """Vérifie si le layout clavier est AZERTY."""
         return self.get("controls", "keyboard_layout", "azerty").lower() == "azerty"
+    
+    def get_rtsp_config(self) -> Dict[str, Any]:
+        """Retourne la configuration RTSP."""
+        return self.get("rtsp", default={
+            "enabled": True,
+            "host": "localhost", 
+            "base_port": 8554,
+            "resolution": "1280x720",
+            "fps": 30,
+            "bitrate": 2000000,
+            "auto_start_users": True
+        })
+    
+    def is_rtsp_enabled(self) -> bool:
+        """Vérifie si le streaming RTSP est activé."""
+        return self.get("rtsp", "enabled", True)
     
     def get_movement_keys(self) -> Dict[str, str]:
         """Retourne les touches de mouvement selon le layout clavier."""
