@@ -50,7 +50,7 @@ SPRINTING_SPEED = 5.612     # Blocks per second
 FLYING_SPEED = 10.89        # Blocks per second
 
 # Collision constants
-COLLISION_EPSILON = 0.001   # Small value for floating point precision
+COLLISION_EPSILON = 0.0001   # Small value for floating point precision (reduced to fix edge cases)
 STEP_HEIGHT = 0.5625        # Maximum step up height (9/16 blocks)
 GROUND_TOLERANCE = 0.05     # Distance to consider "on ground"
 
