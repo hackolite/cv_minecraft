@@ -579,7 +579,7 @@ class UnifiedCollisionManager:
                   if (block_x, block_y, block_z) in self.world_blocks:
                       block_type = self.world_blocks[(block_x, block_y, block_z)]
                       if block_type != "air":
-                          safe_x = float(block_x + 1) + player_half_width + clearance
+                          safe_x = float(block_x) + player_half_width + clearance + COLLISION_EPSILON * 10
                           safe_x = min(safe_x, old_x)
                           break
       
@@ -607,7 +607,7 @@ class UnifiedCollisionManager:
                       if (block_x, block_y, block_z) in self.world_blocks:
                           block_type = self.world_blocks[(block_x, block_y, block_z)]
                           if block_type != "air":
-                              safe_z = float(block_z + 1) + player_half_width + clearance
+                              safe_z = float(block_z) + player_half_width + clearance + COLLISION_EPSILON * 10
                               safe_z = min(safe_z, old_z)
                               break
           
