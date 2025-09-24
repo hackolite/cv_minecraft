@@ -6,8 +6,8 @@
         "connection_timeout": 10
     },
     "graphics": {
-        "window_width": 1280,
-        "window_height": 720,
+        "window_width": 1850,
+        "window_height": 1016,
         "fullscreen": false,
         "vsync": true,
         "fov": 70.0,
