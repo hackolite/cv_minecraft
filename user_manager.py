@@ -6,6 +6,7 @@ User Manager with RTSP servers for vision streaming
 import asyncio
 import json
 import logging
+import socket
 import uuid
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
@@ -203,7 +204,7 @@ class UserManager:
 
 
 class RTSPServer:
-    """Serveur RTSP simplifié pour streaming de la vision d'un utilisateur."""
+    """Serveur RTSP pour streaming de la vision d'un utilisateur."""
     
     def __init__(self, user: RTSPUser):
         """
@@ -215,6 +216,8 @@ class RTSPServer:
         self.user = user
         self.is_running = False
         self.logger = logging.getLogger(f"{__name__}.{user.name}")
+        self.server_socket = None
+        self.server_task = None
         
     async def start(self) -> None:
         """Démarre le serveur RTSP."""
@@ -222,13 +225,17 @@ class RTSPServer:
             return
             
         try:
-            # Simulation du démarrage d'un serveur RTSP
-            # Dans une implémentation réelle, ceci démarrerait un vrai serveur RTSP
-            self.is_running = True
-            self.logger.info(f"Serveur RTSP simulé démarré sur {self.user.rtsp_url}")
+            # Créer le socket serveur
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.server_socket.bind(('localhost', self.user.rtsp_port))
+            self.server_socket.listen(5)
             
-            # Démarrage du stream de vision en arrière-plan
-            asyncio.create_task(self._stream_vision())
+            self.is_running = True
+            self.logger.info(f"Serveur RTSP démarré sur {self.user.rtsp_url}")
+            
+            # Démarrer l'acceptation des connexions en arrière-plan avec executor
+            self.server_task = asyncio.create_task(self._run_server())
             
         except Exception as e:
             self.logger.error(f"Erreur lors du démarrage du serveur RTSP: {e}")
@@ -240,22 +247,197 @@ class RTSPServer:
             return
             
         self.is_running = False
+        
+        # Annuler la tâche serveur
+        if self.server_task:
+            self.server_task.cancel()
+            try:
+                await self.server_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Fermer le socket serveur
+        if self.server_socket:
+            try:
+                self.server_socket.close()
+            except:
+                pass
+                
         self.logger.info(f"Serveur RTSP arrêté pour {self.user.name}")
     
-    async def _stream_vision(self) -> None:
-        """Simule le streaming de la vision de l'utilisateur."""
-        while self.is_running:
+    async def _run_server(self):
+        """Exécute le serveur RTSP dans un thread."""
+        import threading
+        import concurrent.futures
+        
+        def server_thread():
+            """Thread qui fait tourner le serveur RTSP synchrone."""
+            while self.is_running:
+                try:
+                    self.server_socket.settimeout(1.0)  # Timeout pour vérifier is_running
+                    try:
+                        client_socket, addr = self.server_socket.accept()
+                        self.logger.info(f"Connexion RTSP de {addr}")
+                        
+                        # Créer un thread pour gérer ce client
+                        client_thread = threading.Thread(
+                            target=self._handle_client_sync,
+                            args=(client_socket, addr),
+                            daemon=True
+                        )
+                        client_thread.start()
+                        
+                    except socket.timeout:
+                        continue  # Timeout normal, continuer la boucle
+                        
+                except Exception as e:
+                    if self.is_running:
+                        self.logger.error(f"Erreur serveur RTSP: {e}")
+                    break
+        
+        # Exécuter le serveur dans un thread
+        loop = asyncio.get_event_loop()
+        with concurrent.futures.ThreadPoolExecutor() as executor:
             try:
-                # Simulation de la capture et diffusion de la vision
-                # Dans une implémentation réelle, ceci capturerait le rendu du joueur
-                # et le diffuserait via RTSP
-                
-                # Pour l'instant, nous simulons avec un simple log périodique
-                await asyncio.sleep(1.0)  # 1 FPS pour la simulation
-                
-            except Exception as e:
-                self.logger.error(f"Erreur dans le stream de vision: {e}")
-                break
+                await loop.run_in_executor(executor, server_thread)
+            except asyncio.CancelledError:
+                pass
+    
+    def _handle_client_sync(self, client_socket, addr):
+        """Gère un client RTSP connecté (version synchrone)."""
+        try:
+            client_socket.settimeout(30.0)  # Timeout pour les opérations client
+            
+            while self.is_running:
+                try:
+                    # Recevoir la requête du client
+                    data = client_socket.recv(4096)
+                    if not data:
+                        break
+                        
+                    request = data.decode('utf-8', errors='ignore')
+                    self.logger.info(f"Requête RTSP de {addr}: {request.split()[0]} {request.split()[1] if len(request.split()) > 1 else ''}")
+                    
+                    # Parser la requête RTSP
+                    lines = request.strip().split('\r\n')
+                    if not lines:
+                        continue
+                        
+                    request_line = lines[0]
+                    headers = {}
+                    
+                    for line in lines[1:]:
+                        if ':' in line:
+                            key, value = line.split(':', 1)
+                            headers[key.strip().lower()] = value.strip()
+                    
+                    # Extraire le CSeq pour la réponse
+                    cseq = headers.get('cseq', '1')
+                    
+                    # Gérer différents types de requêtes RTSP
+                    if request_line.startswith('OPTIONS'):
+                        response = self._create_options_response(cseq)
+                    elif request_line.startswith('DESCRIBE'):
+                        response = self._create_describe_response(cseq)
+                    elif request_line.startswith('SETUP'):
+                        response = self._create_setup_response(cseq, headers)
+                    elif request_line.startswith('PLAY'):
+                        response = self._create_play_response(cseq)
+                    elif request_line.startswith('TEARDOWN'):
+                        response = self._create_teardown_response(cseq)
+                        client_socket.send(response.encode())
+                        break
+                    else:
+                        response = self._create_error_response(cseq, '501 Not Implemented')
+                    
+                    # Envoyer la réponse
+                    client_socket.send(response.encode())
+                    self.logger.debug(f"Réponse envoyée à {addr}")
+                    
+                except socket.timeout:
+                    # Timeout client
+                    break
+                except Exception as e:
+                    self.logger.error(f"Erreur lors du traitement de la requête de {addr}: {e}")
+                    break
+                    
+        except Exception as e:
+            self.logger.error(f"Erreur dans la gestion du client {addr}: {e}")
+        finally:
+            try:
+                client_socket.close()
+            except:
+                pass
+            self.logger.info(f"Client RTSP {addr} déconnecté")
+    
+    def _create_options_response(self, cseq):
+        """Crée une réponse OPTIONS."""
+        return (
+            f"RTSP/1.0 200 OK\r\n"
+            f"CSeq: {cseq}\r\n"
+            f"Public: OPTIONS, DESCRIBE, SETUP, TEARDOWN, PLAY, PAUSE\r\n"
+            f"\r\n"
+        )
+    
+    def _create_describe_response(self, cseq):
+        """Crée une réponse DESCRIBE avec SDP."""
+        sdp_content = (
+            f"v=0\r\n"
+            f"o=- 123456 654321 IN IP4 localhost\r\n"
+            f"s={self.user.name} Stream\r\n"
+            f"t=0 0\r\n"
+            f"m=video 0 RTP/AVP 96\r\n"
+            f"a=rtpmap:96 H264/90000\r\n"
+            f"a=control:track1\r\n"
+        )
+        
+        return (
+            f"RTSP/1.0 200 OK\r\n"
+            f"CSeq: {cseq}\r\n"
+            f"Content-Type: application/sdp\r\n"
+            f"Content-Length: {len(sdp_content)}\r\n"
+            f"\r\n"
+            f"{sdp_content}"
+        )
+    
+    def _create_setup_response(self, cseq, headers):
+        """Crée une réponse SETUP."""
+        # Générer un ID de session simple
+        session_id = f"session_{self.user.rtsp_port}"
+        
+        return (
+            f"RTSP/1.0 200 OK\r\n"
+            f"CSeq: {cseq}\r\n"
+            f"Session: {session_id}\r\n"
+            f"Transport: RTP/AVP;unicast;client_port=8000-8001;server_port=8002-8003\r\n"
+            f"\r\n"
+        )
+    
+    def _create_play_response(self, cseq):
+        """Crée une réponse PLAY."""
+        return (
+            f"RTSP/1.0 200 OK\r\n"
+            f"CSeq: {cseq}\r\n"
+            f"Range: npt=0.000-\r\n"
+            f"RTP-Info: url=rtsp://localhost:{self.user.rtsp_port}/stream/track1\r\n"
+            f"\r\n"
+        )
+    
+    def _create_teardown_response(self, cseq):
+        """Crée une réponse TEARDOWN."""
+        return (
+            f"RTSP/1.0 200 OK\r\n"
+            f"CSeq: {cseq}\r\n"
+            f"\r\n"
+        )
+    
+    def _create_error_response(self, cseq, error):
+        """Crée une réponse d'erreur."""
+        return (
+            f"RTSP/1.0 {error}\r\n"
+            f"CSeq: {cseq}\r\n"
+            f"\r\n"
+        )
 
 
 # Instance globale du gestionnaire d'utilisateurs
