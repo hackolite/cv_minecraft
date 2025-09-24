@@ -49,7 +49,8 @@ except NameError:
                           GL_QUADS, GL_DEPTH_TEST, GL_PROJECTION, GL_MODELVIEW,
                           GL_FRONT_AND_BACK, GL_LINE, GL_FILL, GL_LINES,
                           GL_CULL_FACE, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-                          GL_NEAREST, GL_TEXTURE_MAG_FILTER, GLfloat)
+                          GL_NEAREST, GL_TEXTURE_MAG_FILTER, GLfloat,
+                          glCullFace, glFrontFace, GL_BACK, GL_CCW)
 
 # Project imports
 from protocol import *
@@ -1133,7 +1134,12 @@ Statut: {connection_status}"""
 def setup_opengl():
     """Configuration OpenGL de base."""
     glClearColor(0.5, 0.69, 1.0, 1)  # Ciel bleu
+    
+    # Configuration du face culling pour éviter de voir à l'intérieur des cubes
     glEnable(GL_CULL_FACE)
+    glCullFace(GL_BACK)  # Cull back faces (intérieur des cubes)
+    glFrontFace(GL_CCW)  # Counter-clockwise winding = front face
+    
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
 
