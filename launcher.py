@@ -158,14 +158,22 @@ def main():
         return minecraft_client_fr.main()
         
     except ImportError as e:
-        if "GLU" in str(e) or "OpenGL" in str(e):
-            print("❌ Erreur OpenGL: Environnement graphique non disponible")
-            print("💡 Ce programme nécessite un environnement graphique avec OpenGL")
-            print("💡 Sur un serveur, utilisez Xvfb ou un bureau virtuel")
-            return 1
+        error_str = str(e)
+        if "GLU" in error_str or "OpenGL" in error_str:
+            print("❌ Erreur OpenGL: Bibliothèques graphiques manquantes")
+            print("💡 Installez les bibliothèques OpenGL avec:")
+            print("   sudo apt-get install libglu1-mesa libglu1-mesa-dev")
+        elif "Cannot connect to" in error_str or "NoSuchDisplayException" in error_str:
+            print("❌ Erreur d'affichage: Aucun environnement graphique disponible")
+            print("💡 Utilisez un des solutions suivantes:")
+            print("   1. xvfb-run python3 launcher.py  # Affichage virtuel")
+            print("   2. DISPLAY=:0 python3 launcher.py  # Si X11 disponible")
+            print("   3. Lancez depuis un bureau graphique")
         else:
             print(f"❌ Erreur d'import: {e}")
-            return 1
+            print("💡 Vérifiez que toutes les dépendances sont installées:")
+            print("   pip install -r requirements.txt")
+        return 1
     except Exception as e:
         print(f"❌ Erreur lors du lancement: {e}")
         import traceback
