@@ -320,6 +320,13 @@ class EnhancedClientModel:
             self.batch = pyglet.graphics.Batch()
         else:
             self.batch = None
+            
+        # Données du monde - initialiser avant tout autre traitement
+        self.world, self.shown, self._shown, self.sectors = {}, {}, {}, {}
+        self.queue = deque()
+        self.other_players = {}
+        self.world_size, self.spawn_position = 128, [30, 50, 80]
+        
         self.group = self._load_texture_group()
 
     def _load_texture_group(self):
@@ -351,12 +358,6 @@ class EnhancedClientModel:
             
             print(f"🔧 Fonctionnement en mode sans texture")
             return None
-
-        # Données du monde
-        self.world, self.shown, self._shown, self.sectors = {}, {}, {}, {}
-        self.queue = deque()
-        self.other_players = {}
-        self.world_size, self.spawn_position = 128, [30, 50, 80]
 
     def load_world_data(self, world_data):
         """Charge les données initiales du monde depuis le serveur."""
