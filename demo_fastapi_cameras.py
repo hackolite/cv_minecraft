@@ -97,8 +97,31 @@ async def main():
         print("\n🚀 Démarrage du serveur FastAPI...")
         print("Accédez à http://localhost:8080 pour voir l'interface web")
         print("Appuyez sur Ctrl+C pour arrêter")
+        print()
         
-        await fastapi_camera_server.start_server()
+        # Afficher les informations de diagnostic
+        print("💡 En cas de problème de connexion:")
+        print("   - Utilisez: python server_health_check.py")
+        print("   - Vérifiez les logs ci-dessus pour des erreurs")
+        print("   - Le serveur peut prendre quelques secondes à démarrer")
+        print()
+        
+        # Démarrer le serveur avec gestion d'erreur améliorée
+        try:
+            await fastapi_camera_server.start_server()
+        except Exception as e:
+            print(f"\n❌ Erreur lors du démarrage du serveur: {e}")
+            print("\n🔧 Diagnostic automatique:")
+            
+            # Importer et exécuter le diagnostic
+            try:
+                import server_health_check
+                server_health_check.main()
+            except Exception:
+                print("   Impossible d'exécuter le diagnostic automatique")
+                print("   Exécutez manuellement: python server_health_check.py")
+            
+            raise
         
     except KeyboardInterrupt:
         print("\n⏹️  Arrêt du serveur...")

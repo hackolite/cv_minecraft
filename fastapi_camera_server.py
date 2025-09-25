@@ -12,9 +12,10 @@ import logging
 import time
 import io
 import base64
+import socket
 from typing import Dict, List, Optional
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -52,6 +53,20 @@ class FastAPICameraServer:
         async def home():
             """Page d'accueil avec interface web."""
             return HTMLResponse(content=self.get_web_interface())
+        
+        @self.app.get("/health")
+        async def health_check():
+            """Health check endpoint pour vérifier l'état du serveur."""
+            cameras = camera_manager.get_all_cameras()
+            active_cameras = sum(1 for camera in cameras if camera.is_capturing)
+            
+            return JSONResponse({
+                "status": "healthy",
+                "server": f"http://{self.host}:{self.port}",
+                "cameras_total": len(cameras),
+                "cameras_active": active_cameras,
+                "timestamp": time.time()
+            })
         
         @self.app.get("/cameras", response_model=List[CameraInfo])
         async def list_cameras():
@@ -275,19 +290,71 @@ class FastAPICameraServer:
 </html>
         """
     
+    def is_port_available(self, host: str, port: int) -> bool:
+        """Vérifie si un port est disponible."""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                result = sock.connect_ex((host, port))
+                return result != 0
+        except Exception as e:
+            self.logger.warning(f"Erreur lors de la vérification du port {port}: {e}")
+            return False
+    
     async def start_server(self):
-        """Démarre le serveur FastAPI."""
+        """Démarre le serveur FastAPI avec vérifications et retry logic."""
         import uvicorn
+        
+        # Vérifier la disponibilité du port
+        if not self.is_port_available(self.host, self.port):
+            self.logger.error(f"Port {self.port} is already in use on {self.host}. Trying to find available port...")
+            
+            # Essayer de trouver un port disponible
+            original_port = self.port
+            for port_offset in range(1, 11):  # Essayer jusqu'à 10 ports différents
+                new_port = original_port + port_offset
+                if self.is_port_available(self.host, new_port):
+                    self.logger.info(f"Found available port: {new_port}")
+                    self.port = new_port
+                    break
+            else:
+                raise Exception(f"Cannot find available port starting from {original_port}")
+        
         self.logger.info(f"Starting FastAPI Camera Server on http://{self.host}:{self.port}")
         
-        config = uvicorn.Config(
-            app=self.app,
-            host=self.host,
-            port=self.port,
-            log_level="info"
-        )
-        server = uvicorn.Server(config)
-        await server.serve()
+        try:
+            config = uvicorn.Config(
+                app=self.app,
+                host=self.host,
+                port=self.port,
+                log_level="info",
+                access_log=True
+            )
+            server = uvicorn.Server(config)
+            
+            # Démarrer le serveur
+            await server.serve()
+            
+        except Exception as e:
+            self.logger.error(f"Failed to start FastAPI server: {e}")
+            raise
+    
+    async def start_server_with_timeout(self, timeout: float = 30.0):
+        """Démarre le serveur avec un timeout."""
+        try:
+            await asyncio.wait_for(self.start_server(), timeout=timeout)
+        except asyncio.TimeoutError:
+            self.logger.error(f"Server startup timed out after {timeout} seconds")
+            raise Exception(f"Server startup timeout ({timeout}s)")
+    
+    def is_server_healthy(self) -> bool:
+        """Vérifie si le serveur est en bonne santé."""
+        try:
+            import requests
+            response = requests.get(f"http://{self.host}:{self.port}/health", timeout=5)
+            return response.status_code == 200
+        except Exception:
+            return False
     
     def set_world_model(self, world_model):
         """Définit le modèle du monde pour les caméras."""
