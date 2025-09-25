@@ -305,8 +305,77 @@ class MinecraftServer:
         # Physics tick timing
         self.last_physics_update = time.time()
         
+        # Create renderable world model for cameras
+        self.camera_world_model = None
+        self._create_camera_world_model()
+        
         # Initialiser les utilisateurs de caméras au démarrage
         self._initialize_camera_users()
+        
+    def _create_camera_world_model(self):
+        """Create a renderable world model for camera use."""
+        try:
+            from minecraft_client_fr import EnhancedClientModel
+            self.camera_world_model = EnhancedClientModel()
+            
+            # Load world data from GameWorld into the renderable model
+            world_data = self.world.get_world_data()
+            self.camera_world_model.load_world_data(world_data)
+            
+            # Load all blocks from GameWorld
+            self._sync_world_to_camera_model()
+            
+            self.logger.info("Created renderable camera world model")
+        except Exception as e:
+            self.logger.warning(f"Could not create full camera world model: {e}")
+            # Create a minimal world model that can still be used by cameras
+            try:
+                self.camera_world_model = self._create_minimal_world_model()
+                self.logger.info("Created minimal camera world model (no 3D rendering)")
+            except Exception as e2:
+                self.logger.error(f"Could not create any camera world model: {e2}")
+                self.camera_world_model = None
+                
+    def _create_minimal_world_model(self):
+        """Create a minimal world model for cameras when full rendering is not available."""
+        class MinimalWorldModel:
+            def __init__(self, game_world):
+                self.world = game_world.world.copy()  # Copy the blocks
+                self.batch = None  # No batch for minimal mode
+                self.other_players = {}
+                self.world_size = 128
+                self.spawn_position = [30, 50, 80]
+                
+            def add_block(self, position, block_type, immediate=True):
+                """Add block to minimal model."""
+                self.world[position] = block_type
+                
+            def remove_block(self, position, immediate=True):
+                """Remove block from minimal model."""
+                if position in self.world:
+                    del self.world[position]
+        
+        return MinimalWorldModel(self.world)
+            
+    def _sync_world_to_camera_model(self):
+        """Synchronize GameWorld blocks to camera world model."""
+        if not self.camera_world_model:
+            return
+            
+        try:
+            # Add all blocks from GameWorld to camera model
+            blocks_added = 0
+            for position, block_type in self.world.world.items():
+                if hasattr(self.camera_world_model, 'add_block'):
+                    self.camera_world_model.add_block(position, block_type, immediate=False)
+                else:
+                    # Fallback for minimal world model
+                    self.camera_world_model.world[position] = block_type
+                blocks_added += 1
+                
+            self.logger.info(f"Synchronized {blocks_added} blocks to camera world model")
+        except Exception as e:
+            self.logger.error(f"Error synchronizing world to camera model: {e}")
 
     def _initialize_camera_users(self):
         """Initialise les utilisateurs de caméras au démarrage du serveur."""
@@ -694,6 +763,17 @@ class MinecraftServer:
                 raise InvalidWorldDataError(f"Invalid block type: {block_type}")
                 
             if self.world.add_block(position, block_type):
+                # Also update the camera world model
+                if self.camera_world_model:
+                    try:
+                        if hasattr(self.camera_world_model, 'add_block'):
+                            self.camera_world_model.add_block(position, block_type, immediate=True)
+                        else:
+                            # Fallback for minimal world model
+                            self.camera_world_model.world[position] = block_type
+                    except Exception as e:
+                        self.logger.warning(f"Failed to update camera world model: {e}")
+                
                 update_message = create_world_update_message([
                     BlockUpdate(position, block_type, player_id)
                 ])
@@ -717,6 +797,18 @@ class MinecraftServer:
                 raise InvalidWorldDataError("Invalid position format")
                 
             if self.world.remove_block(position):
+                # Also update the camera world model
+                if self.camera_world_model:
+                    try:
+                        if hasattr(self.camera_world_model, 'remove_block'):
+                            self.camera_world_model.remove_block(position, immediate=True)
+                        else:
+                            # Fallback for minimal world model
+                            if position in self.camera_world_model.world:
+                                del self.camera_world_model.world[position]
+                    except Exception as e:
+                        self.logger.warning(f"Failed to update camera world model: {e}")
+                
                 update_message = create_world_update_message([
                     BlockUpdate(position, BlockType.AIR, player_id)
                 ])
@@ -786,7 +878,12 @@ class MinecraftServer:
         
         try:
             # Configurer le modèle du monde pour les caméras
-            user_manager.set_world_model(self.world)
+            # Use the renderable camera world model instead of raw GameWorld
+            if self.camera_world_model:
+                user_manager.set_world_model(self.camera_world_model)
+                self.logger.info("Set renderable world model for cameras")
+            else:
+                self.logger.warning("No camera world model available - cameras will show test frames")
             
             # Start camera server for all users 
             self.logger.info("Démarrage du serveur de caméras...")
