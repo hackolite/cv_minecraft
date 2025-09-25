@@ -22,10 +22,16 @@ class CameraUser:
     position: Tuple[float, float, float]
     rotation: Tuple[float, float]
     is_active: bool = True
+    rtsp_port: int = 8554
     
     def to_dict(self) -> dict:
         """Convertit l'utilisateur en dictionnaire."""
         return asdict(self)
+    
+    @property
+    def rtsp_url(self) -> str:
+        """Retourne l'URL RTSP pour cet utilisateur."""
+        return f"rtsp://localhost:{self.rtsp_port}/stream"
 
 
 class UserManager:
@@ -48,20 +54,29 @@ class UserManager:
             "users": [
                 {
                     "name": "Observateur_1",
-                    "position": [30, 50, 80],
-                    "rotation": [0, 0]
+                    "position": [10, 70, 120],
+                    "rotation": [45, -30],
+                    "rtsp_port": 8554
                 },
                 {
                     "name": "Observateur_2", 
-                    "position": [50, 50, 60],
-                    "rotation": [90, 0]
+                    "position": [120, 70, 10],
+                    "rotation": [135, -30],
+                    "rtsp_port": 8555
                 },
                 {
                     "name": "Observateur_3",
-                    "position": [70, 50, 40],
-                    "rotation": [180, 0]
+                    "position": [120, 70, 120],
+                    "rotation": [225, -30],
+                    "rtsp_port": 8556
                 }
             ],
+            "rtsp_settings": {
+                "host": "localhost",
+                "resolution": "1280x720",
+                "fps": 30,
+                "bitrate": 2000000
+            },
             "camera_settings": {
                 "host": "localhost",
                 "port": 8080,
@@ -122,7 +137,8 @@ class UserManager:
                 id=user_id,
                 name=user_config["name"],
                 position=tuple(user_config.get("position", [0, 50, 0])),
-                rotation=tuple(user_config.get("rotation", [0, 0]))
+                rotation=tuple(user_config.get("rotation", [0, 0])),
+                rtsp_port=user_config.get("rtsp_port", 8554)
             )
             
             return user
@@ -249,6 +265,13 @@ class UserManager:
         # Arrêter toutes les caméras
         camera_manager.stop_all_cameras()
         self.logger.info("Serveur de caméras arrêté")
+    
+    def get_rtsp_urls(self) -> Dict[str, str]:
+        """Retourne les URLs RTSP de tous les utilisateurs actifs."""
+        urls = {}
+        for user in self.get_active_users():
+            urls[user.name] = user.rtsp_url
+        return urls
     
     def get_camera_urls(self) -> Dict[str, str]:
         """Retourne les URLs des caméras de tous les utilisateurs actifs."""
