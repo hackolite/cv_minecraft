@@ -9,7 +9,7 @@ import logging
 import time
 from observer_camera import camera_manager, ObserverCamera
 from rtsp_video_streamer import EnhancedRTSPServer
-from user_manager import RTSPUser
+from user_manager import CameraUser
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s - %(message)s")
 
@@ -56,13 +56,12 @@ async def test_enhanced_rtsp_server():
     logging.info("🧪 Test du serveur RTSP amélioré")
     
     # Créer un utilisateur RTSP test
-    test_user = RTSPUser(
+    test_user = CameraUser(
         id="test_user",
-        name="TestObserver",
-        rtsp_port=8558,  # Port différent pour éviter les conflits
-        rtsp_url="rtsp://localhost:8558/stream",
+        name="TestObserver", 
         position=(40.0, 60.0, 90.0),
-        rotation=(45.0, 0.0)
+        rotation=(45.0, 0.0),
+        rtsp_port=8558  # Port différent pour éviter les conflits
     )
     
     # Créer une caméra pour cet utilisateur
