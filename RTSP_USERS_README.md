@@ -36,20 +36,20 @@ Ce système permet la création automatique d'utilisateurs au démarrage du serv
         {
             "name": "Observateur_1",
             "rtsp_port": 8554,
-            "position": [30, 50, 80],
-            "rotation": [0, 0]
+            "position": [10, 70, 120],
+            "rotation": [45, -30]
         },
         {
             "name": "Observateur_2", 
             "rtsp_port": 8555,
-            "position": [50, 50, 60],
-            "rotation": [90, 0]
+            "position": [120, 70, 10],
+            "rotation": [135, -30]
         },
         {
             "name": "Observateur_3",
             "rtsp_port": 8556,
-            "position": [70, 50, 40],
-            "rotation": [180, 0]
+            "position": [120, 70, 120],
+            "rotation": [225, -30]
         }
     ],
     "rtsp_settings": {

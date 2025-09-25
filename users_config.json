@@ -2,42 +2,42 @@
     "users": [
         {
             "name": "Observateur_1",
-            "rtsp_port": 8554,
             "position": [
-                30,
-                50,
-                80
+                10,
+                70,
+                120
             ],
             "rotation": [
-                0,
-                0
-            ]
+                45,
+                -30
+            ],
+            "rtsp_port": 8554
         },
         {
             "name": "Observateur_2",
-            "rtsp_port": 8555,
             "position": [
-                50,
-                50,
-                60
+                120,
+                70,
+                10
             ],
             "rotation": [
-                90,
-                0
-            ]
+                135,
+                -30
+            ],
+            "rtsp_port": 8555
         },
         {
             "name": "Observateur_3",
-            "rtsp_port": 8556,
             "position": [
+                120,
                 70,
-                50,
-                40
+                120
             ],
             "rotation": [
-                180,
-                0
-            ]
+                225,
+                -30
+            ],
+            "rtsp_port": 8556
         }
     ],
     "rtsp_settings": {
@@ -45,5 +45,11 @@
         "resolution": "1280x720",
         "fps": 30,
         "bitrate": 2000000
+    },
+    "camera_settings": {
+        "host": "localhost",
+        "port": 8080,
+        "resolution": "640x480",
+        "fps": 30
     }
 }
