@@ -613,6 +613,13 @@ class MinecraftWindow(pyglet.window.Window):
             color=(0, 255, 255, 255)
         )
 
+        # Label de bloc actuel (permanent)
+        self.block_label = pyglet.text.Label(
+            '', font_name='Arial', font_size=16,
+            x=10, y=self.height - 85, anchor_x='left', anchor_y='top',
+            color=(0, 255, 0, 255)
+        )
+
         self.message_label = pyglet.text.Label(
             '', font_name='Arial', font_size=14,
             x=self.width // 2, y=self.height - 50, anchor_x='center', anchor_y='top',
@@ -809,9 +816,14 @@ class MinecraftWindow(pyglet.window.Window):
         x, y, z = self.position
         self.position_label.text = f"x:{x:.1f}, y:{y:.1f}, z:{z:.1f}"
 
+    def update_block_display(self):
+        """Met à jour l'affichage permanent du bloc actuel."""
+        self.block_label.text = f"Bloc: {self.block}"
+
     def update_ui(self):
         """Met à jour l'interface utilisateur."""
         self.update_position_display()
+        self.update_block_display()
 
         if not self.show_debug:
             self.label.text = ""
@@ -871,6 +883,24 @@ Statut: {connection_status}"""
             y_rot += dy * sensitivity * (-1 if invert_y else 1)
             y_rot = max(-90, min(90, y_rot))
             self.rotation = (x_rot, y_rot)
+
+    def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
+        """Gère la molette de la souris pour changer le type de bloc."""
+        if self.exclusive:
+            # Calculer le nouvel index dans l'inventaire
+            current_index = self.inventory.index(self.block) if self.block in self.inventory else 0
+            
+            # Scroll vers le haut (-1) pour aller au bloc suivant, vers le bas (+1) pour le précédent
+            if scroll_y > 0:  # Scroll vers le haut
+                new_index = (current_index + 1) % len(self.inventory)
+            elif scroll_y < 0:  # Scroll vers le bas
+                new_index = (current_index - 1) % len(self.inventory)
+            else:
+                return  # Pas de changement
+            
+            # Mettre à jour le bloc sélectionné
+            self.block = self.inventory[new_index]
+            self.show_message(f"Bloc sélectionné: {self.block}")
 
     def on_key_press(self, symbol, modifiers):
         """Gère les touches pressées."""
@@ -932,6 +962,8 @@ Statut: {connection_status}"""
     def on_resize(self, width, height):
         """Gère le redimensionnement de la fenêtre."""
         self.label.y = height - 10
+        self.position_label.y = height - 60
+        self.block_label.y = height - 85
         self.message_label.x = width // 2
         self.message_label.y = height - 50
 
@@ -1224,6 +1256,9 @@ Statut: {connection_status}"""
         """Dessine l'interface utilisateur."""
         # Position permanente (toujours affichée)
         self.position_label.draw()
+        
+        # Bloc actuel (toujours affiché)
+        self.block_label.draw()
 
         # Labels de debug
         if self.show_debug:
