@@ -313,8 +313,9 @@ async def main():
     camera_manager.create_camera("test_camera_2", (50, 50, 60), (90, 0))
     camera_manager.create_camera("test_camera_3", (70, 50, 40), (180, 0))
     
-    # Démarrer les caméras
-    camera_manager.start_all_cameras()
+    # Démarrer les caméras individuellement
+    for camera in camera_manager.get_all_cameras():
+        camera.start_capture(None)
     
     # Démarrer le serveur
     await fastapi_camera_server.start_server()

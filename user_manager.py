@@ -187,8 +187,13 @@ class UserManager:
             except Exception as e:
                 self.logger.error(f"Erreur lors de la création de la caméra pour {user.name}: {e}")
         
-        # Démarrer toutes les caméras
-        camera_manager.start_all_cameras()
+        # Démarrer toutes les caméras avec le modèle du monde (s'il existe)
+        if hasattr(camera_manager, 'world_model') and camera_manager.world_model:
+            camera_manager.start_all_cameras()
+        else:
+            # Démarrer les caméras même sans modèle du monde pour les tests
+            for camera in camera_manager.get_all_cameras():
+                camera.start_capture(None)
         
         # Le serveur FastAPI sera démarré séparément
         self.fastapi_server = fastapi_camera_server
