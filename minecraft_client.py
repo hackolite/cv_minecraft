@@ -33,8 +33,9 @@ import base64
 try:
     from minecraft_client_fr import (
         MinecraftWindow, EnhancedClientModel, AdvancedNetworkClient,
-        BlockType, setup_opengl, config
+        BlockType, setup_opengl
     )
+    from client_config import config
     import pyglet
     from pyglet.gl import *
     from PIL import Image
@@ -69,6 +70,14 @@ except ImportError as e:
     
     def setup_opengl():
         pass
+    
+    # Dummy config for headless mode
+    class DummyConfig:
+        def set(self, section, key, value):
+            pass
+        def get(self, section, key, default=None):
+            return default
+    config = DummyConfig()
 
 
 class MinecraftClient:

@@ -23,6 +23,7 @@ from minecraft_physics import (
     unified_check_collision, unified_check_player_collision
 )
 # from user_manager import user_manager, CameraUser  # Removed as per IMPLEMENTATION_SUMMARY.md
+from camera_user_manager import camera_manager
 
 # ---------- Constants ----------
 SECTOR_SIZE = 16
@@ -107,7 +108,7 @@ def validate_block_type(block_type: str) -> bool:
     allowed_types = {
         BlockType.GRASS, BlockType.SAND, BlockType.BRICK, 
         BlockType.STONE, BlockType.WOOD, BlockType.LEAF, 
-        BlockType.WATER, BlockType.AIR
+        BlockType.WATER, BlockType.AIR, BlockType.CAMERA
     }
     return block_type in allowed_types
 
@@ -760,6 +761,17 @@ class MinecraftServer:
                     except Exception as e:
                         self.logger.warning(f"Failed to update camera world model: {e}")
                 
+                # Check if this is a camera block and create a camera user
+                if block_type == BlockType.CAMERA:
+                    try:
+                        camera = camera_manager.create_camera_user(position)
+                        if camera:
+                            self.logger.info(f"Created camera user {camera.id} at {position} on port {camera.port}")
+                        else:
+                            self.logger.error(f"Failed to create camera user at {position}")
+                    except Exception as e:
+                        self.logger.error(f"Error creating camera user at {position}: {e}")
+                
                 update_message = create_world_update_message([
                     BlockUpdate(position, block_type, player_id)
                 ])
@@ -781,8 +793,22 @@ class MinecraftServer:
             
             if not isinstance(position, (list, tuple)) or len(position) != 3:
                 raise InvalidWorldDataError("Invalid position format")
+            
+            # Check if we're removing a camera block
+            block_type = self.world.world.get(position)
+            is_camera_block = (block_type == BlockType.CAMERA)
                 
             if self.world.remove_block(position):
+                # Remove camera user if this was a camera block
+                if is_camera_block:
+                    try:
+                        if camera_manager.remove_camera_user(position):
+                            self.logger.info(f"Removed camera user at {position}")
+                        else:
+                            self.logger.warning(f"Failed to remove camera user at {position}")
+                    except Exception as e:
+                        self.logger.error(f"Error removing camera user at {position}: {e}")
+                
                 # Also update the camera world model
                 if self.camera_world_model:
                     try:

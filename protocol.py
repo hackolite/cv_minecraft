@@ -38,6 +38,7 @@ class BlockType:
     LEAF = "leaf"
     WATER = "water"
     AIR = "air"  # Represents removed blocks
+    CAMERA = "camera"  # Special camera block that creates a user with FastAPI server
 
 class Message:
     """Base message class for client-server communication."""

@@ -517,6 +517,7 @@ def block_texture_data(block_type):
         BlockType.WOOD: tex_coord_4x3(3, 1) * 6,
         BlockType.LEAF: tex_coord_4x3(3, 0) * 6,
         BlockType.WATER: tex_coord_4x3(0, 2) * 6,
+        BlockType.CAMERA: tex_coord_4x3(0, 1) * 6,  # Red texture for camera blocks
     }
     return textures.get(block_type, tex_coord_4x3(0, 0) * 6)
 
@@ -561,7 +562,7 @@ class MinecraftWindow(pyglet.window.Window):
         self.flying_speed = config.get("player", "flying_speed", 15.0)
 
         # Inventaire
-        self.inventory = [BlockType.BRICK, BlockType.GRASS, BlockType.SAND, BlockType.STONE]
+        self.inventory = [BlockType.BRICK, BlockType.GRASS, BlockType.SAND, BlockType.STONE, BlockType.CAMERA]
         self.block = self.inventory[0]
 
         # Touches de mouvement configurables
