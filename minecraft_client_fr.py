@@ -952,7 +952,7 @@ Statut: {connection_status}"""
         """Gère la molette de la souris pour changer le type de bloc ou le type de caméra."""
         if self.exclusive:
             # Si le bloc caméra est sélectionné et Ctrl est pressé, changer le type de caméra
-            if self.block == BlockType.CAMERA and (self.keys[key.LCTRL] or self.keys[key.RCTRL]):
+            if self.block == BlockType.CAMERA and (self.keys.get(key.LCTRL, False) or self.keys.get(key.RCTRL, False)):
                 # Calculer le nouvel index dans les types de caméra
                 current_camera_index = self.camera_types.index(self.current_camera_type) if self.current_camera_type in self.camera_types else 0
                 
