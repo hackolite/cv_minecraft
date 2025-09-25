@@ -226,29 +226,30 @@ class ObserverCamera:
         
         try:
             # Activer le contexte de rendu pour cette caméra
-            with self._render_context:
-                # Configuration OpenGL pour le rendu 3D
-                glClearColor(0.5, 0.69, 1.0, 1.0)  # Ciel bleu comme minecraft_client_fr.py
-                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-                glEnable(GL_DEPTH_TEST)
-                
-                # Configuration de la projection perspective
-                self._setup_3d_projection()
-                
-                # Configuration de la vue caméra
-                self._setup_camera_view()
-                
-                # Rendu du monde (blocs)
-                if hasattr(self.world_model, 'batch') and self.world_model.batch:
-                    glColor3f(1.0, 1.0, 1.0)  # Couleur neutre pour les blocs
-                    self.world_model.batch.draw()
-                
-                # Rendu des joueurs
-                self._render_players()
-                
-                # Capture du framebuffer
-                frame_data = self._capture_framebuffer()
-                
+            self._render_context.switch_to()
+            
+            # Configuration OpenGL pour le rendu 3D
+            glClearColor(0.5, 0.69, 1.0, 1.0)  # Ciel bleu comme minecraft_client_fr.py
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+            glEnable(GL_DEPTH_TEST)
+            
+            # Configuration de la projection perspective
+            self._setup_3d_projection()
+            
+            # Configuration de la vue caméra
+            self._setup_camera_view()
+            
+            # Rendu du monde (blocs)
+            if hasattr(self.world_model, 'batch') and self.world_model.batch:
+                glColor3f(1.0, 1.0, 1.0)  # Couleur neutre pour les blocs
+                self.world_model.batch.draw()
+            
+            # Rendu des joueurs
+            self._render_players()
+            
+            # Capture du framebuffer
+            frame_data = self._capture_framebuffer()
+            
             return frame_data
         except Exception as e:
             print(f"Erreur rendu 3D pour {self.observer_id}: {e}")
@@ -295,17 +296,25 @@ class ObserverCamera:
         near_plane = 0.1
         far_plane = 60.0
         
-        # Calcul manuel de la perspective (sans gluPerspective)
-        f = 1.0 / math.tan(math.radians(fov) / 2.0)
-        
-        perspective_matrix = [
-            f / aspect_ratio, 0, 0, 0,
-            0, f, 0, 0,
-            0, 0, (far_plane + near_plane) / (near_plane - far_plane), -1,
-            0, 0, (2 * far_plane * near_plane) / (near_plane - far_plane), 0
-        ]
-        
-        glMultMatrixf((GLfloat * 16)(*perspective_matrix))
+        # Try to use gluPerspective if available, otherwise fallback to manual matrix
+        try:
+            from OpenGL.GLU import gluPerspective
+            gluPerspective(fov, aspect_ratio, near_plane, far_plane)
+        except ImportError:
+            # Calcul manuel de la perspective (sans gluPerspective)
+            f = 1.0 / math.tan(math.radians(fov) / 2.0)
+            
+            perspective_matrix = [
+                f / aspect_ratio, 0, 0, 0,
+                0, f, 0, 0,
+                0, 0, (far_plane + near_plane) / (near_plane - far_plane), -1,
+                0, 0, (2 * far_plane * near_plane) / (near_plane - far_plane), 0
+            ]
+            
+            # Use ctypes array to ensure proper format
+            import ctypes
+            matrix_array = (ctypes.c_float * 16)(*perspective_matrix)
+            glMultMatrixf(matrix_array)
     
     def _setup_camera_view(self):
         """Configure la vue caméra depuis la position/rotation de l'observateur."""
