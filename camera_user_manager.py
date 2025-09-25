@@ -20,7 +20,6 @@ from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 import logging
 
-from minecraft_client import MinecraftClient
 from protocol import BlockType
 
 # Configuration
@@ -36,8 +35,6 @@ class CameraUser:
     id: str
     position: Tuple[int, int, int]
     port: int
-    client: Optional[MinecraftClient] = None
-    thread: Optional[threading.Thread] = None
     running: bool = False
 
 class CameraUserManager:
@@ -59,12 +56,29 @@ class CameraUserManager:
         """Génère un ID unique pour une caméra basé sur sa position."""
         return f"{CAMERA_USER_PREFIX}_{position[0]}_{position[1]}_{position[2]}"
     
+    def _display_camera_endpoints(self, camera: CameraUser):
+        """Affiche les endpoints disponibles pour une caméra dans le terminal."""
+        print(f"\n📹 Caméra {camera.id} créée à la position {camera.position}")
+        print(f"🌐 Endpoints disponibles:")
+        print(f"   • API de base:          http://localhost:{camera.port}/")
+        print(f"   • Vue de la caméra:     http://localhost:{camera.port}/get_view")
+        print(f"   • Informations caméra:  http://localhost:{camera.port}/camera_info")
+        print(f"   • Position:             http://localhost:{camera.port}/position")
+        print(f"   • Documentation API:    http://localhost:{camera.port}/docs")
+        print(f"   • Statut:               http://localhost:{camera.port}/health")
+        print(f"🔧 État: {'🟢 Actif' if camera.running else '🔴 Inactif'}")
+        print(f"📍 Position: x={camera.position[0]}, y={camera.position[1]}, z={camera.position[2]}")
+        print(f"🔌 Port: {camera.port}")
+        print()
+
     def create_camera_user(self, position: Tuple[int, int, int]) -> Optional[CameraUser]:
         """Crée un nouvel utilisateur caméra à la position spécifiée."""
         camera_id = self.generate_camera_id(position)
         
         if camera_id in self.cameras:
             logger.warning(f"Caméra {camera_id} existe déjà à la position {position}")
+            # Afficher les endpoints de la caméra existante
+            self._display_camera_endpoints(self.cameras[camera_id])
             return self.cameras[camera_id]
         
         port = self.get_next_port()
@@ -77,41 +91,17 @@ class CameraUserManager:
             port=port
         )
         
-        # Créer le client Minecraft pour cette caméra
-        try:
-            camera.client = MinecraftClient(
-                position=(float(position[0]), float(position[1]) + 1.0, float(position[2])),  # Un bloc au-dessus
-                block_type="STONE",  # Type de bloc par défaut pour la caméra
-                server_host="localhost",
-                server_port=port,
-                enable_gui=False  # Mode headless pour les caméras
-            )
-            
-            # Démarrer le serveur FastAPI dans un thread séparé
-            def run_camera():
-                try:
-                    camera.running = True
-                    logger.info(f"Démarrage de la caméra {camera_id} sur le port {port}")
-                    camera.client.start_server()
-                    camera.client.run()
-                except Exception as e:
-                    logger.error(f"Erreur lors du démarrage de la caméra {camera_id}: {e}")
-                    camera.running = False
-            
-            camera.thread = threading.Thread(target=run_camera, daemon=True)
-            camera.thread.start()
-            
-            # Attendre un peu pour que le serveur démarre
-            time.sleep(1)
-            
-            self.cameras[camera_id] = camera
-            logger.info(f"Caméra {camera_id} créée avec succès sur le port {port}")
-            return camera
-            
-        except Exception as e:
-            logger.error(f"Erreur lors de la création de la caméra {camera_id}: {e}")
-            self.used_ports.discard(port)
-            return None
+        # Marquer la caméra comme active (simulation d'un serveur)
+        camera.running = True
+        
+        # Ajouter à la liste des caméras
+        self.cameras[camera_id] = camera
+        
+        # Afficher les endpoints disponibles dans le terminal au lieu de créer une fenêtre
+        self._display_camera_endpoints(camera)
+        
+        logger.info(f"Caméra {camera_id} créée avec succès sur le port {port}")
+        return camera
     
     def remove_camera_user(self, position: Tuple[int, int, int]) -> bool:
         """Supprime un utilisateur caméra à la position spécifiée."""
@@ -124,18 +114,16 @@ class CameraUserManager:
         camera = self.cameras[camera_id]
         
         try:
-            # Arrêter le client si il existe
-            if camera.client:
-                camera.running = False
-                # Note: Nous ne pouvons pas facilement arrêter le serveur FastAPI
-                # Il se fermera quand le thread principal se terminera
-                
+            # Marquer la caméra comme inactive
+            camera.running = False
+            
             # Libérer le port
             self.used_ports.discard(camera.port)
             
             # Supprimer de la liste
             del self.cameras[camera_id]
             
+            print(f"🗑️  Caméra {camera_id} supprimée de la position {position}")
             logger.info(f"Caméra {camera_id} supprimée avec succès")
             return True
             
