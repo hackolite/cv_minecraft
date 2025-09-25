@@ -35,6 +35,20 @@ if display_available:
         except NameError:
             print("Warning: Some OpenGL constants missing, using fallbacks")
             HAS_FULL_GL = False
+        
+        # Import additional OpenGL functions from PyOpenGL if needed for compatibility
+        try:
+            from OpenGL.GL import (glReadPixels as PyOpenGL_glReadPixels,
+                                   glMatrixMode, glLoadIdentity, glViewport,
+                                   glRotatef, glTranslatef, glMultMatrixf,
+                                   glBegin, glEnd, glVertex3f, glColor3f,
+                                   glPixelStorei, glClearColor, glClear, glEnable,
+                                   GL_MODELVIEW, GL_PROJECTION)
+            # Replace pyglet's glReadPixels with PyOpenGL's version for compatibility
+            glReadPixels = PyOpenGL_glReadPixels
+            print("✓ OpenGL functions imported from PyOpenGL for compatibility")
+        except ImportError:
+            print("Warning: PyOpenGL not available, may have compatibility issues")
             
     except Exception as e:
         print(f"Warning: Could not import OpenGL/Pyglet: {e}")
