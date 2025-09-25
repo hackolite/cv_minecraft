@@ -173,6 +173,8 @@ class UserManager:
         """Démarre le serveur FastAPI pour toutes les caméras."""
         from fastapi_camera_server import fastapi_camera_server
         
+        self.logger.info("Initialisation des caméras d'observateurs...")
+        
         for user in self.get_active_users():
             try:
                 # Créer une caméra d'observateur pour cet utilisateur
@@ -190,13 +192,57 @@ class UserManager:
         # Démarrer toutes les caméras avec le modèle du monde (s'il existe)
         if hasattr(camera_manager, 'world_model') and camera_manager.world_model:
             camera_manager.start_all_cameras()
+            self.logger.info("Caméras démarrées avec le modèle du monde")
         else:
             # Démarrer les caméras même sans modèle du monde pour les tests
             for camera in camera_manager.get_all_cameras():
                 camera.start_capture(None)
+            self.logger.info("Caméras démarrées en mode test (sans modèle du monde)")
         
         # Le serveur FastAPI sera démarré séparément
         self.fastapi_server = fastapi_camera_server
+    
+    async def start_camera_server_with_retry(self, max_retries: int = 3) -> bool:
+        """Démarre le serveur de caméras avec retry logic."""
+        for attempt in range(max_retries):
+            try:
+                await self.start_camera_server()
+                
+                # Vérifier que les caméras sont actives
+                active_cameras = sum(1 for camera in camera_manager.get_all_cameras() if camera.is_capturing)
+                total_cameras = len(camera_manager.get_all_cameras())
+                
+                if active_cameras > 0:
+                    self.logger.info(f"Serveur de caméras démarré avec succès ({active_cameras}/{total_cameras} caméras actives)")
+                    return True
+                else:
+                    self.logger.warning(f"Tentative {attempt + 1}: Aucune caméra active")
+                    
+            except Exception as e:
+                self.logger.error(f"Tentative {attempt + 1} échouée: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)  # Backoff exponentiel
+        
+        self.logger.error("Impossible de démarrer le serveur de caméras après plusieurs tentatives")
+        return False
+    
+    def is_camera_server_healthy(self) -> bool:
+        """Vérifie l'état de santé du serveur de caméras."""
+        try:
+            if not self.fastapi_server:
+                return False
+                
+            # Vérifier les caméras actives
+            cameras = camera_manager.get_all_cameras()
+            if not cameras:
+                return False
+                
+            active_cameras = sum(1 for camera in cameras if camera.is_capturing)
+            return active_cameras > 0
+            
+        except Exception as e:
+            self.logger.error(f"Erreur lors de la vérification de santé: {e}")
+            return False
     
     async def stop_camera_server(self) -> None:
         """Arrête le serveur de caméras."""
