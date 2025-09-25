@@ -75,8 +75,46 @@ except Exception as e:
         def get_texture(self):
             return None
     
+    class DummyKey:
+        """Dummy key constants for headless mode"""
+        _1 = 49; _2 = 50; _3 = 51; _4 = 52; _5 = 53
+        LCTRL = 65507; RCTRL = 65508; LSHIFT = 65505; RSHIFT = 65506
+        SPACE = 32; ESCAPE = 65307; TAB = 65289; F3 = 65472; F5 = 65474; R = 114
+    
+    class DummyMouse:
+        LEFT = 1; RIGHT = 2; MIDDLE = 3
+    
+    class DummyLabel:
+        def __init__(self, *args, **kwargs):
+            self.text = kwargs.get('text', '')
+            self.x = kwargs.get('x', 0)
+            self.y = kwargs.get('y', 0)
+        def delete(self):
+            pass
+    
+    class DummyVertexList:
+        def delete(self):
+            pass
+    
+    class DummyGraphics:
+        @staticmethod
+        def vertex_list(*args, **kwargs):
+            return DummyVertexList()
+    
+    class DummyText:
+        @staticmethod
+        def Label(*args, **kwargs):
+            return DummyLabel(*args, **kwargs)
+    
+    class DummyPyglet:
+        text = DummyText()
+        graphics = DummyGraphics()
+    
     TextureGroup = DummyTextureGroup
     image = DummyImage()
+    key = DummyKey()
+    mouse = DummyMouse()
+    pyglet = DummyPyglet()
 
 # OpenGL constants fallback
 if PYGLET_AVAILABLE:
@@ -522,20 +560,36 @@ def block_texture_data(block_type):
     return textures.get(block_type, tex_coord_4x3(0, 0) * 6)
 
 
-class MinecraftWindow(pyglet.window.Window):
+# Base class for headless compatibility
+if PYGLET_AVAILABLE:
+    BaseWindow = pyglet.window.Window
+else:
+    class BaseWindow:
+        def __init__(self, **kwargs):
+            self.width = kwargs.get('width', 800)
+            self.height = kwargs.get('height', 600)
+        
+        def set_exclusive_mouse(self, exclusive):
+            pass
+
+
+class MinecraftWindow(BaseWindow):
     """Fenêtre de jeu principale avec collision de caméra améliorée."""
 
     def __init__(self, **kwargs):
         # Configuration de la fenêtre
         width, height = config.get_window_size()
 
-        super(MinecraftWindow, self).__init__(
-            width=width,
-            height=height,
-            caption='Minecraft Client Français - Collision Corrigée',
-            resizable=True,
-            vsync=config.get("graphics", "vsync", True)
-        )
+        if PYGLET_AVAILABLE:
+            super(MinecraftWindow, self).__init__(
+                width=width,
+                height=height,
+                caption='Minecraft Client Français - Collision Corrigée',
+                resizable=True,
+                vsync=config.get("graphics", "vsync", True)
+            )
+        else:
+            super(MinecraftWindow, self).__init__(width=width, height=height)
 
         # État du jeu
         self.exclusive = False
@@ -564,10 +618,16 @@ class MinecraftWindow(pyglet.window.Window):
         # Inventaire
         self.inventory = [BlockType.BRICK, BlockType.GRASS, BlockType.SAND, BlockType.STONE, BlockType.CAMERA]
         self.block = self.inventory[0]
+        
+        # Inventaire des types de caméra
+        self.camera_types = [CameraType.STATIC, CameraType.ROTATING, CameraType.TRACKING, CameraType.WIDE_ANGLE, CameraType.ZOOM]
+        self.current_camera_type = self.camera_types[0]
+        self.camera_mode = False  # Mode sélection de type de caméra
 
         # Touches de mouvement configurables
         self.movement_keys = config.get_movement_keys()
         self.num_keys = [key._1, key._2, key._3, key._4, key._5]
+        self.keys = {}  # Dictionnaire pour suivre l'état des touches
 
         # Modèle et réseau
         self.model = EnhancedClientModel()
@@ -819,7 +879,10 @@ class MinecraftWindow(pyglet.window.Window):
 
     def update_block_display(self):
         """Met à jour l'affichage permanent du bloc actuel."""
-        self.block_label.text = f"Bloc: {self.block}"
+        block_text = f"Bloc: {self.block}"
+        if self.block == BlockType.CAMERA:
+            block_text += f" ({self.get_camera_type_name(self.current_camera_type)})"
+        self.block_label.text = block_text
 
     def update_ui(self):
         """Met à jour l'interface utilisateur."""
@@ -886,8 +949,26 @@ Statut: {connection_status}"""
             self.rotation = (x_rot, y_rot)
 
     def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
-        """Gère la molette de la souris pour changer le type de bloc."""
+        """Gère la molette de la souris pour changer le type de bloc ou le type de caméra."""
         if self.exclusive:
+            # Si le bloc caméra est sélectionné et Ctrl est pressé, changer le type de caméra
+            if self.block == BlockType.CAMERA and (self.keys[key.LCTRL] or self.keys[key.RCTRL]):
+                # Calculer le nouvel index dans les types de caméra
+                current_camera_index = self.camera_types.index(self.current_camera_type) if self.current_camera_type in self.camera_types else 0
+                
+                if scroll_y > 0:  # Scroll vers le haut
+                    new_camera_index = (current_camera_index + 1) % len(self.camera_types)
+                elif scroll_y < 0:  # Scroll vers le bas
+                    new_camera_index = (current_camera_index - 1) % len(self.camera_types)
+                else:
+                    return  # Pas de changement
+                
+                # Mettre à jour le type de caméra sélectionné
+                self.current_camera_type = self.camera_types[new_camera_index]
+                self.show_message(f"Type de caméra: {self.get_camera_type_name(self.current_camera_type)}")
+                return
+            
+            # Sinon, changer le type de bloc normalement
             # Calculer le nouvel index dans l'inventaire
             current_index = self.inventory.index(self.block) if self.block in self.inventory else 0
             
@@ -900,11 +981,33 @@ Statut: {connection_status}"""
                 return  # Pas de changement
             
             # Mettre à jour le bloc sélectionné
+            old_block = self.block
             self.block = self.inventory[new_index]
-            self.show_message(f"Bloc sélectionné: {self.block}")
+            message = f"Bloc sélectionné: {self.block}"
+            
+            # Si on vient de sélectionner un bloc caméra, montrer aussi le type de caméra
+            if self.block == BlockType.CAMERA:
+                message += f" (Type: {self.get_camera_type_name(self.current_camera_type)})"
+                message += " - Ctrl+Molette pour changer le type"
+            
+            self.show_message(message)
+    
+    def get_camera_type_name(self, camera_type):
+        """Retourne le nom français du type de caméra."""
+        names = {
+            CameraType.STATIC: "Statique",
+            CameraType.ROTATING: "Rotative",
+            CameraType.TRACKING: "Poursuite",
+            CameraType.WIDE_ANGLE: "Grand Angle",
+            CameraType.ZOOM: "Zoom"
+        }
+        return names.get(camera_type, camera_type)
 
     def on_key_press(self, symbol, modifiers):
         """Gère les touches pressées."""
+        # Suivre l'état des touches
+        self.keys[symbol] = True
+        
         # Mouvement selon le layout clavier configuré
         if symbol == getattr(key, self.movement_keys["forward"]):
             self.strafe[0] -= 1
@@ -947,6 +1050,9 @@ Statut: {connection_status}"""
 
     def on_key_release(self, symbol, modifiers):
         """Gère les touches relâchées."""
+        # Mettre à jour l'état des touches
+        self.keys[symbol] = False
+        
         if symbol == getattr(key, self.movement_keys["forward"]):
             self.strafe[0] += 1
         elif symbol == getattr(key, self.movement_keys["backward"]):
