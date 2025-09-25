@@ -54,6 +54,11 @@ class FastAPICameraServer:
             """Page d'accueil avec interface web."""
             return HTMLResponse(content=self.get_web_interface())
         
+        @self.app.get("/test-rotation")
+        async def test_rotation():
+            """Page de test pour les contrôles de rotation."""
+            return HTMLResponse(content=self.get_test_rotation_interface())
+            
         @self.app.get("/health")
         async def health_check():
             """Health check endpoint pour vérifier l'état du serveur."""
@@ -167,6 +172,34 @@ class FastAPICameraServer:
             
             camera.update_position(tuple(position), rotation_tuple)
             return {"message": f"Camera {observer_id} moved to {position}"}
+            
+        class CameraMoveRequest(BaseModel):
+            """Request model for moving camera."""
+            position: List[float]
+            rotation: Optional[List[float]] = None
+            
+        @self.app.post("/camera/{observer_id}/move_json")
+        async def move_camera_json(observer_id: str, request: CameraMoveRequest):
+            """Déplace une caméra à une nouvelle position via JSON."""
+            camera = camera_manager.get_camera(observer_id)
+            if not camera:
+                raise HTTPException(status_code=404, detail=f"Camera {observer_id} not found")
+            
+            if len(request.position) != 3:
+                raise HTTPException(status_code=400, detail="Position must have 3 coordinates [x, y, z]")
+            
+            rotation_tuple = None
+            if request.rotation:
+                if len(request.rotation) != 2:
+                    raise HTTPException(status_code=400, detail="Rotation must have 2 coordinates [yaw, pitch]")
+                rotation_tuple = tuple(request.rotation)
+            
+            camera.update_position(tuple(request.position), rotation_tuple)
+            return {
+                "message": f"Camera {observer_id} moved", 
+                "position": request.position, 
+                "rotation": request.rotation
+            }
     
     def get_web_interface(self) -> str:
         """Génère l'interface web HTML."""
@@ -192,6 +225,12 @@ class FastAPICameraServer:
         .status { padding: 4px 8px; border-radius: 4px; font-size: 12px; }
         .status-active { background-color: #2ecc71; color: white; }
         .status-inactive { background-color: #e74c3c; color: white; }
+        .camera-rotation-controls { margin: 15px 0; padding: 10px; background-color: #f8f9fa; border-radius: 4px; }
+        .rotation-control { margin-bottom: 10px; }
+        .rotation-control label { display: block; margin-bottom: 5px; font-size: 14px; }
+        .rotation-slider { width: 100%; height: 6px; border-radius: 3px; background: #ddd; outline: none; }
+        .rotation-slider::-webkit-slider-thumb { appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #3498db; cursor: pointer; }
+        .rotation-slider::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: #3498db; cursor: pointer; border: none; }
     </style>
 </head>
 <body>
@@ -244,7 +283,7 @@ class FastAPICameraServer:
                     </div>
                     <div class="camera-info">
                         <strong>Position:</strong> (${camera.position.join(', ')})<br>
-                        <strong>Rotation:</strong> (${camera.rotation.join(', ')})<br>
+                        <strong>Rotation:</strong> (<span id="rotation-display-${camera.observer_id}">${camera.rotation.join(', ')}</span>)<br>
                         <strong>Résolution:</strong> ${camera.resolution.join('x')}
                     </div>
                     <img class="camera-stream" 
@@ -253,6 +292,18 @@ class FastAPICameraServer:
                          onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
                     <div style="display:none; text-align:center; padding:40px; color:#999;">
                         Stream non disponible
+                    </div>
+                    <div class="camera-rotation-controls">
+                        <div class="rotation-control">
+                            <label><strong>Yaw (Horizontal):</strong> <span id="yaw-value-${camera.observer_id}">${camera.rotation[0]}</span>°</label>
+                            <input type="range" id="yaw-${camera.observer_id}" min="-180" max="180" step="5" value="${camera.rotation[0]}" 
+                                   class="rotation-slider" onchange="updateCameraRotation('${camera.observer_id}')">
+                        </div>
+                        <div class="rotation-control">
+                            <label><strong>Pitch (Vertical):</strong> <span id="pitch-value-${camera.observer_id}">${camera.rotation[1]}</span>°</label>
+                            <input type="range" id="pitch-${camera.observer_id}" min="-90" max="90" step="5" value="${camera.rotation[1]}" 
+                                   class="rotation-slider" onchange="updateCameraRotation('${camera.observer_id}')">
+                        </div>
                     </div>
                     <div class="camera-controls">
                         <button class="btn btn-primary" onclick="refreshCamera('${camera.observer_id}')">
@@ -282,6 +333,61 @@ class FastAPICameraServer:
             window.open(`/camera/${observerId}/stream`, '_blank');
         }
         
+        async function updateCameraRotation(observerId) {
+            const yawSlider = document.getElementById(`yaw-${observerId}`);
+            const pitchSlider = document.getElementById(`pitch-${observerId}`);
+            const yawValue = document.getElementById(`yaw-value-${observerId}`);
+            const pitchValue = document.getElementById(`pitch-value-${observerId}`);
+            
+            const yaw = parseFloat(yawSlider.value);
+            const pitch = parseFloat(pitchSlider.value);
+            
+            // Update displayed values
+            yawValue.textContent = yaw;
+            pitchValue.textContent = pitch;
+            
+            // Update rotation display
+            const rotationDisplay = document.getElementById(`rotation-display-${observerId}`);
+            rotationDisplay.textContent = `${yaw}, ${pitch}`;
+            
+            try {
+                // Get current camera info for position
+                const camera = cameras.find(c => c.observer_id === observerId);
+                if (!camera) {
+                    console.error('Camera not found:', observerId);
+                    return;
+                }
+                
+                // Send update to server
+                const response = await fetch(`/camera/${observerId}/move_json`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        position: camera.position,
+                        rotation: [yaw, pitch]
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                // Update local camera data
+                camera.rotation = [yaw, pitch];
+                
+                console.log(`Camera ${observerId} rotation updated to: [${yaw}, ${pitch}]`);
+                
+                // Refresh the camera stream to show new angle
+                setTimeout(() => refreshCamera(observerId), 100);
+                
+            } catch (error) {
+                console.error('Error updating camera rotation:', error);
+                alert('Erreur lors de la mise à jour de la rotation de la caméra');
+            }
+        }
+        
         // Chargement initial et actualisation périodique
         loadCameras();
         setInterval(loadCameras, 10000); // Actualiser toutes les 10 secondes
@@ -300,6 +406,140 @@ class FastAPICameraServer:
         except Exception as e:
             self.logger.warning(f"Erreur lors de la vérification du port {port}: {e}")
             return False
+    
+    def get_test_rotation_interface(self) -> str:
+        """Interface de test pour les contrôles de rotation."""
+        return """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Camera Rotation Controls</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f0f0f0; }
+        .camera-card { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px auto; max-width: 600px; }
+        .camera-rotation-controls { margin: 15px 0; padding: 10px; background-color: #f8f9fa; border-radius: 4px; }
+        .rotation-control { margin-bottom: 10px; }
+        .rotation-control label { display: block; margin-bottom: 5px; font-size: 14px; }
+        .rotation-slider { width: 100%; height: 6px; border-radius: 3px; background: #ddd; outline: none; }
+        .rotation-slider::-webkit-slider-thumb { appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #3498db; cursor: pointer; }
+        .status { color: green; font-weight: bold; }
+        .error { color: red; }
+        .header { text-align: center; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎮 Test Camera Rotation Controls</h1>
+        <p>Testez les contrôles de rotation de caméra en temps réel</p>
+    </div>
+    
+    <div class="camera-card">
+        <h3>📹 Camera Test</h3>
+        <div><strong>Position:</strong> <span id="position-display">(10, 140, 120)</span></div>
+        <div><strong>Current Rotation:</strong> <span id="rotation-display">45, -70</span></div>
+        
+        <div class="camera-rotation-controls">
+            <div class="rotation-control">
+                <label><strong>Yaw (Horizontal):</strong> <span id="yaw-value">45</span>°</label>
+                <input type="range" id="yaw-slider" min="-180" max="180" step="5" value="45" 
+                       class="rotation-slider" onchange="updateRotation()">
+            </div>
+            <div class="rotation-control">
+                <label><strong>Pitch (Vertical):</strong> <span id="pitch-value">-70</span>°</label>
+                <input type="range" id="pitch-slider" min="-90" max="90" step="5" value="-70" 
+                       class="rotation-slider" onchange="updateRotation()">
+            </div>
+        </div>
+        
+        <div id="status" style="margin-top: 15px; padding: 10px; border-radius: 4px;"></div>
+    </div>
+
+    <script>
+        let cameras = [];
+        let currentCameraId = null;
+        
+        async function loadCameras() {
+            try {
+                const response = await fetch('/cameras');
+                cameras = await response.json();
+                if (cameras.length > 0) {
+                    currentCameraId = cameras[0].observer_id;
+                    document.querySelector('h3').textContent = `📹 ${currentCameraId.substring(0, 8)}...`;
+                    // Update with current camera data
+                    const camera = cameras[0];
+                    document.getElementById('position-display').textContent = `(${camera.position.join(', ')})`;
+                    document.getElementById('yaw-slider').value = camera.rotation[0];
+                    document.getElementById('pitch-slider').value = camera.rotation[1];
+                    document.getElementById('yaw-value').textContent = camera.rotation[0];
+                    document.getElementById('pitch-value').textContent = camera.rotation[1];
+                    document.getElementById('rotation-display').textContent = `${camera.rotation[0]}, ${camera.rotation[1]}`;
+                }
+            } catch (error) {
+                console.error('Error loading cameras:', error);
+                document.getElementById('status').innerHTML = '<span class="error">❌ Error loading cameras</span>';
+            }
+        }
+        
+        async function updateRotation() {
+            if (!currentCameraId) return;
+            
+            const yawSlider = document.getElementById('yaw-slider');
+            const pitchSlider = document.getElementById('pitch-slider');
+            const yawValue = document.getElementById('yaw-value');
+            const pitchValue = document.getElementById('pitch-value');
+            const rotationDisplay = document.getElementById('rotation-display');
+            const status = document.getElementById('status');
+            
+            const yaw = parseFloat(yawSlider.value);
+            const pitch = parseFloat(pitchSlider.value);
+            
+            // Update displayed values
+            yawValue.textContent = yaw;
+            pitchValue.textContent = pitch;
+            rotationDisplay.textContent = `${yaw}, ${pitch}`;
+            
+            try {
+                status.innerHTML = '<span class="status">🔄 Updating camera rotation...</span>';
+                status.style.backgroundColor = '#e3f2fd';
+                
+                const camera = cameras.find(c => c.observer_id === currentCameraId);
+                const response = await fetch(`/camera/${currentCameraId}/move_json`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        position: camera ? camera.position : [10, 140, 120],
+                        rotation: [yaw, pitch]
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                status.innerHTML = `<span class="status">✅ Camera rotation updated successfully!</span>`;
+                status.style.backgroundColor = '#e8f5e8';
+                
+                // Update local camera data
+                if (camera) {
+                    camera.rotation = [yaw, pitch];
+                }
+                
+            } catch (error) {
+                console.error('Error updating camera rotation:', error);
+                status.innerHTML = `<span class="error">❌ Error: ${error.message}</span>`;
+                status.style.backgroundColor = '#ffeaea';
+            }
+        }
+        
+        // Load cameras on page load
+        loadCameras();
+    </script>
+</body>
+</html>
+        """
     
     async def start_server(self):
         """Démarre le serveur FastAPI avec vérifications et retry logic."""
