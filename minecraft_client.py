@@ -290,15 +290,26 @@ class MinecraftClient:
         
         def run_server():
             try:
-                uvicorn.run(self.app, host=self.server_host, port=self.server_port, log_level="info")
+                uvicorn.run(self.app, host=self.server_host, port=self.server_port, log_level="warning")
             except Exception as e:
                 print(f"Server error: {e}")
         
         self.server_thread = threading.Thread(target=run_server, daemon=True)
         self.server_thread.start()
         
-        # Wait a bit to ensure server starts
-        time.sleep(2)
+        # Wait longer and test connection
+        max_attempts = 10
+        for attempt in range(max_attempts):
+            time.sleep(1)
+            try:
+                import requests
+                response = requests.get(f"http://{self.server_host}:{self.server_port}/", timeout=2)
+                if response.status_code == 200:
+                    break
+            except:
+                if attempt == max_attempts - 1:
+                    print("⚠️ Server may not be fully ready yet")
+                continue
         
         print(f"🚀 FastAPI server started on http://{self.server_host}:{self.server_port}")
         print(f"📊 API documentation: http://{self.server_host}:{self.server_port}/docs")
