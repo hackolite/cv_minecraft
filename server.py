@@ -22,7 +22,7 @@ from minecraft_physics import (
     PLAYER_WIDTH, PLAYER_HEIGHT, GRAVITY, TERMINAL_VELOCITY, JUMP_VELOCITY,
     unified_check_collision, unified_check_player_collision
 )
-from user_manager import user_manager, CameraUser
+# from user_manager import user_manager, CameraUser  # Removed as per IMPLEMENTATION_SUMMARY.md
 
 # ---------- Constants ----------
 SECTOR_SIZE = 16
@@ -299,7 +299,7 @@ class MinecraftServer:
         self.world = GameWorld()
         self.clients: Dict[str, websockets.WebSocketServerProtocol] = {}
         self.players: Dict[str, PlayerState] = {}
-        self.rtsp_users: Dict[str, CameraUser] = {}
+        self.rtsp_users: Dict[str, Any] = {}  # Kept for compatibility but unused
         self.running = False
         self.logger = logging.getLogger(__name__)
         # Physics tick timing
@@ -379,24 +379,10 @@ class MinecraftServer:
 
     def _initialize_camera_users(self):
         """Initialise les utilisateurs de caméras au démarrage du serveur."""
-        try:
-            created_users = user_manager.create_startup_users()
-            for user in created_users:
-                # Créer un PlayerState pour chaque utilisateur de caméra
-                player_state = PlayerState(
-                    id=user.id,
-                    name=user.name,
-                    position=user.position,
-                    rotation=user.rotation,
-                    is_connected=False,  # Les utilisateurs de caméras ne sont pas des connexions WebSocket
-                    is_rtsp_user=True  # Conserver le nom pour compatibilité
-                )
-                self.players[user.id] = player_state
-                self.rtsp_users[user.id] = user
-                
-            self.logger.info(f"Initialisé {len(created_users)} utilisateurs de caméras")
-        except Exception as e:
-            self.logger.error(f"Erreur lors de l'initialisation des utilisateurs de caméras: {e}")
+        # Camera user system was removed as per IMPLEMENTATION_SUMMARY.md
+        # This method is kept as a stub for compatibility
+        self.logger.info("Camera user system disabled - no camera users initialized")
+        pass
 
     def _check_ground_collision(self, position: Tuple[float, float, float]) -> bool:
         """Check ground collision using unified collision system."""
@@ -877,23 +863,12 @@ class MinecraftServer:
         self.logger.info(f"Starting Minecraft server on {self.host}:{self.port}")
         
         try:
-            # Configurer le modèle du monde pour les caméras
+            # Camera system was removed as per IMPLEMENTATION_SUMMARY.md
             # Use the renderable camera world model instead of raw GameWorld
             if self.camera_world_model:
-                user_manager.set_world_model(self.camera_world_model)
-                self.logger.info("Set renderable world model for cameras")
+                self.logger.info("Camera world model created but camera system is disabled")
             else:
-                self.logger.warning("No camera world model available - cameras will show test frames")
-            
-            # Start camera server for all users 
-            self.logger.info("Démarrage du serveur de caméras...")
-            await user_manager.start_camera_server()
-            camera_urls = user_manager.get_camera_urls()
-            web_interface_url = user_manager.get_web_interface_url()
-            
-            self.logger.info(f"Interface web disponible: {web_interface_url}")
-            for name, url in camera_urls.items():
-                self.logger.info(f"Caméra {name}: {url}")
+                self.logger.info("No camera world model available - camera system disabled")
             
             # Start physics update loop
             physics_task = asyncio.create_task(self._physics_update_loop())
@@ -908,8 +883,7 @@ class MinecraftServer:
             self.logger.error(f"Server error: {e}")
         finally:
             self.running = False
-            # Stop camera server
-            await user_manager.stop_camera_server()
+            # Camera server shutdown removed as per IMPLEMENTATION_SUMMARY.md
             raise
 
     def stop_server(self):
