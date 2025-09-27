@@ -79,6 +79,7 @@ STONE = tex_coords((2, 1), (2, 1), (2, 1))
 WOOD = tex_coords((3, 1), (3, 1), (3, 1))
 LEAF = tex_coords((3, 0), (3, 0), (3, 0))
 WATER = tex_coords((0, 2), (0, 2), (0, 2))
+CAMERA = tex_coords((0, 3), (0, 3), (0, 3))  # Camera block - distinctive texture
 
 # ---------- Utility functions ----------
 
@@ -191,7 +192,22 @@ class GameWorld:
                                         if self._add_block_internal((lx, leaf_h + ly, lz), BlockType.LEAF):
                                             blocks_created += 1
         
-        logging.info(f"Enhanced world initialized with {blocks_created} blocks including water, sand, grass, stone, and trees")
+        # Add camera blocks at strategic locations for all users to see
+        spawn_x, spawn_y, spawn_z = DEFAULT_SPAWN_POSITION
+        camera_locations = [
+            (spawn_x + 5, spawn_y + 2, spawn_z),      # East of spawn, elevated
+            (spawn_x - 5, spawn_y + 2, spawn_z),      # West of spawn, elevated  
+            (spawn_x, spawn_y + 2, spawn_z + 5),      # South of spawn, elevated
+            (spawn_x, spawn_y + 2, spawn_z - 5),      # North of spawn, elevated
+            (spawn_x, spawn_y + 5, spawn_z),          # Directly above spawn
+        ]
+        
+        for camera_pos in camera_locations:
+            if self._add_block_internal(camera_pos, BlockType.CAMERA):
+                blocks_created += 1
+                logging.info(f"Added camera block at position {camera_pos}")
+        
+        logging.info(f"Enhanced world initialized with {blocks_created} blocks including water, sand, grass, stone, trees, and {len(camera_locations)} camera blocks")
 
     def _add_block_internal(self, position: Tuple[int, int, int], block_type: str) -> bool:
         """Internal method to add blocks without validation (for world generation)."""
