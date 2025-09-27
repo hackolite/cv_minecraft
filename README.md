@@ -23,7 +23,6 @@ This version has been restructured into a **client-server architecture**:
 - ✅ **Real-time Updates**: Block placement/destruction synchronized across all clients
 - ✅ **Player Movement Tracking**: See other players move in real-time
 - ✅ **FastAPI Integration**: Abstract client with REST API for programmatic control
-- ✅ **Camera System**: Special camera blocks that create users with FastAPI servers for remote viewing
 
 ## How to Run
 
@@ -54,7 +53,7 @@ You can start multiple clients to test multiplayer functionality.
 - **Space**: Jump
 - **Left Click**: Destroy block
 - **Right Click**: Place block
-- **1-5**: Change block type
+- **1-4**: Change block type
 - **Tab**: Toggle flying mode
 - **R**: Sprint
 - **Shift**: Crouch
@@ -115,54 +114,6 @@ For git:
 - Windows or Linux: see [Installing Git](http://git-scm.com/book/en/Getting-Started-Installing-Git) from the _Pro Git_ book.
 
 See the [wiki](https://github.com/fogleman/Minecraft/wiki) for this project to install Python, and other tips.
-
-## Camera System 📹
-
-The camera system allows creating special red camera blocks that automatically spawn users with individual FastAPI servers for remote viewing.
-
-### Features
-
-- **Special Camera Block**: Red `CAMERA` block (select with key `5`)
-- **Automatic User Creation**: Each camera block creates a dedicated `MinecraftClient` user
-- **Individual FastAPI Servers**: Each camera gets its own API server on unique ports (8081+)
-- **Remote Viewing**: HTTP endpoint `/get_view` returns PNG screenshots of what the camera sees
-- **Camera Management**: List, view, and manage cameras via `camera_viewer.py` script
-
-### Quick Start
-
-1. **Place Camera Blocks**:
-   ```bash
-   # Start server and client
-   python3 server.py
-   python3 minecraft_client_fr.py
-   
-   # In game: Press '5' to select CAMERA block, place red blocks where you want cameras
-   ```
-
-2. **View Cameras**:
-   ```bash
-   # List all active cameras
-   python3 camera_viewer.py --list
-   
-   # View specific camera
-   python3 camera_viewer.py --camera Camera_50_60_50
-   python3 camera_viewer.py --position 50 60 50
-   
-   # Save camera view
-   python3 camera_viewer.py --camera Camera_50_60_50 --save view.png
-   ```
-
-3. **API Access**:
-   ```bash
-   # Camera APIs available at:
-   curl http://localhost:8081/get_view > camera1.png
-   curl http://localhost:8082/get_view > camera2.png
-   
-   # Documentation at:
-   # http://localhost:8081/docs
-   ```
-
-📖 **Full Documentation**: See `CAMERA_SYSTEM_README.md` for complete details.
 
 ## Architecture Conversion
 

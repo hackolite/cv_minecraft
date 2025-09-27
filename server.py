@@ -23,7 +23,6 @@ from minecraft_physics import (
     unified_check_collision, unified_check_player_collision
 )
 # from user_manager import user_manager, CameraUser  # Removed as per IMPLEMENTATION_SUMMARY.md
-from camera_user_manager import camera_manager
 
 # ---------- Constants ----------
 SECTOR_SIZE = 16
@@ -108,7 +107,7 @@ def validate_block_type(block_type: str) -> bool:
     allowed_types = {
         BlockType.GRASS, BlockType.SAND, BlockType.BRICK, 
         BlockType.STONE, BlockType.WOOD, BlockType.LEAF, 
-        BlockType.WATER, BlockType.AIR, BlockType.CAMERA
+        BlockType.WATER, BlockType.AIR
     }
     return block_type in allowed_types
 
@@ -306,85 +305,7 @@ class MinecraftServer:
         # Physics tick timing
         self.last_physics_update = time.time()
         
-        # Create renderable world model for cameras
-        self.camera_world_model = None
-        self._create_camera_world_model()
         
-        # Initialiser les utilisateurs de caméras au démarrage
-        self._initialize_camera_users()
-        
-    def _create_camera_world_model(self):
-        """Create a renderable world model for camera use."""
-        try:
-            from minecraft_client_fr import EnhancedClientModel
-            self.camera_world_model = EnhancedClientModel()
-            
-            # Load world data from GameWorld into the renderable model
-            world_data = self.world.get_world_data()
-            self.camera_world_model.load_world_data(world_data)
-            
-            # Load all blocks from GameWorld
-            self._sync_world_to_camera_model()
-            
-            self.logger.info("Created renderable camera world model")
-        except Exception as e:
-            self.logger.warning(f"Could not create full camera world model: {e}")
-            # Create a minimal world model that can still be used by cameras
-            try:
-                self.camera_world_model = self._create_minimal_world_model()
-                self.logger.info("Created minimal camera world model (no 3D rendering)")
-            except Exception as e2:
-                self.logger.error(f"Could not create any camera world model: {e2}")
-                self.camera_world_model = None
-                
-    def _create_minimal_world_model(self):
-        """Create a minimal world model for cameras when full rendering is not available."""
-        class MinimalWorldModel:
-            def __init__(self, game_world):
-                self.world = game_world.world.copy()  # Copy the blocks
-                self.batch = None  # No batch for minimal mode
-                self.other_players = {}
-                self.world_size = 128
-                self.spawn_position = [30, 50, 80]
-                
-            def add_block(self, position, block_type, immediate=True):
-                """Add block to minimal model."""
-                self.world[position] = block_type
-                
-            def remove_block(self, position, immediate=True):
-                """Remove block from minimal model."""
-                if position in self.world:
-                    del self.world[position]
-        
-        return MinimalWorldModel(self.world)
-            
-    def _sync_world_to_camera_model(self):
-        """Synchronize GameWorld blocks to camera world model."""
-        if not self.camera_world_model:
-            return
-            
-        try:
-            # Add all blocks from GameWorld to camera model
-            blocks_added = 0
-            for position, block_type in self.world.world.items():
-                if hasattr(self.camera_world_model, 'add_block'):
-                    self.camera_world_model.add_block(position, block_type, immediate=False)
-                else:
-                    # Fallback for minimal world model
-                    self.camera_world_model.world[position] = block_type
-                blocks_added += 1
-                
-            self.logger.info(f"Synchronized {blocks_added} blocks to camera world model")
-        except Exception as e:
-            self.logger.error(f"Error synchronizing world to camera model: {e}")
-
-    def _initialize_camera_users(self):
-        """Initialise les utilisateurs de caméras au démarrage du serveur."""
-        # Camera user system was removed as per IMPLEMENTATION_SUMMARY.md
-        # This method is kept as a stub for compatibility
-        self.logger.info("Camera user system disabled - no camera users initialized")
-        pass
-
     def _check_ground_collision(self, position: Tuple[float, float, float]) -> bool:
         """Check ground collision using unified collision system."""
         return unified_check_collision(position, self.world.world)
@@ -494,7 +415,7 @@ class MinecraftServer:
         """Register a new client connection."""
         player_id = str(uuid.uuid4())
         self.clients[player_id] = websocket
-        # Create a new connected player (not overwriting camera users)
+        # Create a new connected player
         self.players[player_id] = PlayerState(player_id, DEFAULT_SPAWN_POSITION, (0, 0), is_connected=True, is_rtsp_user=False)
         self.logger.info(f"Player {player_id} connected from {websocket.remote_address}")
         return player_id
@@ -503,7 +424,7 @@ class MinecraftServer:
         """Unregister a client connection and clean up."""
         if player_id in self.clients:
             self.clients.pop(player_id, None)
-            # Only remove connected players, not camera users
+            # Only remove connected players, not RTSP users
             player = self.players.get(player_id)
             if player and not player.is_rtsp_user:
                 self.players.pop(player_id, None)
@@ -570,11 +491,11 @@ class MinecraftServer:
 
     async def broadcast_player_list(self):
         """Broadcast updated player list to all clients."""
-        # Include both connected players and camera users in the player list
+        # Include both connected players and RTSP users in the player list
         all_players = list(self.players.values())
         self.logger.info(f"Broadcasting player list with {len(all_players)} players")
         for player in all_players:
-            self.logger.info(f"  - {player.name} (Camera: {player.is_rtsp_user}, Connected: {player.is_connected})")
+            self.logger.info(f"  - {player.name} (RTSP: {player.is_rtsp_user}, Connected: {player.is_connected})")
         message = create_player_list_message(all_players)
         await self.broadcast_message(message)
 
@@ -750,28 +671,6 @@ class MinecraftServer:
                 raise InvalidWorldDataError(f"Invalid block type: {block_type}")
                 
             if self.world.add_block(position, block_type):
-                # Also update the camera world model
-                if self.camera_world_model:
-                    try:
-                        if hasattr(self.camera_world_model, 'add_block'):
-                            self.camera_world_model.add_block(position, block_type, immediate=True)
-                        else:
-                            # Fallback for minimal world model
-                            self.camera_world_model.world[position] = block_type
-                    except Exception as e:
-                        self.logger.warning(f"Failed to update camera world model: {e}")
-                
-                # Check if this is a camera block and create a camera user
-                if block_type == BlockType.CAMERA:
-                    try:
-                        camera = camera_manager.create_camera_user(position)
-                        if camera:
-                            self.logger.info(f"Created camera user {camera.id} at {position} on port {camera.port}")
-                        else:
-                            self.logger.error(f"Failed to create camera user at {position}")
-                    except Exception as e:
-                        self.logger.error(f"Error creating camera user at {position}: {e}")
-                
                 update_message = create_world_update_message([
                     BlockUpdate(position, block_type, player_id)
                 ])
@@ -793,34 +692,8 @@ class MinecraftServer:
             
             if not isinstance(position, (list, tuple)) or len(position) != 3:
                 raise InvalidWorldDataError("Invalid position format")
-            
-            # Check if we're removing a camera block
-            block_type = self.world.world.get(position)
-            is_camera_block = (block_type == BlockType.CAMERA)
                 
             if self.world.remove_block(position):
-                # Remove camera user if this was a camera block
-                if is_camera_block:
-                    try:
-                        if camera_manager.remove_camera_user(position):
-                            self.logger.info(f"Removed camera user at {position}")
-                        else:
-                            self.logger.warning(f"Failed to remove camera user at {position}")
-                    except Exception as e:
-                        self.logger.error(f"Error removing camera user at {position}: {e}")
-                
-                # Also update the camera world model
-                if self.camera_world_model:
-                    try:
-                        if hasattr(self.camera_world_model, 'remove_block'):
-                            self.camera_world_model.remove_block(position, immediate=True)
-                        else:
-                            # Fallback for minimal world model
-                            if position in self.camera_world_model.world:
-                                del self.camera_world_model.world[position]
-                    except Exception as e:
-                        self.logger.warning(f"Failed to update camera world model: {e}")
-                
                 update_message = create_world_update_message([
                     BlockUpdate(position, BlockType.AIR, player_id)
                 ])
@@ -889,13 +762,6 @@ class MinecraftServer:
         self.logger.info(f"Starting Minecraft server on {self.host}:{self.port}")
         
         try:
-            # Camera system was removed as per IMPLEMENTATION_SUMMARY.md
-            # Use the renderable camera world model instead of raw GameWorld
-            if self.camera_world_model:
-                self.logger.info("Camera world model created but camera system is disabled")
-            else:
-                self.logger.info("No camera world model available - camera system disabled")
-            
             # Start physics update loop
             physics_task = asyncio.create_task(self._physics_update_loop())
             
@@ -909,7 +775,6 @@ class MinecraftServer:
             self.logger.error(f"Server error: {e}")
         finally:
             self.running = False
-            # Camera server shutdown removed as per IMPLEMENTATION_SUMMARY.md
             raise
 
     def stop_server(self):
