@@ -37,6 +37,7 @@ class BlockType:
     WOOD = "wood"
     LEAF = "leaf"
     WATER = "water"
+    CAMERA = "camera"  # Camera block visible to all users
     AIR = "air"  # Represents removed blocks
 
 class Message:

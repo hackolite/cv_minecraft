@@ -67,6 +67,7 @@ except ImportError as e:
         STONE = "STONE"
         SAND = "SAND"
         BRICK = "BRICK"
+        CAMERA = "CAMERA"
     
     def setup_opengl():
         pass
