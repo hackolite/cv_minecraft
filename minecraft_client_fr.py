@@ -616,7 +616,7 @@ class MinecraftWindow(BaseWindow):
         self.flying_speed = config.get("player", "flying_speed", 15.0)
 
         # Inventaire
-        self.inventory = [BlockType.BRICK, BlockType.GRASS, BlockType.SAND, BlockType.STONE]
+        self.inventory = [BlockType.BRICK, BlockType.GRASS, BlockType.SAND, BlockType.STONE, BlockType.CAMERA]
         self.block = self.inventory[0]
         
         # Touches de mouvement configurables

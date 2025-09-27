@@ -108,7 +108,7 @@ def validate_block_type(block_type: str) -> bool:
     allowed_types = {
         BlockType.GRASS, BlockType.SAND, BlockType.BRICK, 
         BlockType.STONE, BlockType.WOOD, BlockType.LEAF, 
-        BlockType.WATER, BlockType.AIR
+        BlockType.WATER, BlockType.CAMERA, BlockType.AIR
     }
     return block_type in allowed_types
 
