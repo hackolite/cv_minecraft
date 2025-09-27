@@ -555,7 +555,6 @@ def block_texture_data(block_type):
         BlockType.WOOD: tex_coord_4x3(3, 1) * 6,
         BlockType.LEAF: tex_coord_4x3(3, 0) * 6,
         BlockType.WATER: tex_coord_4x3(0, 2) * 6,
-        BlockType.CAMERA: tex_coord_4x3(0, 1) * 6,  # Red texture for camera blocks
     }
     return textures.get(block_type, tex_coord_4x3(0, 0) * 6)
 
@@ -616,14 +615,9 @@ class MinecraftWindow(BaseWindow):
         self.flying_speed = config.get("player", "flying_speed", 15.0)
 
         # Inventaire
-        self.inventory = [BlockType.BRICK, BlockType.GRASS, BlockType.SAND, BlockType.STONE, BlockType.CAMERA]
+        self.inventory = [BlockType.BRICK, BlockType.GRASS, BlockType.SAND, BlockType.STONE]
         self.block = self.inventory[0]
         
-        # Inventaire des types de caméra
-        self.camera_types = [CameraType.STATIC, CameraType.ROTATING, CameraType.TRACKING, CameraType.WIDE_ANGLE, CameraType.ZOOM]
-        self.current_camera_type = self.camera_types[0]
-        self.camera_mode = False  # Mode sélection de type de caméra
-
         # Touches de mouvement configurables
         self.movement_keys = config.get_movement_keys()
         self.num_keys = [key._1, key._2, key._3, key._4, key._5]
@@ -880,8 +874,6 @@ class MinecraftWindow(BaseWindow):
     def update_block_display(self):
         """Met à jour l'affichage permanent du bloc actuel."""
         block_text = f"Bloc: {self.block}"
-        if self.block == BlockType.CAMERA:
-            block_text += f" ({self.get_camera_type_name(self.current_camera_type)})"
         self.block_label.text = block_text
 
     def update_ui(self):
@@ -949,26 +941,9 @@ Statut: {connection_status}"""
             self.rotation = (x_rot, y_rot)
 
     def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
-        """Gère la molette de la souris pour changer le type de bloc ou le type de caméra."""
+        """Gère la molette de la souris pour changer le type de bloc."""
         if self.exclusive:
-            # Si le bloc caméra est sélectionné et Ctrl est pressé, changer le type de caméra
-            if self.block == BlockType.CAMERA and (self.keys.get(key.LCTRL, False) or self.keys.get(key.RCTRL, False)):
-                # Calculer le nouvel index dans les types de caméra
-                current_camera_index = self.camera_types.index(self.current_camera_type) if self.current_camera_type in self.camera_types else 0
-                
-                if scroll_y > 0:  # Scroll vers le haut
-                    new_camera_index = (current_camera_index + 1) % len(self.camera_types)
-                elif scroll_y < 0:  # Scroll vers le bas
-                    new_camera_index = (current_camera_index - 1) % len(self.camera_types)
-                else:
-                    return  # Pas de changement
-                
-                # Mettre à jour le type de caméra sélectionné
-                self.current_camera_type = self.camera_types[new_camera_index]
-                self.show_message(f"Type de caméra: {self.get_camera_type_name(self.current_camera_type)}")
-                return
-            
-            # Sinon, changer le type de bloc normalement
+            # Changer le type de bloc normalement
             # Calculer le nouvel index dans l'inventaire
             current_index = self.inventory.index(self.block) if self.block in self.inventory else 0
             
@@ -985,23 +960,7 @@ Statut: {connection_status}"""
             self.block = self.inventory[new_index]
             message = f"Bloc sélectionné: {self.block}"
             
-            # Si on vient de sélectionner un bloc caméra, montrer aussi le type de caméra
-            if self.block == BlockType.CAMERA:
-                message += f" (Type: {self.get_camera_type_name(self.current_camera_type)})"
-                message += " - Ctrl+Molette pour changer le type"
-            
             self.show_message(message)
-    
-    def get_camera_type_name(self, camera_type):
-        """Retourne le nom français du type de caméra."""
-        names = {
-            CameraType.STATIC: "Statique",
-            CameraType.ROTATING: "Rotative",
-            CameraType.TRACKING: "Poursuite",
-            CameraType.WIDE_ANGLE: "Grand Angle",
-            CameraType.ZOOM: "Zoom"
-        }
-        return names.get(camera_type, camera_type)
 
     def on_key_press(self, symbol, modifiers):
         """Gère les touches pressées."""

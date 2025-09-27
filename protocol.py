@@ -38,15 +38,6 @@ class BlockType:
     LEAF = "leaf"
     WATER = "water"
     AIR = "air"  # Represents removed blocks
-    CAMERA = "camera"  # Special camera block that creates a user with FastAPI server
-
-class CameraType:
-    """Camera type definitions for different camera modes."""
-    STATIC = "static"       # Caméra statique fixe
-    ROTATING = "rotating"   # Caméra qui tourne automatiquement
-    TRACKING = "tracking"   # Caméra qui suit les joueurs
-    WIDE_ANGLE = "wide_angle"  # Caméra grand angle
-    ZOOM = "zoom"          # Caméra avec zoom
 
 class Message:
     """Base message class for client-server communication."""
