@@ -49,6 +49,7 @@ except ImportError as e:
             self.position = (30, 50, 80)
             self.rotation = (0, 0)
             self.flying = False
+            self.model = EnhancedClientModel()  # Add missing model attribute
             
         def get_size(self):
             """Dummy method for headless compatibility."""
@@ -103,9 +104,11 @@ class MinecraftClient:
                  block_type: str = "GRASS",
                  server_host: str = "localhost",
                  server_port: int = 8080,
-                 enable_gui: bool = True):
+                 enable_gui: bool = True,
+                 auto_capture: bool = True,
+                 capture_interval: float = 0.1):
         """
-        Initialise le client Minecraft.
+        Initialise le client Minecraft avec capture d'images automatique.
         
         Args:
             position: Position initiale (x, y, z) du joueur
@@ -113,10 +116,14 @@ class MinecraftClient:
             server_host: Host du serveur FastAPI
             server_port: Port du serveur FastAPI
             enable_gui: Active/désactive l'interface graphique
+            auto_capture: Active la capture automatique d'images (inspiré de mini_minecraft_pyglet_server)
+            capture_interval: Intervalle entre les captures en secondes
         """
         self.server_host = server_host
         self.server_port = server_port
         self.enable_gui = enable_gui
+        self.auto_capture = auto_capture
+        self.capture_interval = capture_interval
         
         # Position initiale
         if position:
@@ -131,10 +138,14 @@ class MinecraftClient:
         self.app_running = False  # Track if pyglet app is running
         self.server_thread = None
         
+        # Variables pour la capture d'images automatique (inspirées de mini_minecraft_pyglet_server_corrected.py)
+        self.latest_image = None
+        self.image_lock = threading.Lock()
+        
         # Serveur FastAPI
         self.app = FastAPI(
             title="Minecraft Client Controller",
-            description="API pour contrôler le client Minecraft"
+            description="API pour contrôler le client Minecraft avec capture d'images"
         )
         self._setup_api_routes()
         
@@ -154,8 +165,11 @@ class MinecraftClient:
                     "place_block": "/place_block",
                     "remove_block": "/remove_block",
                     "get_view": "/get_view",
+                    "view": "/view",
                     "get_status": "/status"
-                }
+                },
+                "auto_capture": self.auto_capture,
+                "capture_interval": self.capture_interval if self.auto_capture else None
             }
         
         @self.app.post("/move")
@@ -244,22 +258,60 @@ class MinecraftClient:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Screenshot error: {str(e)}")
         
+        @self.app.get("/view")
+        async def get_cached_view():
+            """
+            Récupère la vue mise en cache automatiquement (inspiré de mini_minecraft_pyglet_server_corrected.py).
+            Cette route utilise l'image capturée périodiquement pour de meilleures performances.
+            """
+            with self.image_lock:
+                if self.latest_image is None:
+                    # Si pas d'image en cache, essayer une capture directe
+                    if self.window and HAS_DISPLAY:
+                        screenshot = self._take_screenshot()
+                        if screenshot:
+                            return StreamingResponse(
+                                io.BytesIO(screenshot),
+                                media_type="image/png"
+                            )
+                    
+                    # Retourner une image vide si rien n'est disponible
+                    from PIL import Image as PILImage
+                    img = PILImage.new('RGB', (800, 600), (0, 0, 0))
+                    bio = io.BytesIO()
+                    img.save(bio, format='PNG')
+                    bio.seek(0)
+                    return StreamingResponse(bio, media_type="image/png")
+                else:
+                    # Utiliser l'image mise en cache
+                    img = self.latest_image.copy()
+            
+            bio = io.BytesIO()
+            img.save(bio, format='PNG')
+            bio.seek(0)
+            return StreamingResponse(bio, media_type="image/png")
+        
         @self.app.get("/status")
         async def get_status():
             """Récupère le statut complet du client."""
             if not self.window:
                 return {
                     "running": False,
-                    "gui_enabled": self.enable_gui
+                    "gui_enabled": self.enable_gui,
+                    "auto_capture": self.auto_capture,
+                    "has_cached_image": self.latest_image is not None
                 }
             
             return {
                 "running": self.running,
                 "gui_enabled": self.enable_gui,
+                "auto_capture": self.auto_capture,
+                "capture_interval": self.capture_interval,
+                "has_cached_image": self.latest_image is not None,
                 "position": self.get_position(),
                 "rotation": self.window.rotation,
                 "flying": self.window.flying,
-                "block_type": self.default_block_type.name,
+                "block_type": getattr(self.default_block_type, 'name', str(self.default_block_type)),
                 "world_blocks": len(self.window.model.world),
                 "visible_blocks": len(self.window.model.shown)
             }
@@ -318,6 +370,28 @@ class MinecraftClient:
             print(f"Screenshot error: {e}")
             return None
     
+    def capture_frame(self, dt):
+        """
+        Capture l'image du buffer dans le thread principal de Pyglet (inspiré de mini_minecraft_pyglet_server_corrected.py).
+        Cette méthode est appelée périodiquement pour maintenir un cache d'images.
+        """
+        if not self.auto_capture or not self.window:
+            return
+        
+        try:
+            # Capture de l'écran
+            screenshot_bytes = self._take_screenshot()
+            if screenshot_bytes:
+                # Convertir les bytes en image PIL pour le cache
+                screenshot_image = Image.open(io.BytesIO(screenshot_bytes))
+                
+                # Stocker l'image de manière thread-safe
+                with self.image_lock:
+                    self.latest_image = screenshot_image
+                    
+        except Exception as e:
+            print(f"⚠️  Erreur capture frame automatique: {e}")
+    
     def get_position(self) -> Optional[Tuple[float, float, float]]:
         """Récupère la position actuelle du joueur."""
         return self.window.position if self.window else None
@@ -353,7 +427,8 @@ class MinecraftClient:
         
         # Vue
         print("  Vue:")
-        print(f"  GET  /get_view          - Capture d'écran (PNG)")
+        print(f"  GET  /get_view          - Capture d'écran immédiate (PNG)")
+        print(f"  GET  /view              - Vue mise en cache (PNG, plus rapide)")
         print()
         
         # Exemples pratiques
@@ -363,6 +438,7 @@ class MinecraftClient:
         print(f"  curl -X POST '{base_url}/teleport?x=100&y=50&z=100'")
         print(f"  curl -X POST '{base_url}/place_block?x=101&y=50&z=101&block_type=STONE'")
         print(f"  curl {base_url}/get_view -o screenshot.png")
+        print(f"  curl {base_url}/view -o cached_view.png  # Plus rapide")
         print()
         print("=" * 50)
     
@@ -430,6 +506,12 @@ class MinecraftClient:
                 
                 # Set app_running flag before starting pyglet app
                 self.app_running = True
+                
+                # Schedule periodic image capture (inspired by mini_minecraft_pyglet_server_corrected.py)
+                if self.auto_capture and HAS_DISPLAY:
+                    pyglet.clock.schedule_interval(self.capture_frame, self.capture_interval)
+                    print(f"📸 Image capture scheduled every {self.capture_interval}s")
+                
                 pyglet.app.run()
                 
             except Exception as e:
@@ -464,7 +546,7 @@ def main():
     """Point d'entrée principal pour tester la classe client."""
     import argparse
     
-    parser = argparse.ArgumentParser(description="Minecraft Client with FastAPI integration")
+    parser = argparse.ArgumentParser(description="Minecraft Client with FastAPI integration and auto-capture")
     parser.add_argument('--position', nargs=3, type=float, default=[30, 50, 80],
                        help='Starting position [x y z]')
     parser.add_argument('--block-type', default='GRASS', 
@@ -475,6 +557,10 @@ def main():
                        help='FastAPI server port')
     parser.add_argument('--headless', action='store_true',
                        help='Run without GUI (server only)')
+    parser.add_argument('--no-auto-capture', action='store_true',
+                       help='Disable automatic image capture')
+    parser.add_argument('--capture-interval', type=float, default=0.1,
+                       help='Interval between image captures in seconds (default: 0.1)')
     
     args = parser.parse_args()
     
@@ -484,7 +570,9 @@ def main():
         block_type=args.block_type,
         server_host=args.server_host,
         server_port=args.server_port,
-        enable_gui=not args.headless
+        enable_gui=not args.headless,
+        auto_capture=not args.no_auto_capture,
+        capture_interval=args.capture_interval
     )
     
     # Start server
