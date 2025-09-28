@@ -12,7 +12,7 @@ from typing import Dict, Tuple, Optional, List, Any
 
 from noise_gen import NoiseGen
 from protocol import (
-    MessageType, BlockType, Message, PlayerState, BlockUpdate,
+    MessageType, BlockType, Message, PlayerState, BlockUpdate, Cube,
     create_world_init_message, create_world_chunk_message, 
     create_world_update_message, create_player_list_message,
     create_player_update_message
@@ -22,6 +22,7 @@ from minecraft_physics import (
     PLAYER_WIDTH, PLAYER_HEIGHT, GRAVITY, TERMINAL_VELOCITY, JUMP_VELOCITY,
     unified_check_collision, unified_check_player_collision
 )
+from cube_manager import cube_manager
 # from user_manager import user_manager, CameraUser  # Removed as per IMPLEMENTATION_SUMMARY.md
 
 # ---------- Constants ----------
@@ -315,6 +316,7 @@ class MinecraftServer:
         self.world = GameWorld()
         self.clients: Dict[str, websockets.WebSocketServerProtocol] = {}
         self.players: Dict[str, PlayerState] = {}
+        self.user_cubes: Dict[str, Cube] = {}  # Player ID -> Cube mapping
         self.rtsp_users: Dict[str, Any] = {}  # Kept for compatibility but unused
         self.running = False
         self.logger = logging.getLogger(__name__)
@@ -428,18 +430,47 @@ class MinecraftServer:
                 await self.broadcast_message(update_msg, exclude_player=player.id)
 
     async def register_client(self, websocket) -> str:
-        """Register a new client connection."""
+        """Register a new client connection and create a user cube."""
         player_id = str(uuid.uuid4())
         self.clients[player_id] = websocket
+        
         # Create a new connected player
         self.players[player_id] = PlayerState(player_id, DEFAULT_SPAWN_POSITION, (0, 0), is_connected=True, is_rtsp_user=False)
+        
+        # Create a cube for this user with dedicated port
+        user_cube = Cube(
+            cube_id=f"user_{player_id[:8]}", 
+            position=DEFAULT_SPAWN_POSITION,
+            base_url=self.host,
+            auto_start_server=False
+        )
+        
+        # Allocate port and start cube server
+        user_cube.port = cube_manager.allocate_port()
+        if user_cube.port:
+            user_cube.setup_fastapi_server()
+            await user_cube.start_server()
+            self.user_cubes[player_id] = user_cube
+            self.logger.info(f"Player {player_id} connected with cube server on port {user_cube.port}")
+        else:
+            self.logger.warning(f"Could not allocate port for player {player_id}")
+        
         self.logger.info(f"Player {player_id} connected from {websocket.remote_address}")
         return player_id
 
     async def unregister_client(self, player_id: str):
-        """Unregister a client connection and clean up."""
+        """Unregister a client connection and clean up cube."""
         if player_id in self.clients:
             self.clients.pop(player_id, None)
+            
+            # Clean up user cube
+            if player_id in self.user_cubes:
+                user_cube = self.user_cubes[player_id]
+                await user_cube.stop_server()
+                cube_manager.release_port(user_cube.port)
+                del self.user_cubes[player_id]
+                self.logger.info(f"Cleaned up cube for player {player_id}")
+            
             # Only remove connected players, not RTSP users
             player = self.players.get(player_id)
             if player and not player.is_rtsp_user:
