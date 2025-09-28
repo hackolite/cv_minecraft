@@ -21,8 +21,10 @@ try:
     from pyglet.gl import *
     from PIL import Image
     PYGLET_AVAILABLE = True
-except ImportError:
+    print("✅ Pyglet and OpenGL are available for window abstraction")
+except ImportError as e:
     PYGLET_AVAILABLE = False
+    print(f"⚠️  Pyglet/OpenGL not available: {e}. Using dummy classes.")
     # Create dummy classes for headless compatibility
     class DummyWindow:
         def __init__(self, **kwargs):
@@ -34,6 +36,8 @@ except ImportError:
         def get_size(self):
             return (self.width, self.height)
         def dispatch_event(self, event):
+            pass
+        def switch_to(self):
             pass
 
 class MessageType(Enum):
