@@ -292,6 +292,50 @@ class MinecraftClient:
         """Récupère la position actuelle du joueur."""
         return self.window.position if self.window else None
     
+    def _display_api_endpoints(self):
+        """Affiche tous les endpoints API disponibles au terminal."""
+        print()
+        print("📋 Endpoints API disponibles:")
+        print("=" * 50)
+        print()
+        
+        # Information générale
+        print(f"  GET  /                  - Informations générales de l'API")
+        print(f"  GET  /status            - Statut complet du client")
+        print(f"  GET  /docs              - Documentation interactive Swagger")
+        print()
+        
+        # Mouvement
+        print("  Mouvement:")
+        print(f"  POST /move              - Mouvement relatif")
+        print(f"       ?dx=X&dy=Y&dz=Z    (ex: ?dx=10&dy=5&dz=-5)")
+        print(f"  POST /teleport          - Téléportation absolue")
+        print(f"       ?x=X&y=Y&z=Z       (ex: ?x=100&y=50&z=100)")
+        print()
+        
+        # Blocs
+        print("  Blocs:")
+        print(f"  POST /place_block       - Placer un bloc")
+        print(f"       ?x=X&y=Y&z=Z&block_type=TYPE")
+        print(f"  POST /remove_block      - Supprimer un bloc")
+        print(f"       ?x=X&y=Y&z=Z")
+        print()
+        
+        # Vue
+        print("  Vue:")
+        print(f"  GET  /get_view          - Capture d'écran (PNG)")
+        print()
+        
+        # Exemples pratiques
+        print("  Exemples d'utilisation:")
+        base_url = f"http://{self.server_host}:{self.server_port}"
+        print(f"  curl {base_url}/status")
+        print(f"  curl -X POST '{base_url}/teleport?x=100&y=50&z=100'")
+        print(f"  curl -X POST '{base_url}/place_block?x=101&y=50&z=101&block_type=STONE'")
+        print(f"  curl {base_url}/get_view -o screenshot.png")
+        print()
+        print("=" * 50)
+    
     def start_server(self) -> bool:
         """Démarre le serveur FastAPI dans un thread séparé."""
         if self.server_thread and self.server_thread.is_alive():
@@ -323,6 +367,9 @@ class MinecraftClient:
         
         print(f"🚀 FastAPI server started on http://{self.server_host}:{self.server_port}")
         print(f"📊 API documentation: http://{self.server_host}:{self.server_port}/docs")
+        
+        # Display all available API endpoints
+        self._display_api_endpoints()
         
         return True
     
