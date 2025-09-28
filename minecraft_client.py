@@ -50,6 +50,14 @@ except ImportError as e:
             self.rotation = (0, 0)
             self.flying = False
             
+        def get_size(self):
+            """Dummy method for headless compatibility."""
+            return (800, 600)
+            
+        def dispatch_event(self, event_type):
+            """Dummy method for headless compatibility."""
+            pass
+            
     class EnhancedClientModel:
         def __init__(self):
             self.world = {}
@@ -120,6 +128,7 @@ class MinecraftClient:
         # État du client
         self.window = None
         self.running = False
+        self.app_running = False  # Track if pyglet app is running
         self.server_thread = None
         
         # Serveur FastAPI
@@ -266,23 +275,44 @@ class MinecraftClient:
         if not self.window or not HAS_DISPLAY:
             return None
         
+        # Critical safety check: only allow screenshots when pyglet app is fully running
+        if not self.app_running:
+            print("Screenshot error: Application not fully initialized")
+            return None
+        
+        # Additional safety check: ensure we have the real MinecraftWindow and not the dummy
+        if self.window.__class__.__name__ != 'MinecraftWindow' or not hasattr(self.window, 'context'):
+            print("Screenshot error: No proper window context available")
+            return None
+        
         try:
-            # Force a redraw
-            self.window.dispatch_event('on_draw')
+            # Check if window has proper OpenGL context and required methods
+            if not hasattr(self.window, 'get_size') or not hasattr(self.window, 'dispatch_event'):
+                print("Screenshot error: Window missing required methods")
+                return None
             
-            # Read pixels from framebuffer
-            width, height = self.window.get_size()
-            pixels = (GLubyte * (3 * width * height))(0)
-            glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels)
-            
-            # Convert to PIL Image and flip vertically
-            image = Image.frombytes('RGB', (width, height), pixels)
-            image = image.transpose(Image.FLIP_TOP_BOTTOM)
-            
-            # Convert to PNG bytes
-            img_buffer = io.BytesIO()
-            image.save(img_buffer, format='PNG')
-            return img_buffer.getvalue()
+            # Extra safety: wrap all OpenGL calls in try-catch
+            try:
+                # Force a redraw
+                self.window.dispatch_event('on_draw')
+                
+                # Read pixels from framebuffer
+                width, height = self.window.get_size()
+                pixels = (GLubyte * (3 * width * height))(0)
+                glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels)
+                
+                # Convert to PIL Image and flip vertically
+                image = Image.frombytes('RGB', (width, height), pixels)
+                image = image.transpose(Image.FLIP_TOP_BOTTOM)
+                
+                # Convert to PNG bytes
+                img_buffer = io.BytesIO()
+                image.save(img_buffer, format='PNG')
+                return img_buffer.getvalue()
+                
+            except Exception as gl_error:
+                print(f"Screenshot error: OpenGL operation failed: {gl_error}")
+                return None
             
         except Exception as e:
             print(f"Screenshot error: {e}")
@@ -398,6 +428,8 @@ class MinecraftClient:
                 if self.server_thread and self.server_thread.is_alive():
                     print(f"🌐 API available at: http://{self.server_host}:{self.server_port}")
                 
+                # Set app_running flag before starting pyglet app
+                self.app_running = True
                 pyglet.app.run()
                 
             except Exception as e:
@@ -405,6 +437,7 @@ class MinecraftClient:
                 raise
             finally:
                 self.running = False
+                self.app_running = False
         else:
             # Headless mode - create a minimal window object for API compatibility
             print("🔧 Running in headless mode (server only)")

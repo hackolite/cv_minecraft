@@ -52,4 +52,4 @@ Thumbs.db
 test_new_features.py
 test_client_config.py
 test_integration.py
-run_all_tests.py
+run_all_tests.pyscreenshot*.png
