@@ -8,11 +8,33 @@ import asyncio
 import socket
 import threading
 import time
+import io
 from enum import Enum
 from typing import Dict, List, Tuple, Any, Optional, Set
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 import uvicorn
+
+# Pyglet and OpenGL imports for window abstraction
+try:
+    import pyglet
+    from pyglet.gl import *
+    from PIL import Image
+    PYGLET_AVAILABLE = True
+except ImportError:
+    PYGLET_AVAILABLE = False
+    # Create dummy classes for headless compatibility
+    class DummyWindow:
+        def __init__(self, **kwargs):
+            self.width = kwargs.get('width', 800)
+            self.height = kwargs.get('height', 600)
+            self.visible = kwargs.get('visible', False)
+        def close(self):
+            pass
+        def get_size(self):
+            return (self.width, self.height)
+        def dispatch_event(self, event):
+            pass
 
 class MessageType(Enum):
     """Types of messages exchanged between client and server."""
@@ -71,18 +93,189 @@ class Message:
         msg_type = MessageType(data["type"])
         return cls(msg_type, data["data"], data.get("player_id"))
 
+
+class CubeWindow:
+    """Pyglet window abstraction for camera-type cubes."""
+    
+    def __init__(self, cube_id: str, width: int = 800, height: int = 600, visible: bool = False):
+        """Initialize a cube window."""
+        self.cube_id = cube_id
+        self.width = width
+        self.height = height
+        self.visible = visible
+        self.window = None
+        self.app_running = False
+        
+        if PYGLET_AVAILABLE:
+            try:
+                # Create an offscreen window for rendering (not visible by default)
+                self.window = pyglet.window.Window(
+                    width=width, 
+                    height=height, 
+                    visible=visible,
+                    caption=f'Cube {cube_id} View'
+                )
+                
+                # Basic OpenGL setup
+                self._setup_opengl()
+                
+                print(f"✅ Created pyglet window for cube {cube_id}")
+                
+            except Exception as e:
+                print(f"⚠️  Failed to create pyglet window for cube {cube_id}: {e}")
+                self.window = DummyWindow(width=width, height=height, visible=visible)
+        else:
+            print(f"⚠️  Pyglet not available, using dummy window for cube {cube_id}")
+            self.window = DummyWindow(width=width, height=height, visible=visible)
+    
+    def _setup_opengl(self):
+        """Basic OpenGL setup for the cube window."""
+        if not PYGLET_AVAILABLE or not self.window:
+            return
+            
+        try:
+            # Make this window's context current
+            self.window.switch_to()
+            
+            # Basic OpenGL setup
+            glEnable(GL_DEPTH_TEST)
+            glClearColor(0.5, 0.7, 1.0, 1.0)  # Sky blue background
+            
+        except Exception as e:
+            print(f"⚠️  OpenGL setup failed for cube {self.cube_id}: {e}")
+    
+    def take_screenshot(self) -> Optional[bytes]:
+        """Take a screenshot of the cube's view."""
+        if not PYGLET_AVAILABLE or not self.window or not hasattr(self.window, 'get_size'):
+            return None
+            
+        try:
+            # Make sure this window's context is current
+            self.window.switch_to()
+            
+            # Clear and render a simple scene
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+            
+            # Simple cube rendering (placeholder - in real implementation this would render the world from cube's perspective)
+            self._render_simple_scene()
+            
+            # Force flush to ensure rendering is complete
+            glFlush()
+            
+            # Read pixels from framebuffer
+            width, height = self.window.get_size()
+            pixels = (GLubyte * (3 * width * height))(0)
+            glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels)
+            
+            # Convert to PIL Image and flip vertically
+            image = Image.frombytes('RGB', (width, height), pixels)
+            image = image.transpose(Image.FLIP_TOP_BOTTOM)
+            
+            # Convert to PNG bytes
+            img_buffer = io.BytesIO()
+            image.save(img_buffer, format='PNG')
+            return img_buffer.getvalue()
+            
+        except Exception as e:
+            print(f"⚠️  Screenshot failed for cube {self.cube_id}: {e}")
+            return None
+    
+    def _render_simple_scene(self):
+        """Render a simple scene from the cube's perspective."""
+        if not PYGLET_AVAILABLE:
+            return
+            
+        try:
+            # Set up 3D perspective
+            glMatrixMode(GL_PROJECTION)
+            glLoadIdentity()
+            
+            # Set perspective projection
+            width, height = self.window.get_size()
+            aspect = width / float(height) if height > 0 else 1.0
+            
+            # Simple perspective setup
+            glFrustum(-aspect, aspect, -1, 1, 1, 100)
+            
+            glMatrixMode(GL_MODELVIEW)
+            glLoadIdentity()
+            
+            # Move camera back
+            glTranslatef(0, 0, -5)
+            
+            # Draw a simple colored cube as placeholder
+            self._draw_colored_cube()
+            
+        except Exception as e:
+            print(f"⚠️  Scene rendering failed for cube {self.cube_id}: {e}")
+    
+    def _draw_colored_cube(self):
+        """Draw a simple colored cube."""
+        if not PYGLET_AVAILABLE:
+            return
+            
+        try:
+            # Define cube vertices
+            vertices = [
+                # Front face
+                -1, -1,  1,   1, -1,  1,   1,  1,  1,  -1,  1,  1,
+                # Back face
+                -1, -1, -1,  -1,  1, -1,   1,  1, -1,   1, -1, -1,
+                # Top face
+                -1,  1, -1,  -1,  1,  1,   1,  1,  1,   1,  1, -1,
+                # Bottom face
+                -1, -1, -1,   1, -1, -1,   1, -1,  1,  -1, -1,  1,
+                # Right face
+                 1, -1, -1,   1,  1, -1,   1,  1,  1,   1, -1,  1,
+                # Left face
+                -1, -1, -1,  -1, -1,  1,  -1,  1,  1,  -1,  1, -1,
+            ]
+            
+            # Define colors for each face
+            colors = [
+                1.0, 0.0, 0.0,  1.0, 0.0, 0.0,  1.0, 0.0, 0.0,  1.0, 0.0, 0.0,  # Red front
+                0.0, 1.0, 0.0,  0.0, 1.0, 0.0,  0.0, 1.0, 0.0,  0.0, 1.0, 0.0,  # Green back
+                0.0, 0.0, 1.0,  0.0, 0.0, 1.0,  0.0, 0.0, 1.0,  0.0, 0.0, 1.0,  # Blue top
+                1.0, 1.0, 0.0,  1.0, 1.0, 0.0,  1.0, 1.0, 0.0,  1.0, 1.0, 0.0,  # Yellow bottom
+                1.0, 0.0, 1.0,  1.0, 0.0, 1.0,  1.0, 0.0, 1.0,  1.0, 0.0, 1.0,  # Magenta right
+                0.0, 1.0, 1.0,  0.0, 1.0, 1.0,  0.0, 1.0, 1.0,  0.0, 1.0, 1.0,  # Cyan left
+            ]
+            
+            # Draw the cube using quads
+            glBegin(GL_QUADS)
+            for i in range(24):  # 6 faces * 4 vertices
+                glColor3f(colors[i*3], colors[i*3+1], colors[i*3+2])
+                glVertex3f(vertices[i*3], vertices[i*3+1], vertices[i*3+2])
+            glEnd()
+            
+        except Exception as e:
+            print(f"⚠️  Cube drawing failed for cube {self.cube_id}: {e}")
+    
+    def close(self):
+        """Close the cube window and clean up resources."""
+        if self.window and hasattr(self.window, 'close'):
+            try:
+                self.window.close()
+                print(f"✅ Closed window for cube {self.cube_id}")
+            except Exception as e:
+                print(f"⚠️  Error closing window for cube {self.cube_id}: {e}")
+        self.window = None
+
+
 class Cube:
     """Base class representing a cube in the game world with FastAPI server capabilities."""
     
     def __init__(self, cube_id: str, position: Tuple[float, float, float],
                  rotation: Tuple[float, float] = (0, 0), size: float = 0.5, 
-                 base_url: str = "localhost", auto_start_server: bool = False):
+                 base_url: str = "localhost", auto_start_server: bool = False,
+                 cube_type: str = "normal"):
         self.id = cube_id
         self.position = position  # (x, y, z)
         self.rotation = rotation  # (horizontal, vertical)
         self.size = size  # Half-size of the cube (cube extends from -size to +size)
         self.velocity = [0.0, 0.0, 0.0]  # (dx, dy, dz)
         self.color = None  # Will be set by the model
+        self.cube_type = cube_type  # Type of cube: "normal", "camera", etc.
         
         # Server-related attributes
         self.base_url = base_url
@@ -97,6 +290,13 @@ class Cube:
         
         # Camera and status
         self.status = "active"
+        
+        # Window abstraction for certain cube types (especially camera types)
+        self.window = None  # Will be created for camera-type cubes
+        
+        # Create window for camera-type cubes
+        if self.cube_type == "camera":
+            self._create_window()
         
         if auto_start_server:
             self.setup_fastapi_server()
@@ -128,6 +328,15 @@ class Cube:
         render_y = y + self.size
         return (x, render_y, z)  # Elevate by half-size so bottom touches ground
 
+    def _create_window(self):
+        """Create a pyglet window for this cube (used for camera-type cubes)."""
+        try:
+            self.window = CubeWindow(self.id, width=800, height=600, visible=False)
+            print(f"✅ Created window for {self.cube_type} cube {self.id}")
+        except Exception as e:
+            print(f"⚠️  Failed to create window for cube {self.id}: {e}")
+            self.window = None
+
     def setup_fastapi_server(self):
         """Setup FastAPI server for this cube."""
         if self.app is not None:
@@ -148,6 +357,8 @@ class Cube:
                 "rotation": self.rotation,
                 "status": self.status,
                 "color": self.color,
+                "cube_type": self.cube_type,
+                "has_window": self.window is not None,
                 "base_url": f"http://{self.base_url}:{self.port}",
                 "child_cubes": list(self.child_cubes.keys())
             }
@@ -232,21 +443,38 @@ class Cube:
         
         @self.app.get("/camera/image")
         async def get_camera_image():
-            """Get camera image (placeholder for now)."""
-            # This would integrate with the actual camera system
-            return {"message": "Camera image not yet implemented"}
+            """Get camera image from cube's window."""
+            if not self.window:
+                if self.cube_type == "camera":
+                    return {"error": "Camera window not available", "message": "Window failed to initialize"}
+                else:
+                    return {"error": "Not a camera cube", "message": f"Cube type '{self.cube_type}' does not support camera images"}
+            
+            try:
+                # Take screenshot from the cube's window
+                screenshot_bytes = self.window.take_screenshot()
+                if screenshot_bytes:
+                    return StreamingResponse(
+                        io.BytesIO(screenshot_bytes),
+                        media_type="image/png"
+                    )
+                else:
+                    return {"error": "Screenshot failed", "message": "Failed to capture image from cube window"}
+            except Exception as e:
+                return {"error": "Camera error", "message": f"Screenshot error: {str(e)}"}
         
         @self.app.post("/cubes/create")
-        async def create_child_cube(child_id: str, x: float = 0.0, y: float = 0.0, z: float = 0.0):
+        async def create_child_cube(child_id: str, x: float = 0.0, y: float = 0.0, z: float = 0.0, cube_type: str = "normal"):
             """Create a child cube."""
             try:
-                child_cube = await self.create_child_cube(child_id, (x, y, z))
+                child_cube = await self.create_child_cube(child_id, (x, y, z), cube_type)
                 return {
                     "message": f"Child cube {child_id} created",
                     "child_cube": {
                         "id": child_cube.id,
                         "position": child_cube.position,
-                        "port": child_cube.port
+                        "port": child_cube.port,
+                        "cube_type": child_cube.cube_type
                     }
                 }
             except Exception as e:
@@ -276,13 +504,13 @@ class Cube:
                 ]
             }
 
-    async def create_child_cube(self, child_id: str, position: Tuple[float, float, float]) -> 'Cube':
+    async def create_child_cube(self, child_id: str, position: Tuple[float, float, float], cube_type: str = "normal") -> 'Cube':
         """Create a child cube with its own FastAPI server."""
         if child_id in self.child_cubes:
             raise ValueError(f"Child cube {child_id} already exists")
         
-        # Create child cube
-        child_cube = Cube(child_id, position, base_url=self.base_url)
+        # Create child cube with specified type
+        child_cube = Cube(child_id, position, base_url=self.base_url, cube_type=cube_type)
         child_cube.parent_cube = self
         
         # Assign port from central manager
@@ -351,6 +579,11 @@ class Cube:
         # Stop all child cubes first
         for child_id in list(self.child_cubes.keys()):
             await self.destroy_child_cube(child_id)
+        
+        # Clean up window if it exists
+        if self.window:
+            self.window.close()
+            self.window = None
         
         # Note: uvicorn doesn't have a clean stop method when run in thread
         # In production, we'd use a process-based approach
