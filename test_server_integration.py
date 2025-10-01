@@ -11,7 +11,7 @@ import time
 from protocol import MessageType
 
 async def test_user_connection_creates_cube():
-    """Test that connecting to the server creates a cube with FastAPI endpoints."""
+    """Test that connecting to the server creates a cube."""
     print("🧪 Testing User Connection -> Cube Creation Flow")
     print("=" * 60)
     
@@ -50,45 +50,29 @@ async def test_user_connection_creates_cube():
             if server.user_cubes:
                 player_id = list(server.user_cubes.keys())[0]
                 user_cube = server.user_cubes[player_id]
-                cube_port = user_cube.port
                 
-                print(f"✅ User cube created on port: {cube_port}")
+                print(f"✅ User cube created")
+                print(f"   Cube ID: {user_cube.id}")
+                print(f"   Position: {user_cube.position}")
+                print(f"   Rotation: {user_cube.rotation}")
                 
-                # Test cube API endpoints
+                # Test cube programmatically
                 try:
-                    # Test cube info
-                    response = requests.get(f"http://localhost:{cube_port}/", timeout=2)
-                    if response.status_code == 200:
-                        print("✅ Cube API accessible")
-                        cube_info = response.json()
-                        print(f"   Cube ID: {cube_info['cube_id']}")
-                        print(f"   Position: {cube_info['position']}")
+                    # Test position update
+                    user_cube.update_position((10, 50, 10))
+                    print(f"✅ Cube position updated: {user_cube.position}")
                     
-                    # Test movement
-                    response = requests.post(f"http://localhost:{cube_port}/move/forward?distance=3", timeout=2)
-                    if response.status_code == 200:
-                        print("✅ Cube movement working")
-                        move_result = response.json()
-                        print(f"   New position: {move_result['position']}")
+                    # Test rotation update
+                    user_cube.update_rotation((45, 10))
+                    print(f"✅ Cube rotation updated: {user_cube.rotation}")
                     
                     # Test child cube creation
-                    response = requests.post(
-                        f"http://localhost:{cube_port}/cubes/create?child_id=test_child&x=15&y=50&z=15", 
-                        timeout=5
-                    )
-                    if response.status_code == 200:
-                        print("✅ Child cube creation working")
-                        child_info = response.json()
-                        child_port = child_info['child_cube']['port']
-                        print(f"   Child cube port: {child_port}")
-                        
-                        # Test child cube API
-                        child_response = requests.get(f"http://localhost:{child_port}/", timeout=2)
-                        if child_response.status_code == 200:
-                            print("✅ Child cube API accessible")
+                    child_cube = user_cube.create_child_cube("test_child", (15, 50, 15))
+                    print(f"✅ Child cube created: {child_cube.id}")
+                    print(f"   Child position: {child_cube.position}")
                     
                 except Exception as e:
-                    print(f"❌ API test failed: {e}")
+                    print(f"❌ Cube manipulation test failed: {e}")
             else:
                 print("❌ No user cubes created")
     

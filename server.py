@@ -445,15 +445,9 @@ class MinecraftServer:
             auto_start_server=False
         )
         
-        # Allocate port and start cube server
-        user_cube.port = cube_manager.allocate_port()
-        if user_cube.port:
-            user_cube.setup_fastapi_server()
-            await user_cube.start_server()
-            self.user_cubes[player_id] = user_cube
-            self.logger.info(f"Player {player_id} connected with cube server on port {user_cube.port}")
-        else:
-            self.logger.warning(f"Could not allocate port for player {player_id}")
+        # Add cube to user cubes
+        self.user_cubes[player_id] = user_cube
+        self.logger.info(f"Player {player_id} connected with cube")
         
         self.logger.info(f"Player {player_id} connected from {websocket.remote_address}")
         return player_id
@@ -466,8 +460,10 @@ class MinecraftServer:
             # Clean up user cube
             if player_id in self.user_cubes:
                 user_cube = self.user_cubes[player_id]
-                await user_cube.stop_server()
-                cube_manager.release_port(user_cube.port)
+                # Clean up window if it exists
+                if user_cube.window:
+                    user_cube.window.close()
+                    user_cube.window = None
                 del self.user_cubes[player_id]
                 self.logger.info(f"Cleaned up cube for player {player_id}")
             

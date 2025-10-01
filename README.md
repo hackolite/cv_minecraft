@@ -22,7 +22,7 @@ This version has been restructured into a **client-server architecture**:
 - ✅ **Authoritative Server**: Server manages world state to prevent cheating
 - ✅ **Real-time Updates**: Block placement/destruction synchronized across all clients
 - ✅ **Player Movement Tracking**: See other players move in real-time
-- ✅ **FastAPI Integration**: Abstract client with REST API for programmatic control
+- ✅ **Abstract Client**: Simplified client interface for easy integration
 
 ## How to Run
 
