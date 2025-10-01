@@ -11,9 +11,6 @@ import time
 import io
 from enum import Enum
 from typing import Dict, List, Tuple, Any, Optional, Set
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse
-import uvicorn
 
 # Pyglet and OpenGL imports for window abstraction
 try:
@@ -267,11 +264,10 @@ class CubeWindow:
 
 
 class Cube:
-    """Base class representing a cube in the game world with FastAPI server capabilities."""
+    """Base class representing a cube in the game world."""
     
     def __init__(self, cube_id: str, position: Tuple[float, float, float],
                  rotation: Tuple[float, float] = (0, 0), size: float = 0.5, 
-                 base_url: str = "localhost", auto_start_server: bool = False,
                  cube_type: str = "normal"):
         self.id = cube_id
         self.position = position  # (x, y, z)
@@ -280,13 +276,6 @@ class Cube:
         self.velocity = [0.0, 0.0, 0.0]  # (dx, dy, dz)
         self.color = None  # Will be set by the model
         self.cube_type = cube_type  # Type of cube: "normal", "camera", etc.
-        
-        # Server-related attributes
-        self.base_url = base_url
-        self.port = None  # Will be assigned dynamically
-        self.app = None  # FastAPI application
-        self.server_thread = None
-        self.running = False
         
         # Child cube management
         self.child_cubes: Dict[str, 'Cube'] = {}
@@ -301,9 +290,6 @@ class Cube:
         # Create window for camera-type cubes
         if self.cube_type == "camera":
             self._create_window()
-        
-        if auto_start_server:
-            self.setup_fastapi_server()
     
     def update_position(self, position: Tuple[float, float, float]):
         """Update the cube's position with validation."""
@@ -341,259 +327,34 @@ class Cube:
             print(f"⚠️  Failed to create window for cube {self.id}: {e}")
             self.window = None
 
-    def setup_fastapi_server(self):
-        """Setup FastAPI server for this cube."""
-        if self.app is not None:
-            return  # Already setup
-            
-        self.app = FastAPI(title=f"Cube {self.id} API", version="1.0.0")
-        self._setup_routes()
-    
-    def _setup_routes(self):
-        """Setup FastAPI routes for cube control."""
-        
-        @self.app.get("/")
-        async def get_info():
-            """Get cube information."""
-            return {
-                "cube_id": self.id,
-                "position": self.position,
-                "rotation": self.rotation,
-                "status": self.status,
-                "color": self.color,
-                "cube_type": self.cube_type,
-                "has_window": self.window is not None,
-                "base_url": f"http://{self.base_url}:{self.port}",
-                "child_cubes": list(self.child_cubes.keys())
-            }
-        
-        @self.app.get("/status")
-        async def get_status():
-            """Get cube status and color."""
-            return {
-                "status": self.status,
-                "color": self.color,
-                "position": self.position,
-                "running": self.running
-            }
-        
-        @self.app.post("/move/forward")
-        async def move_forward(distance: float = 1.0):
-            """Move cube forward."""
-            x, y, z = self.position
-            # Calculate forward direction based on rotation
-            h_rot = self.rotation[0]
-            import math
-            dx = -distance * math.sin(math.radians(h_rot))
-            dz = -distance * math.cos(math.radians(h_rot))
-            new_position = (x + dx, y, z + dz)
-            self.update_position(new_position)
-            return {"message": "Moved forward", "position": self.position}
-        
-        @self.app.post("/move/back")
-        async def move_back(distance: float = 1.0):
-            """Move cube backward."""
-            x, y, z = self.position
-            # Calculate backward direction based on rotation
-            h_rot = self.rotation[0]
-            import math
-            dx = distance * math.sin(math.radians(h_rot))
-            dz = distance * math.cos(math.radians(h_rot))
-            new_position = (x + dx, y, z + dz)
-            self.update_position(new_position)
-            return {"message": "Moved back", "position": self.position}
-        
-        @self.app.post("/move/left")
-        async def move_left(distance: float = 1.0):
-            """Move cube left."""
-            x, y, z = self.position
-            # Calculate left direction based on rotation
-            h_rot = self.rotation[0]
-            import math
-            dx = -distance * math.cos(math.radians(h_rot))
-            dz = distance * math.sin(math.radians(h_rot))
-            new_position = (x + dx, y, z + dz)
-            self.update_position(new_position)
-            return {"message": "Moved left", "position": self.position}
-        
-        @self.app.post("/move/right")
-        async def move_right(distance: float = 1.0):
-            """Move cube right."""
-            x, y, z = self.position
-            # Calculate right direction based on rotation
-            h_rot = self.rotation[0]
-            import math
-            dx = distance * math.cos(math.radians(h_rot))
-            dz = -distance * math.sin(math.radians(h_rot))
-            new_position = (x + dx, y, z + dz)
-            self.update_position(new_position)
-            return {"message": "Moved right", "position": self.position}
-        
-        @self.app.post("/move/jump")
-        async def jump(height: float = 2.0):
-            """Make cube jump."""
-            x, y, z = self.position
-            new_position = (x, y + height, z)
-            self.update_position(new_position)
-            return {"message": f"Jumped {height} units", "position": self.position}
-        
-        @self.app.post("/camera/rotate")
-        async def rotate_camera(horizontal: float = 0.0, vertical: float = 0.0):
-            """Rotate cube's camera."""
-            h, v = self.rotation
-            new_rotation = (h + horizontal, v + vertical)
-            self.update_rotation(new_rotation)
-            return {"message": "Camera rotated", "rotation": self.rotation}
-        
-        @self.app.get("/camera/image")
-        async def get_camera_image():
-            """Get camera image from cube's window."""
-            if not self.window:
-                if self.cube_type == "camera":
-                    return {"error": "Camera window not available", "message": "Window failed to initialize"}
-                else:
-                    return {"error": "Not a camera cube", "message": f"Cube type '{self.cube_type}' does not support camera images"}
-            
-            try:
-                # Take screenshot from the cube's window
-                screenshot_bytes = self.window.take_screenshot()
-                if screenshot_bytes:
-                    return StreamingResponse(
-                        io.BytesIO(screenshot_bytes),
-                        media_type="image/png"
-                    )
-                else:
-                    return {"error": "Screenshot failed", "message": "Failed to capture image from cube window"}
-            except Exception as e:
-                return {"error": "Camera error", "message": f"Screenshot error: {str(e)}"}
-        
-        @self.app.post("/cubes/create")
-        async def create_child_cube(child_id: str, x: float = 0.0, y: float = 0.0, z: float = 0.0, cube_type: str = "normal"):
-            """Create a child cube."""
-            try:
-                child_cube = await self.create_child_cube(child_id, (x, y, z), cube_type)
-                return {
-                    "message": f"Child cube {child_id} created",
-                    "child_cube": {
-                        "id": child_cube.id,
-                        "position": child_cube.position,
-                        "port": child_cube.port,
-                        "cube_type": child_cube.cube_type
-                    }
-                }
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=str(e))
-        
-        @self.app.delete("/cubes/{child_id}")
-        async def destroy_child_cube(child_id: str):
-            """Destroy a child cube."""
-            try:
-                await self.destroy_child_cube(child_id)
-                return {"message": f"Child cube {child_id} destroyed"}
-            except Exception as e:
-                raise HTTPException(status_code=404, detail=str(e))
-        
-        @self.app.get("/cubes")
-        async def list_child_cubes():
-            """List all child cubes."""
-            return {
-                "child_cubes": [
-                    {
-                        "id": cube.id,
-                        "position": cube.position,
-                        "port": cube.port,
-                        "status": cube.status
-                    }
-                    for cube in self.child_cubes.values()
-                ]
-            }
-
-    async def create_child_cube(self, child_id: str, position: Tuple[float, float, float], cube_type: str = "normal") -> 'Cube':
-        """Create a child cube with its own FastAPI server."""
+    def create_child_cube(self, child_id: str, position: Tuple[float, float, float], cube_type: str = "normal") -> 'Cube':
+        """Create a child cube."""
         if child_id in self.child_cubes:
             raise ValueError(f"Child cube {child_id} already exists")
         
         # Create child cube with specified type
-        child_cube = Cube(child_id, position, base_url=self.base_url, cube_type=cube_type)
+        child_cube = Cube(child_id, position, cube_type=cube_type)
         child_cube.parent_cube = self
-        
-        # Assign port from central manager
-        from cube_manager import cube_manager
-        child_cube.port = cube_manager.allocate_port()
-        
-        # Setup and start server
-        child_cube.setup_fastapi_server()
-        await child_cube.start_server()
         
         # Add to children
         self.child_cubes[child_id] = child_cube
         
         return child_cube
     
-    async def destroy_child_cube(self, child_id: str):
-        """Destroy a child cube and stop its server."""
+    def destroy_child_cube(self, child_id: str):
+        """Destroy a child cube."""
         if child_id not in self.child_cubes:
             raise ValueError(f"Child cube {child_id} not found")
         
         child_cube = self.child_cubes[child_id]
         
-        # Stop server and release port
-        await child_cube.stop_server()
-        from cube_manager import cube_manager
-        cube_manager.release_port(child_cube.port)
+        # Clean up window if it exists
+        if child_cube.window:
+            child_cube.window.close()
+            child_cube.window = None
         
         # Remove from children
         del self.child_cubes[child_id]
-    
-    async def start_server(self):
-        """Start the FastAPI server for this cube."""
-        if self.running or self.port is None:
-            return
-        
-        if self.app is None:
-            self.setup_fastapi_server()
-        
-        def run_server():
-            try:
-                uvicorn.run(self.app, host=self.base_url, port=self.port, log_level="warning")
-            except Exception as e:
-                print(f"Server error for cube {self.id}: {e}")
-        
-        self.server_thread = threading.Thread(target=run_server, daemon=True)
-        self.server_thread.start()
-        self.running = True
-        
-        # Wait for server to start
-        for _ in range(10):
-            time.sleep(0.5)
-            try:
-                import requests
-                response = requests.get(f"http://{self.base_url}:{self.port}/", timeout=1)
-                if response.status_code == 200:
-                    break
-            except:
-                continue
-        
-        print(f"🚀 Cube {self.id} server started on http://{self.base_url}:{self.port}")
-    
-    async def stop_server(self):
-        """Stop the FastAPI server for this cube."""
-        self.running = False
-        
-        # Stop all child cubes first
-        for child_id in list(self.child_cubes.keys()):
-            await self.destroy_child_cube(child_id)
-        
-        # Clean up window if it exists
-        if self.window:
-            self.window.close()
-            self.window = None
-        
-        # Note: uvicorn doesn't have a clean stop method when run in thread
-        # In production, we'd use a process-based approach
-        if self.server_thread and self.server_thread.is_alive():
-            print(f"🛑 Stopping server for cube {self.id}")
-            # The thread will terminate when the main process exits
 
 class PlayerState(Cube):
     """Represents a player's state in the game world. Extends Cube for unified handling."""

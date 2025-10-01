@@ -3,103 +3,68 @@
 Test script for the cube abstraction system
 """
 
-import asyncio
 import time
 from protocol import Cube
-from cube_manager import cube_manager
 
-async def test_cube_creation():
-    """Test creating a cube with FastAPI server."""
-    print("🧪 Testing Cube Creation and FastAPI Server")
+def test_cube_creation():
+    """Test creating a cube."""
+    print("🧪 Testing Cube Creation")
     print("=" * 50)
     
     # Create a cube
-    cube = Cube("test_cube_1", (10, 50, 10), base_url="localhost")
+    cube = Cube("test_cube_1", (10, 50, 10))
     
-    # Allocate port and setup server
-    cube.port = cube_manager.allocate_port()
-    print(f"✅ Allocated port: {cube.port}")
+    print(f"✅ Created cube: {cube.id}")
+    print(f"   Position: {cube.position}")
+    print(f"   Rotation: {cube.rotation}")
+    print(f"   Size: {cube.size}")
     
-    if cube.port:
-        cube.setup_fastapi_server()
-        await cube.start_server()
-        print(f"✅ Cube server started on http://localhost:{cube.port}")
-        
-        # Test basic API endpoints
-        import requests
-        try:
-            # Test info endpoint
-            response = requests.get(f"http://localhost:{cube.port}/", timeout=2)
-            if response.status_code == 200:
-                print("✅ Info endpoint working")
-                print(f"   Response: {response.json()}")
-            
-            # Test status endpoint
-            response = requests.get(f"http://localhost:{cube.port}/status", timeout=2)
-            if response.status_code == 200:
-                print("✅ Status endpoint working")
-                print(f"   Response: {response.json()}")
-            
-            # Test movement endpoint
-            response = requests.post(f"http://localhost:{cube.port}/move/forward?distance=5", timeout=2)
-            if response.status_code == 200:
-                print("✅ Movement endpoint working")
-                print(f"   Response: {response.json()}")
-                print(f"   New position: {cube.position}")
-                
-        except Exception as e:
-            print(f"❌ API test failed: {e}")
-        
-        # Clean up
-        await cube.stop_server()
-        cube_manager.release_port(cube.port)
-        print("✅ Cube server stopped and port released")
+    # Test position update
+    cube.update_position((20, 60, 20))
+    print(f"✅ Updated position: {cube.position}")
+    
+    # Test rotation update
+    cube.update_rotation((45, 10))
+    print(f"✅ Updated rotation: {cube.rotation}")
     
     print("✅ Cube creation test completed")
 
-async def test_child_cube_creation():
+def test_child_cube_creation():
     """Test creating child cubes."""
     print("\n🧪 Testing Child Cube Creation")
     print("=" * 50)
     
     # Create parent cube
-    parent_cube = Cube("parent_cube", (0, 50, 0), base_url="localhost")
-    parent_cube.port = cube_manager.allocate_port()
+    parent_cube = Cube("parent_cube", (0, 50, 0))
     
-    if parent_cube.port:
-        parent_cube.setup_fastapi_server()
-        await parent_cube.start_server()
-        print(f"✅ Parent cube server started on http://localhost:{parent_cube.port}")
+    print(f"✅ Created parent cube: {parent_cube.id}")
+    
+    try:
+        # Test child cube creation programmatically
+        child_cube = parent_cube.create_child_cube("child1", (5, 50, 5))
+        print(f"✅ Created child cube: {child_cube.id}")
+        print(f"   Position: {child_cube.position}")
+        print(f"   Parent: {child_cube.parent_cube.id}")
         
-        try:
-            # Test child cube creation via API
-            import requests
-            response = requests.post(
-                f"http://localhost:{parent_cube.port}/cubes/create?child_id=child1&x=5&y=50&z=5", 
-                timeout=5
-            )
-            if response.status_code == 200:
-                print("✅ Child cube creation API working")
-                print(f"   Response: {response.json()}")
-                
-                # List child cubes
-                response = requests.get(f"http://localhost:{parent_cube.port}/cubes", timeout=2)
-                if response.status_code == 200:
-                    print("✅ Child cube listing working")
-                    print(f"   Response: {response.json()}")
-                
-        except Exception as e:
-            print(f"❌ Child cube test failed: {e}")
+        # Create another child
+        child_cube2 = parent_cube.create_child_cube("child2", (10, 50, 10))
+        print(f"✅ Created second child cube: {child_cube2.id}")
         
-        # Clean up
-        await parent_cube.stop_server()
-        cube_manager.release_port(parent_cube.port)
-        print("✅ Parent cube cleaned up")
+        # List children
+        print(f"✅ Parent has {len(parent_cube.child_cubes)} children: {list(parent_cube.child_cubes.keys())}")
+        
+        # Test destroying a child
+        parent_cube.destroy_child_cube("child1")
+        print(f"✅ Destroyed child1, remaining children: {list(parent_cube.child_cubes.keys())}")
+                
+    except Exception as e:
+        print(f"❌ Child cube test failed: {e}")
     
     print("✅ Child cube creation test completed")
 
-async def test_port_management():
+def test_port_management():
     """Test port allocation and release."""
+    from cube_manager import cube_manager
     print("\n🧪 Testing Port Management")
     print("=" * 50)
     
@@ -126,15 +91,15 @@ async def test_port_management():
     print(f"Available ports after release: {cube_manager.get_available_port_count()}")
     print("✅ Port management test completed")
 
-async def main():
+def main():
     """Main test function."""
     print("🚀 Starting Cube System Tests")
     print("=" * 60)
     
     try:
-        await test_port_management()
-        await test_cube_creation()
-        await test_child_cube_creation()
+        test_port_management()
+        test_cube_creation()
+        test_child_cube_creation()
         
         print("\n🎉 All tests completed successfully!")
         
@@ -144,4 +109,4 @@ async def main():
         traceback.print_exc()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
