@@ -58,7 +58,7 @@ async def test_cube_api_with_camera():
     print("=" * 50)
     
     # Create and start a camera cube server
-    camera_cube = Cube("api_camera_cube", (30, 50, 30), cube_type="camera", auto_start_server=True)
+    camera_cube = Cube("api_camera_cube", (30, 50, 30), cube_type="camera")
     
     # Allocate port
     camera_cube.port = cube_manager.allocate_port()
