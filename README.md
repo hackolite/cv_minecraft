@@ -18,11 +18,13 @@ This version has been restructured into a **client-server architecture**:
 
 - ✅ **Multiplayer Support**: Multiple players can connect and play together
 - ✅ **WebSocket Communication**: Real-time synchronization between clients and server
+- ✅ **HTTP REST API**: Query server state, camera positions, and render views
 - ✅ **Chunked World Loading**: Efficient world data transmission in 16x16 chunks
 - ✅ **Authoritative Server**: Server manages world state to prevent cheating
 - ✅ **Real-time Updates**: Block placement/destruction synchronized across all clients
 - ✅ **Player Movement Tracking**: See other players move in real-time
 - ✅ **Abstract Client**: Simplified client interface for easy integration
+- ✅ **Camera System**: Pre-placed camera blocks for monitoring the world
 
 ## How to Run
 
@@ -45,6 +47,31 @@ python3 client.py
 ```
 
 You can start multiple clients to test multiplayer functionality.
+
+### HTTP REST API
+
+The server also provides a HTTP REST API on port 8000 for querying server state:
+
+```shell
+# Get list of cameras
+curl http://localhost:8000/api/cameras
+
+# Get list of users
+curl http://localhost:8000/api/users
+
+# Get blocks in an area
+curl "http://localhost:8000/api/blocks?min_x=60&max_x=70&min_y=95&max_y=105&min_z=60&max_z=70"
+
+# Render view from a position
+curl -X POST http://localhost:8000/api/render \
+  -H "Content-Type: application/json" \
+  -d '{"position": [64, 100, 64], "rotation": [0, 0]}' \
+  -o view.png
+```
+
+**Interactive Documentation:** Visit http://localhost:8000/docs for Swagger UI
+
+See [API_DOCUMENTATION.md](API_DOCUMENTATION.md) for complete API reference.
 
 ### Controls
 

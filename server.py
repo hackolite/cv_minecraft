@@ -8,7 +8,13 @@ import random
 import time
 import uuid
 import websockets
+import threading
 from typing import Dict, Tuple, Optional, List, Any
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse, StreamingResponse
+import uvicorn
+import io
+from PIL import Image, ImageDraw
 
 from noise_gen import NoiseGen
 from protocol import (
@@ -824,9 +830,250 @@ class MinecraftServer:
         self.logger.info("Server stop requested")
 
 
+# ---------- HTTP API Server ----------
+
+# Create FastAPI app for HTTP API endpoints
+api_app = FastAPI(title="Minecraft Server API", version="1.0.0")
+
+# Global reference to the Minecraft server instance
+_minecraft_server: Optional[MinecraftServer] = None
+
+def set_minecraft_server(server: MinecraftServer):
+    """Set the global Minecraft server instance for API access."""
+    global _minecraft_server
+    _minecraft_server = server
+
+@api_app.get("/")
+async def api_home():
+    """API home page with available endpoints."""
+    return {
+        "name": "Minecraft Server API",
+        "version": "1.0.0",
+        "endpoints": {
+            "cameras": "/api/cameras",
+            "users": "/api/users", 
+            "blocks": "/api/blocks",
+            "render": "/api/render"
+        }
+    }
+
+@api_app.get("/api/cameras")
+async def get_cameras():
+    """Get list of all camera blocks in the world."""
+    if _minecraft_server is None:
+        raise HTTPException(status_code=503, detail="Server not initialized")
+    
+    cameras = []
+    for position, block_type in _minecraft_server.world.world.items():
+        if block_type == BlockType.CAMERA:
+            cameras.append({
+                "position": list(position),
+                "block_type": block_type
+            })
+    
+    return {
+        "count": len(cameras),
+        "cameras": cameras
+    }
+
+@api_app.get("/api/users")
+async def get_users():
+    """Get list of all users with their positions and other information."""
+    if _minecraft_server is None:
+        raise HTTPException(status_code=503, detail="Server not initialized")
+    
+    users = []
+    for player_id, player in _minecraft_server.players.items():
+        users.append({
+            "id": player.id,
+            "name": player.name,
+            "position": list(player.position),
+            "rotation": list(player.rotation),
+            "flying": player.flying,
+            "sprinting": player.sprinting,
+            "on_ground": player.on_ground,
+            "velocity": list(player.velocity),
+            "is_connected": player.is_connected,
+            "is_rtsp_user": player.is_rtsp_user
+        })
+    
+    return {
+        "count": len(users),
+        "users": users
+    }
+
+@api_app.get("/api/blocks")
+async def get_blocks(
+    min_x: int = 0, 
+    min_y: int = 0, 
+    min_z: int = 0,
+    max_x: int = WORLD_SIZE,
+    max_y: int = 256,
+    max_z: int = WORLD_SIZE
+):
+    """Get blocks in a specific area defined by min/max coordinates."""
+    if _minecraft_server is None:
+        raise HTTPException(status_code=503, detail="Server not initialized")
+    
+    # Validate bounds
+    if not (0 <= min_x < WORLD_SIZE and 0 <= max_x <= WORLD_SIZE):
+        raise HTTPException(status_code=400, detail="Invalid X bounds")
+    if not (0 <= min_y < 256 and 0 <= max_y <= 256):
+        raise HTTPException(status_code=400, detail="Invalid Y bounds")
+    if not (0 <= min_z < WORLD_SIZE and 0 <= max_z <= WORLD_SIZE):
+        raise HTTPException(status_code=400, detail="Invalid Z bounds")
+    
+    blocks = []
+    for position, block_type in _minecraft_server.world.world.items():
+        x, y, z = position
+        if (min_x <= x < max_x and 
+            min_y <= y < max_y and 
+            min_z <= z < max_z):
+            blocks.append({
+                "position": list(position),
+                "block_type": block_type
+            })
+    
+    return {
+        "count": len(blocks),
+        "bounds": {
+            "min": [min_x, min_y, min_z],
+            "max": [max_x, max_y, max_z]
+        },
+        "blocks": blocks
+    }
+
+@api_app.post("/api/render")
+async def render_view(
+    position: List[float],
+    rotation: List[float],
+    width: int = 640,
+    height: int = 480,
+    fov: float = 65.0,
+    render_distance: int = 50
+):
+    """
+    Reconstruct view as an image from a specific position and rotation.
+    
+    Parameters:
+    - position: [x, y, z] coordinates
+    - rotation: [horizontal, vertical] angles in degrees
+    - width: image width in pixels (default 640)
+    - height: image height in pixels (default 480)
+    - fov: field of view in degrees (default 65)
+    - render_distance: max distance to render blocks (default 50)
+    
+    Returns: PNG image
+    """
+    if _minecraft_server is None:
+        raise HTTPException(status_code=503, detail="Server not initialized")
+    
+    # Validate inputs
+    if not isinstance(position, list) or len(position) != 3:
+        raise HTTPException(status_code=400, detail="Position must be [x, y, z]")
+    if not isinstance(rotation, list) or len(rotation) != 2:
+        raise HTTPException(status_code=400, detail="Rotation must be [horizontal, vertical]")
+    
+    if width < 1 or width > 4096:
+        raise HTTPException(status_code=400, detail="Width must be between 1 and 4096")
+    if height < 1 or height > 4096:
+        raise HTTPException(status_code=400, detail="Height must be between 1 and 4096")
+    
+    # Get blocks within render distance
+    x, y, z = position
+    nearby_blocks = []
+    
+    for pos, block_type in _minecraft_server.world.world.items():
+        bx, by, bz = pos
+        # Calculate distance
+        distance = ((bx - x)**2 + (by - y)**2 + (bz - z)**2)**0.5
+        if distance <= render_distance:
+            nearby_blocks.append({
+                "position": list(pos),
+                "block_type": block_type,
+                "distance": distance
+            })
+    
+    # Sort by distance (closer first)
+    nearby_blocks.sort(key=lambda b: b["distance"])
+    
+    # Create a simple visualization (placeholder - actual 3D rendering would be more complex)
+    img = Image.new('RGB', (width, height), (135, 206, 235))  # Sky blue background
+    draw = ImageDraw.Draw(img)
+    
+    # Draw text with camera info
+    info_text = f"Pos: ({x:.1f}, {y:.1f}, {z:.1f})\nRot: ({rotation[0]:.1f}, {rotation[1]:.1f})\nBlocks: {len(nearby_blocks)}"
+    draw.text((10, 10), info_text, fill=(255, 255, 255))
+    
+    # Draw a simple representation of nearby blocks
+    # This is a placeholder - a real implementation would do proper 3D projection
+    for i, block in enumerate(nearby_blocks[:100]):  # Limit to 100 closest blocks
+        # Simple 2D projection based on distance
+        bx, by, bz = block["position"]
+        dx, dy, dz = bx - x, by - y, bz - z
+        
+        # Simple projection (not accurate but gives an idea)
+        screen_x = int(width / 2 + dx * 10)
+        screen_y = int(height / 2 - dy * 10)
+        
+        if 0 <= screen_x < width and 0 <= screen_y < height:
+            # Draw a small square for each block
+            size = max(1, int(10 / (1 + block["distance"] / 10)))
+            color = _get_block_color(block["block_type"])
+            draw.rectangle(
+                [screen_x - size, screen_y - size, screen_x + size, screen_y + size],
+                fill=color
+            )
+    
+    # Convert to PNG bytes
+    img_buffer = io.BytesIO()
+    img.save(img_buffer, format='PNG')
+    img_buffer.seek(0)
+    
+    return StreamingResponse(img_buffer, media_type="image/png")
+
+def _get_block_color(block_type: str) -> Tuple[int, int, int]:
+    """Get RGB color for a block type."""
+    colors = {
+        BlockType.GRASS: (34, 139, 34),
+        BlockType.SAND: (238, 214, 175),
+        BlockType.BRICK: (178, 34, 34),
+        BlockType.STONE: (128, 128, 128),
+        BlockType.WOOD: (139, 69, 19),
+        BlockType.LEAF: (0, 128, 0),
+        BlockType.WATER: (0, 105, 148),
+        BlockType.CAMERA: (255, 0, 255),
+    }
+    return colors.get(block_type, (200, 200, 200))
+
+async def run_http_api_server(host: str = '0.0.0.0', port: int = 8000):
+    """Run the HTTP API server in the background."""
+    config = uvicorn.Config(api_app, host=host, port=port, log_level="info")
+    server = uvicorn.Server(config)
+    await server.serve()
+
+def start_http_api_server_thread(host: str = '0.0.0.0', port: int = 8000):
+    """Start the HTTP API server in a separate thread."""
+    def run_server():
+        asyncio.run(run_http_api_server(host, port))
+    
+    thread = threading.Thread(target=run_server, daemon=True)
+    thread.start()
+    logging.info(f"HTTP API server started on http://{host}:{port}")
+    logging.info(f"API documentation available at http://{host}:{port}/docs")
+    return thread
+
+
 def main():
     """Main entry point for the server."""
     server = MinecraftServer()
+    
+    # Set global server instance for API access
+    set_minecraft_server(server)
+    
+    # Start HTTP API server in background thread
+    start_http_api_server_thread(host='0.0.0.0', port=8000)
+    
     try:
         asyncio.run(server.start_server())
     except KeyboardInterrupt:
