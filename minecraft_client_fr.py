@@ -79,7 +79,7 @@ except Exception as e:
         """Dummy key constants for headless mode"""
         _1 = 49; _2 = 50; _3 = 51; _4 = 52; _5 = 53
         LCTRL = 65507; RCTRL = 65508; LSHIFT = 65505; RSHIFT = 65506
-        SPACE = 32; ESCAPE = 65307; TAB = 65289; F3 = 65472; F5 = 65474; R = 114
+        SPACE = 32; ESCAPE = 65307; TAB = 65289; F3 = 65472; F5 = 65474; F6 = 65475; R = 114
     
     class DummyMouse:
         LEFT = 1; RIGHT = 2; MIDDLE = 3
@@ -632,6 +632,9 @@ class MinecraftWindow(BaseWindow):
         self.local_player_cube = None
         self.show_local_player = True
 
+        # Camera view mode
+        self.top_down_view = False
+
         # Interface utilisateur
         self.show_debug = config.get("interface", "show_debug_info", True)
         self.messages = []
@@ -937,8 +940,12 @@ Statut: {connection_status}"""
 
             x_rot, y_rot = self.rotation
             x_rot += dx * sensitivity
-            y_rot += dy * sensitivity * (-1 if invert_y else 1)
-            y_rot = max(-90, min(90, y_rot))
+            
+            # En mode vue du dessus, ne pas modifier la rotation verticale
+            if not self.top_down_view:
+                y_rot += dy * sensitivity * (-1 if invert_y else 1)
+                y_rot = max(-90, min(90, y_rot))
+            
             self.rotation = (x_rot, y_rot)
 
     def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
@@ -1001,6 +1008,13 @@ Statut: {connection_status}"""
             self.show_local_player = not self.show_local_player
             status = "Cube joueur affiché" if self.show_local_player else "Cube joueur masqué"
             self.show_message(status)
+        elif symbol == key.F6:
+            self.top_down_view = not self.top_down_view
+            # Automatically show the local player cube in top-down view
+            if self.top_down_view:
+                self.show_local_player = True
+            status = "Vue du dessus activée" if self.top_down_view else "Vue normale activée"
+            self.show_message(status)
         elif symbol == key.F11:
             self.set_fullscreen(not self.fullscreen)
         elif symbol in self.num_keys:
@@ -1062,9 +1076,17 @@ Statut: {connection_status}"""
 
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
-        x, y = self.rotation
-        glRotatef(x, 0, 1, 0)
-        glRotatef(-y, math.cos(math.radians(x)), 0, math.sin(math.radians(x)))
+        
+        if self.top_down_view:
+            # Vue du dessus : rotation fixe à 90 degrés vers le bas
+            x, y = self.rotation
+            glRotatef(x, 0, 1, 0)  # Rotation horizontale seulement
+            glRotatef(-90, math.cos(math.radians(x)), 0, math.sin(math.radians(x)))  # Regarder vers le bas
+        else:
+            # Vue normale
+            x, y = self.rotation
+            glRotatef(x, 0, 1, 0)
+            glRotatef(-y, math.cos(math.radians(x)), 0, math.sin(math.radians(x)))
 
         # Position de la caméra avec collision
         camera_x, camera_y, camera_z = self._get_safe_camera_position()
@@ -1078,8 +1100,15 @@ Statut: {connection_status}"""
         - Utilise un ray-casting pour détecter les collisions
         - Position la caméra légèrement en retrait du joueur
         - Évite complètement la pénétration visuelle dans les blocs
+        - Support pour vue du dessus (top-down)
         """
         px, py, pz = self.position
+
+        # Mode vue du dessus
+        if self.top_down_view:
+            # Caméra positionnée au-dessus du joueur
+            camera_height = 10.0  # Distance au-dessus du joueur
+            return px, py + camera_height, pz
 
         # Position de la caméra par défaut (légèrement au-dessus du centre du joueur)
         base_camera_y = py + 0.6  # Hauteur des yeux du joueur
