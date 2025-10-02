@@ -440,9 +440,7 @@ class MinecraftServer:
         # Create a cube for this user with dedicated port
         user_cube = Cube(
             cube_id=f"user_{player_id[:8]}", 
-            position=DEFAULT_SPAWN_POSITION,
-            base_url=self.host,
-            auto_start_server=False
+            position=DEFAULT_SPAWN_POSITION
         )
         
         # Add cube to user cubes
