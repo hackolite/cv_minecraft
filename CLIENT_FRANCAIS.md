@@ -20,6 +20,7 @@ Le nouveau client apporte de nombreuses améliorations par rapport au client ori
 - **Gestion d'erreurs robuste** avec messages explicites
 - **Interface de debug avancée** (F3 pour basculer)
 - **Indicateurs de performance** (FPS, ping, statut connexion)
+- **Vue du dessus** (F6) pour une perspective aérienne sur votre personnage
 
 #### ⚙️ Configuration Flexible
 - **Fichier de configuration JSON** (`client_config.json`)
@@ -86,6 +87,8 @@ python3 minecraft_client_fr.py --lang en
 - **R** : Courir
 - **Tab** : Activer/désactiver le vol
 - **F3** : Informations de debug
+- **F5** : Afficher/masquer le cube joueur
+- **F6** : Basculer en vue du dessus (top-down)
 - **F11** : Plein écran
 - **Échap** : Libérer la souris
 - **1-5** : Sélection de bloc
