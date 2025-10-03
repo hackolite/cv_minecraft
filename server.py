@@ -15,7 +15,8 @@ from protocol import (
     MessageType, BlockType, Message, PlayerState, BlockUpdate, Cube,
     create_world_init_message, create_world_chunk_message, 
     create_world_update_message, create_player_list_message,
-    create_player_update_message
+    create_player_update_message, create_cameras_list_message,
+    create_users_list_message, create_blocks_list_message
 )
 from minecraft_physics import (
     MinecraftCollisionDetector, MinecraftPhysics,
@@ -288,6 +289,68 @@ class GameWorld:
             "blocks": blocks
         }
 
+    def get_cameras(self) -> List[Dict[str, Any]]:
+        """Get all camera blocks in the world."""
+        cameras = []
+        for pos, block_type in self.world.items():
+            if block_type == BlockType.CAMERA:
+                x, y, z = pos
+                cameras.append({
+                    "position": [x, y, z],
+                    "block_type": block_type
+                })
+        return cameras
+
+    def get_blocks_in_region(self, center: Tuple[float, float, float], radius: float) -> List[Dict[str, Any]]:
+        """Get all blocks within a certain radius of a center point."""
+        blocks = []
+        cx, cy, cz = center
+        
+        for pos, block_type in self.world.items():
+            x, y, z = pos
+            # Calculate distance from center
+            distance = ((x - cx)**2 + (y - cy)**2 + (z - cz)**2)**0.5
+            
+            if distance <= radius:
+                blocks.append({
+                    "position": [x, y, z],
+                    "block_type": block_type
+                })
+        
+        return blocks
+
+    def get_blocks_in_view(self, position: Tuple[float, float, float], 
+                           rotation: Tuple[float, float], 
+                           view_distance: float = 50.0) -> List[Dict[str, Any]]:
+        """Get blocks visible from a position with given rotation (simplified view frustum)."""
+        import math
+        
+        blocks = []
+        px, py, pz = position
+        h_rotation, v_rotation = rotation  # horizontal and vertical rotation
+        
+        # For simplicity, use a cone-based approximation
+        # This is a simplified version - a proper implementation would use a view frustum
+        for pos, block_type in self.world.items():
+            x, y, z = pos
+            
+            # Vector from position to block
+            dx, dy, dz = x - px, y - py, z - pz
+            distance = (dx**2 + dy**2 + dz**2)**0.5
+            
+            if distance > view_distance or distance < 0.1:
+                continue
+            
+            # Calculate angle to block (simplified)
+            # In a real implementation, this would properly check against the view frustum
+            blocks.append({
+                "position": [x, y, z],
+                "block_type": block_type,
+                "distance": distance
+            })
+        
+        return blocks
+
 # ---------- Custom Exceptions ----------
 
 class ServerError(Exception):
@@ -557,6 +620,15 @@ class MinecraftServer:
                 
             elif message.type == MessageType.CHAT_MESSAGE:
                 await self._handle_chat_message(player_id, message)
+            
+            elif message.type == MessageType.GET_CAMERAS_LIST:
+                await self._handle_get_cameras_list(player_id, message)
+            
+            elif message.type == MessageType.GET_USERS_LIST:
+                await self._handle_get_users_list(player_id, message)
+            
+            elif message.type == MessageType.GET_BLOCKS_LIST:
+                await self._handle_get_blocks_list(player_id, message)
                 
             else:
                 self.logger.warning(f"Unhandled message type: {message.type} from {player_id}")
@@ -774,6 +846,88 @@ class MinecraftServer:
             
         except KeyError as e:
             raise InvalidPlayerDataError(f"Missing required field: {e}")
+
+    async def _handle_get_cameras_list(self, player_id: str, message: Message):
+        """Handle request for list of camera blocks."""
+        try:
+            cameras = self.world.get_cameras()
+            self.logger.info(f"Sending {len(cameras)} camera blocks to player {player_id}")
+            response = create_cameras_list_message(cameras)
+            await self.send_to_client(player_id, response)
+        except Exception as e:
+            self.logger.error(f"Error getting cameras list: {e}")
+            raise InvalidWorldDataError(f"Failed to get cameras list: {e}")
+
+    async def _handle_get_users_list(self, player_id: str, message: Message):
+        """Handle request for list of users with their positions and info."""
+        try:
+            users = []
+            for pid, player in self.players.items():
+                user_info = {
+                    "id": pid,
+                    "name": player.name,
+                    "position": list(player.position),
+                    "rotation": list(player.rotation),
+                    "is_connected": player.is_connected,
+                    "is_rtsp_user": player.is_rtsp_user
+                }
+                users.append(user_info)
+            
+            self.logger.info(f"Sending {len(users)} users to player {player_id}")
+            response = create_users_list_message(users)
+            await self.send_to_client(player_id, response)
+        except Exception as e:
+            self.logger.error(f"Error getting users list: {e}")
+            raise InvalidPlayerDataError(f"Failed to get users list: {e}")
+
+    async def _handle_get_blocks_list(self, player_id: str, message: Message):
+        """Handle request for list of blocks (optionally filtered by region or view)."""
+        try:
+            # Check if request specifies a filter
+            query_type = message.data.get("query_type", "region")
+            
+            if query_type == "region":
+                # Get blocks in a region around a center point
+                center = message.data.get("center", DEFAULT_SPAWN_POSITION)
+                radius = message.data.get("radius", 50.0)
+                
+                if not isinstance(center, (list, tuple)) or len(center) != 3:
+                    raise InvalidWorldDataError("Invalid center position")
+                
+                blocks = self.world.get_blocks_in_region(tuple(center), radius)
+                
+            elif query_type == "view":
+                # Get blocks visible from a specific position and rotation
+                position = message.data.get("position")
+                rotation = message.data.get("rotation")
+                view_distance = message.data.get("view_distance", 50.0)
+                
+                if not position or not rotation:
+                    raise InvalidWorldDataError("Position and rotation required for view query")
+                
+                if not isinstance(position, (list, tuple)) or len(position) != 3:
+                    raise InvalidWorldDataError("Invalid position format")
+                
+                if not isinstance(rotation, (list, tuple)) or len(rotation) != 2:
+                    raise InvalidWorldDataError("Invalid rotation format")
+                
+                blocks = self.world.get_blocks_in_view(
+                    tuple(position), 
+                    tuple(rotation), 
+                    view_distance
+                )
+            else:
+                raise InvalidWorldDataError(f"Unknown query_type: {query_type}")
+            
+            self.logger.info(f"Sending {len(blocks)} blocks to player {player_id}")
+            response = create_blocks_list_message(blocks)
+            await self.send_to_client(player_id, response)
+            
+        except KeyError as e:
+            raise InvalidWorldDataError(f"Missing required field: {e}")
+        except Exception as e:
+            self.logger.error(f"Error getting blocks list: {e}")
+            raise InvalidWorldDataError(f"Failed to get blocks list: {e}")
 
     async def handle_client(self, websocket):
         """Handle a client WebSocket connection."""

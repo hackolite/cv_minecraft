@@ -47,6 +47,9 @@ class MessageType(Enum):
     BLOCK_DESTROY = "block_destroy"
     CHAT_MESSAGE = "chat_message"
     PLAYER_DISCONNECT = "player_disconnect"
+    GET_CAMERAS_LIST = "get_cameras_list"
+    GET_USERS_LIST = "get_users_list"
+    GET_BLOCKS_LIST = "get_blocks_list"
 
     # Server to Client
     WORLD_INIT = "world_init"
@@ -56,6 +59,9 @@ class MessageType(Enum):
     BLOCK_UPDATE = "block_update"
     CHAT_BROADCAST = "chat_broadcast"
     PLAYER_LIST = "player_list"
+    CAMERAS_LIST = "cameras_list"
+    USERS_LIST = "users_list"
+    BLOCKS_LIST = "blocks_list"
     ERROR = "error"
 
 class BlockType:
@@ -480,4 +486,22 @@ def create_player_list_message(players: List[PlayerState]) -> Message:
     logger.info(f"Player list message created with {len(player_dicts)} players")
     return Message(MessageType.PLAYER_LIST, {
         "players": player_dicts
+    })
+
+def create_cameras_list_message(cameras: List[Dict[str, Any]]) -> Message:
+    """Create a cameras list message."""
+    return Message(MessageType.CAMERAS_LIST, {
+        "cameras": cameras
+    })
+
+def create_users_list_message(users: List[Dict[str, Any]]) -> Message:
+    """Create a users list message."""
+    return Message(MessageType.USERS_LIST, {
+        "users": users
+    })
+
+def create_blocks_list_message(blocks: List[Dict[str, Any]]) -> Message:
+    """Create a blocks list message."""
+    return Message(MessageType.BLOCKS_LIST, {
+        "blocks": blocks
     })
