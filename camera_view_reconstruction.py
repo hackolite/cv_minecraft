@@ -89,7 +89,7 @@ def project_3d_to_2d(
     scale = (width / 2) / math.tan(fov_rad / 2)
     
     screen_x = int(width / 2 + (final_x / final_z) * scale)
-    screen_y = int(height / 2 - (final_y / final_z) * scale)
+    screen_y = int(height / 2 + (final_y / final_z) * scale)
     
     return (screen_x, screen_y, final_z)
 
