@@ -73,9 +73,12 @@ def test_multiple_recorders_in_on_draw():
     
     # Vérifier qu'il y a au moins 2 appels à capture_frame dans on_draw
     # (un pour self.recorder et un pour les camera_recorders)
-    capture_frame_count = content.count('recorder.capture_frame(self)')
-    assert capture_frame_count >= 2, \
-        f"Il devrait y avoir au moins 2 appels à capture_frame, trouvé {capture_frame_count}"
+    # Player recorder uses capture_frame(self), camera recorders use capture_frame()
+    player_capture_count = content.count('.capture_frame(self)')
+    camera_capture_count = content.count('recorder.capture_frame()')
+    total_capture_count = player_capture_count + camera_capture_count
+    assert total_capture_count >= 2, \
+        f"Il devrait y avoir au moins 2 appels à capture_frame, trouvé {total_capture_count} (player: {player_capture_count}, cameras: {camera_capture_count})"
     
     print("✅ Le code on_draw contient la logique de capture pour camera_recorders")
 

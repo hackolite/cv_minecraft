@@ -712,7 +712,7 @@ class GameRecorder:
             with open(info_file, 'w') as f:
                 json.dump(info_data, f, indent=2)
     
-    def capture_frame(self, window):
+    def capture_frame(self, window=None):
         """Capture une frame depuis le buffer Pyglet.
         
         Args:
@@ -1663,7 +1663,7 @@ Statut: {connection_status}"""
         # Capture frames pour toutes les caméras en enregistrement
         for camera_id, recorder in self.camera_recorders.items():
             if recorder.is_recording:
-                recorder.capture_frame(self)
+                recorder.capture_frame()  # Camera uses its own window, not main window
 
     def draw_focused_block(self):
         """Dessine les contours du bloc visé."""
