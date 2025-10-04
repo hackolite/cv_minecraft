@@ -593,7 +593,44 @@ class GameRecorder:
         self.last_capture_time = 0
         self.capture_interval = 1.0 / 30.0  # 30 FPS par défaut
         
+        # Queue pour les frames à écrire et thread d'écriture
+        self.frame_queue = deque()
+        self.writer_thread = None
+        self.writer_running = False
+        
         print(f"📹 GameRecorder initialisé - Répertoire: {self.output_dir}")
+    
+    def _writer_worker(self):
+        """Thread worker qui écrit les frames sur disque de manière asynchrone."""
+        try:
+            import PIL.Image
+        except ImportError:
+            print("⚠️  PIL/Pillow non disponible, écriture JPEG impossible")
+            return
+        
+        while self.writer_running or len(self.frame_queue) > 0:
+            if len(self.frame_queue) == 0:
+                time.sleep(0.01)  # Attendre qu'une frame arrive
+                continue
+            
+            try:
+                # Récupérer la frame de la queue
+                frame_data = self.frame_queue.popleft()
+                frame_number, image_data, width, height = frame_data
+                
+                # Convertir les données brutes en image PIL
+                # Pyglet utilise RGBA, donc 4 bytes par pixel
+                pil_image = PIL.Image.frombytes('RGBA', (width, height), image_data)
+                
+                # Convertir en RGB (JPEG ne supporte pas la transparence)
+                pil_image = pil_image.convert('RGB')
+                
+                # Sauvegarder en JPEG avec qualité 85
+                frame_filename = self.session_dir / f"frame_{frame_number:06d}.jpg"
+                pil_image.save(str(frame_filename), 'JPEG', quality=85, optimize=True)
+                
+            except Exception as e:
+                print(f"⚠️  Erreur écriture frame: {e}")
     
     def start_recording(self):
         """Démarre l'enregistrement."""
@@ -611,6 +648,11 @@ class GameRecorder:
         self.start_time = time.time()
         self.last_capture_time = 0
         
+        # Démarrer le thread d'écriture
+        self.writer_running = True
+        self.writer_thread = threading.Thread(target=self._writer_worker, daemon=True)
+        self.writer_thread.start()
+        
         print(f"🎬 Enregistrement démarré - Session: {self.session_dir}")
         return self.session_dir
     
@@ -621,6 +663,15 @@ class GameRecorder:
             return
         
         self.is_recording = False
+        
+        # Arrêter le thread d'écriture et attendre qu'il termine
+        self.writer_running = False
+        if self.writer_thread and self.writer_thread.is_alive():
+            print("⏳ Attente de l'écriture des frames restantes...")
+            self.writer_thread.join(timeout=30)  # Attendre max 30s
+            if self.writer_thread.is_alive():
+                print("⚠️  Le thread d'écriture n'a pas terminé dans le délai")
+        
         duration = time.time() - self.start_time
         
         print(f"⏹️  Enregistrement arrêté")
@@ -659,15 +710,24 @@ class GameRecorder:
             # Utiliser get_buffer_manager().get_color_buffer() comme demandé
             buffer = pyglet.image.get_buffer_manager().get_color_buffer()
             
-            # Sauvegarder l'image
-            frame_filename = self.session_dir / f"frame_{self.frame_count:06d}.png"
-            buffer.save(str(frame_filename))
+            # Extraire les données brutes de l'image (pas d'écriture disque ici)
+            image_data = buffer.get_image_data()
+            width = image_data.width
+            height = image_data.height
+            raw_data = image_data.get_data('RGBA', image_data.width * 4)
+            
+            # Mettre les données dans la queue pour écriture asynchrone
+            self.frame_queue.append((self.frame_count, raw_data, width, height))
             
             self.frame_count += 1
             self.last_capture_time = current_time
             
         except Exception as e:
             print(f"⚠️  Erreur capture frame: {e}")
+    
+    def stop(self):
+        """Alias pour stop_recording() - arrête proprement le thread d'écriture."""
+        self.stop_recording()
     
     def set_fps(self, fps: int):
         """Définit le FPS d'enregistrement.
