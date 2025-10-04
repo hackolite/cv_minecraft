@@ -283,6 +283,8 @@ class AdvancedNetworkClient:
                     self.window.local_player_cube = self.window.model.create_local_player(
                         self.player_id, self.window.position, self.window.rotation, player_name
                     )
+                # Request camera list to check for owned cameras
+                self.window.request_cameras_list()
             elif message.type == MessageType.WORLD_CHUNK:
                 self.window.model.load_world_chunk(message.data)
             elif message.type == MessageType.WORLD_UPDATE:
@@ -292,6 +294,9 @@ class AdvancedNetworkClient:
                         self.window.model.remove_block(block_update.position)
                     else:
                         self.window.model.add_block(block_update.position, block_update.block_type)
+                        # If a camera was placed, refresh camera list
+                        if block_update.block_type == BlockType.CAMERA:
+                            self.window.request_cameras_list()
             elif message.type == MessageType.PLAYER_UPDATE:
                 player_data = message.data
                 player_id = player_data["id"]
@@ -313,6 +318,10 @@ class AdvancedNetworkClient:
                         self.window.model.other_players[player.id] = player
             elif message.type == MessageType.CHAT_BROADCAST:
                 self.window.show_message(f"[CHAT] {message.data.get('text', '')}")
+            elif message.type == MessageType.CAMERAS_LIST:
+                # Handle camera list response
+                cameras = message.data.get("cameras", [])
+                self.window._update_owned_cameras(cameras)
             elif message.type == MessageType.ERROR:
                 self.window.show_message(f"{config.get_localized_text('server_error')}: {message.data.get('message', 'Erreur inconnue')}")
         except Exception as e:
@@ -820,7 +829,10 @@ class MinecraftWindow(BaseWindow):
         self._cache_clear_counter = 0
 
         # Système d'enregistrement
-        self.recorder = GameRecorder() if PYGLET_AVAILABLE else None
+        self.recorder = GameRecorder() if PYGLET_AVAILABLE else None  # Main player recorder
+        self.camera_recorders = {}  # Dictionary of camera recorders: camera_id -> GameRecorder
+        self.owned_cameras = []  # List of camera block_ids owned by this player
+        self._pending_camera_placement = None  # Track camera block placement position
 
         # Initialisation
         pyglet.clock.schedule_interval(self.update, 1.0 / TICKS_PER_SEC)
@@ -1096,6 +1108,11 @@ Statut: {connection_status}"""
 
             if (button == mouse.RIGHT) or ((button == mouse.LEFT) and (modifiers & key.MOD_CTRL)):
                 if previous:
+                    # Track if we're placing a camera block
+                    if self.block == BlockType.CAMERA:
+                        # Will be added to owned_cameras when we receive the world update
+                        self._pending_camera_placement = previous
+                    
                     place_msg = create_block_place_message(previous, self.block)
                     self.network.send_message(place_msg)
             elif button == mouse.LEFT and block:
@@ -1174,8 +1191,19 @@ Statut: {connection_status}"""
             self.flying = not self.flying
             status = config.get_localized_text("flying") if self.flying else "Vol désactivé"
             self.show_message(status)
+        elif symbol == key.F1:
+            # Toggle recording for camera 0 (if owned)
+            self._toggle_camera_recording(0)
+        elif symbol == key.F2:
+            # Toggle recording for camera 1 (if owned)
+            self._toggle_camera_recording(1)
         elif symbol == key.F3:
-            self.show_debug = not self.show_debug
+            # Toggle debug (keep existing functionality for backward compatibility)
+            # But also toggle recording for camera 2 if Shift is held
+            if modifiers & key.MOD_SHIFT:
+                self._toggle_camera_recording(2)
+            else:
+                self.show_debug = not self.show_debug
         elif symbol == key.F5:
             self.show_local_player = not self.show_local_player
             status = "Cube joueur affiché" if self.show_local_player else "Cube joueur masqué"
@@ -1204,6 +1232,65 @@ Statut: {connection_status}"""
             index = (symbol - self.num_keys[0]) % len(self.inventory)
             self.block = self.inventory[index]
             self.show_message(f"Bloc sélectionné: {self.block}")
+
+    def _update_owned_cameras(self, cameras: list):
+        """Update the list of owned cameras based on server response.
+        
+        Args:
+            cameras: List of camera block dictionaries from server
+        """
+        self.owned_cameras = []
+        player_id = self.network.player_id
+        
+        if not player_id:
+            return
+        
+        # Find cameras owned by this player
+        for camera in cameras:
+            if camera.get("owner") == player_id:
+                camera_id = camera.get("block_id")
+                if camera_id:
+                    self.owned_cameras.append(camera_id)
+        
+        if self.owned_cameras:
+            self.show_message(f"📹 {len(self.owned_cameras)} caméra(s) possédée(s): {', '.join(self.owned_cameras)}", 5.0)
+    
+    def request_cameras_list(self):
+        """Request the list of cameras from the server."""
+        if self.network and self.network.player_id:
+            request_msg = Message(MessageType.GET_CAMERAS_LIST, {})
+            self.network.send_message(request_msg)
+
+    def _toggle_camera_recording(self, camera_index: int):
+        """Toggle recording for a specific camera.
+        
+        Args:
+            camera_index: Index of camera (0, 1, 2, etc.)
+        """
+        if not PYGLET_AVAILABLE:
+            self.show_message("⚠️  Enregistrement non disponible", 3.0)
+            return
+        
+        # Check if we have cameras
+        if camera_index >= len(self.owned_cameras):
+            self.show_message(f"⚠️  Caméra {camera_index} n'existe pas", 3.0)
+            return
+        
+        camera_id = self.owned_cameras[camera_index]
+        
+        # Create recorder for this camera if it doesn't exist
+        if camera_id not in self.camera_recorders:
+            self.camera_recorders[camera_id] = GameRecorder(output_dir=f"recordings/{camera_id}")
+        
+        recorder = self.camera_recorders[camera_id]
+        
+        # Toggle recording
+        if not recorder.is_recording:
+            session_dir = recorder.start_recording()
+            self.show_message(f"🎬 Caméra {camera_index} ({camera_id}): Enregistrement démarré", 3.0)
+        else:
+            recorder.stop_recording()
+            self.show_message(f"⏹️  Caméra {camera_index} ({camera_id}): Enregistrement arrêté", 3.0)
 
     def on_key_release(self, symbol, modifiers):
         """Gère les touches relâchées."""
