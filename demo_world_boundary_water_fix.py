@@ -98,7 +98,7 @@ def demo_water_collision():
     print("   Stone blocks at y=10 (solid ground)")
     print("   Water blocks at y=15")
     
-    print("\n🏊 Scenario 1: Player moves down through water")
+    print("\n🏊 Scenario 1: Player moves down toward water")
     print("   Initial position: (65, 20, 65) - above water")
     print("   Trying to move to: (65, 14, 65) - through water to ground")
     
@@ -110,8 +110,8 @@ def demo_water_collision():
     print(f"\n✅ Result:")
     print(f"   Player position: y={safe_pos[1]}")
     print(f"   Y collision: {collision_info['y']}")
-    print(f"\n   💡 Player moved freely through water (y=15)")
-    print(f"      Water does NOT block movement!")
+    print(f"\n   💡 Player blocked by water (y=15)")
+    print(f"      Water DOES block movement (solid like grass)!")
     
     print("\n🏊 Scenario 2: Player tries to move through solid ground")
     print("   Initial position: (65, 12, 65) - above ground")
@@ -130,9 +130,9 @@ def demo_water_collision():
     print(f"      Solid blocks DO block movement!")
     
     print("\n🎯 Summary:")
-    print("   • Water blocks allow free movement (no sinking!)")
-    print("   • Solid blocks still provide collision as expected")
-    print("   • Players can swim through water naturally")
+    print("   • Water blocks are now SOLID (block movement like grass)")
+    print("   • Players stand on water instead of sinking through it")
+    print("   • Water behaves identically to other solid blocks")
 
 
 def main():

@@ -119,8 +119,8 @@ def validate_block_type(block_type: str) -> bool:
 
 def get_block_collision(block_type: str) -> bool:
     """Get whether a block type has collision."""
-    # Air and water don't have collision, everything else does
-    non_collision_types = {BlockType.AIR, BlockType.WATER}
+    # Only air doesn't have collision, everything else does (including water)
+    non_collision_types = {BlockType.AIR}
     return block_type not in non_collision_types
 
 
