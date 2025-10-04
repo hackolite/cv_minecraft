@@ -58,10 +58,8 @@ python3 tests/demo_minecraft_client.py
 
 ### Other Tests
 - `test_minecraft_server.py` - Minecraft server tests
-- `test_rtsp_users.py` - RTSP users tests
 - `test_same_map_validation.py` - Same map validation tests
 - `demo_minecraft_client.py` - Minecraft client demo
-- `demo_enhanced_image_server.py` - Enhanced image server demo
 
 ## Note
 
