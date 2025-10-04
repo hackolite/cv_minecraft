@@ -1323,7 +1323,8 @@ Statut: {connection_status}"""
                             cube_id=camera_id,
                             position=camera_position,
                             cube_type="camera",
-                            owner=player_id
+                            owner=player_id,
+                            model=self.model  # Pass the world model for rendering
                         )
                         self.camera_cubes[camera_id] = camera_cube
                         print(f"  ✅ Found owned camera: {camera_id} at {camera_position}, created Cube instance")
