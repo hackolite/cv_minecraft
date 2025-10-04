@@ -26,12 +26,12 @@ def test_block_data_creation():
     assert block_data["block_id"] == "camera_1"
     print("  ✅ Camera block with block_id: OK")
     
-    # Test water (with collision)
+    # Test water (without collision)
     block_data = create_block_data(BlockType.WATER)
     assert block_data["type"] == BlockType.WATER
-    assert block_data["collision"] == True
+    assert block_data["collision"] == False
     assert block_data["block_id"] is None
-    print("  ✅ Water block (with collision): OK")
+    print("  ✅ Water block (without collision): OK")
     
     # Test user block
     block_data = create_block_data(BlockType.USER, block_id="player_123")
@@ -50,7 +50,7 @@ def test_block_collision_function():
     assert get_block_collision(BlockType.STONE) == True
     assert get_block_collision(BlockType.CAMERA) == True
     assert get_block_collision(BlockType.USER) == True
-    assert get_block_collision(BlockType.WATER) == True
+    assert get_block_collision(BlockType.WATER) == False
     assert get_block_collision(BlockType.AIR) == False
     
     print("✅ Block collision function tests passed\n")
