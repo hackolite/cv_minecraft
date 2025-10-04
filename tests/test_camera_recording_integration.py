@@ -49,9 +49,12 @@ def test_camera_recording_integration():
     # Compter les occurrences de capture_frame dans la méthode on_draw
     # Il devrait y en avoir au moins 2 : une pour self.recorder et une pour camera_recorders
     on_draw_section = content.split('def on_draw(self):', 1)[1].split('def ', 1)[0]
-    capture_frame_count = on_draw_section.count('.capture_frame(self)')
-    assert capture_frame_count >= 2, \
-        f"on_draw devrait appeler capture_frame au moins 2 fois (player + cameras), trouvé {capture_frame_count}"
+    # Player recorder uses capture_frame(self), camera recorders use capture_frame()
+    player_capture_count = on_draw_section.count('.capture_frame(self)')
+    camera_capture_count = on_draw_section.count('recorder.capture_frame()')
+    total_capture_count = player_capture_count + camera_capture_count
+    assert total_capture_count >= 2, \
+        f"on_draw devrait appeler capture_frame au moins 2 fois (player + cameras), trouvé {total_capture_count} (player: {player_capture_count}, cameras: {camera_capture_count})"
     
     # 6. Vérifier que update_recording_status_display existe et est appelé
     assert 'def update_recording_status_display(self):' in content, \
