@@ -210,7 +210,7 @@ The reconstruction script uses:
 ### Couleurs des blocs / Block Colors
 
 | Type    | Couleur / Color       | RGB           |
-|---------|-----------------------|---------------|
+|---------|------------------------|---------------|
 | grass   | Forest green          | (34, 139, 34) |
 | sand    | Wheat                 | (238, 214, 175) |
 | brick   | Firebrick            | (178, 34, 34) |
@@ -220,6 +220,7 @@ The reconstruction script uses:
 | water   | Dodger blue           | (64, 164, 223) |
 | camera  | Magenta               | (255, 0, 255) |
 | user    | Yellow                | (255, 255, 0) |
+| cat     | Orange                | (255, 165, 0) |
 
 ## Intégration avec le système existant / Integration with Existing System
 
