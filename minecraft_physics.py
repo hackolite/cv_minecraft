@@ -62,6 +62,28 @@ collision_logger = logging.getLogger('minecraft_collision')
 collision_logger.setLevel(logging.INFO)
 
 
+def get_block_type_from_data(block_data):
+    """Helper function to extract block type from block data.
+    
+    Handles both old string format and new dict format for backward compatibility.
+    """
+    if isinstance(block_data, dict):
+        return block_data.get("type")
+    return block_data
+
+
+def has_block_collision(block_data):
+    """Helper function to check if a block has collision.
+    
+    Handles both old string format and new dict format for backward compatibility.
+    """
+    if isinstance(block_data, dict):
+        return block_data.get("collision", True)
+    else:
+        # For old string format, water and air don't have collision
+        return block_data not in {"water", "air"}
+
+
 
 # ============================================================================
 # UNIFIED COLLISION MANAGER
@@ -123,10 +145,11 @@ class UnifiedCollisionManager:
             for y in range(ymin, ymax + 1):
                 for z in range(zmin, zmax + 1):
                     if (x, y, z) in self.world_blocks:
-                        block_type = self.world_blocks[(x, y, z)]
+                        block_data = self.world_blocks[(x, y, z)]
+                        block_type = get_block_type_from_data(block_data)
                         
-                        # AIR blocks should not cause collision - players can pass through
-                        if block_type == "air":
+                        # Skip blocks without collision (air, water)
+                        if not has_block_collision(block_data) or block_type == "air":
                             continue
                         
                         # Block boundaries (1x1x1 voxel from x,y,z to x+1,y+1,z+1)
@@ -441,10 +464,11 @@ class UnifiedCollisionManager:
             for y in range(ymin, ymax + 1):
                 for z in range(zmin, zmax + 1):
                     if (x, y, z) in self.world_blocks:
-                        block_type = self.world_blocks[(x, y, z)]
+                        block_data = self.world_blocks[(x, y, z)]
+                        block_type = get_block_type_from_data(block_data)
                         
-                        # AIR blocks should not cause collision - players can pass through
-                        if block_type == "air":
+                        # Skip blocks without collision
+                        if not has_block_collision(block_data) or block_type == "air":
                             continue
                         
                         # Block boundaries (1x1x1 voxel from x,y,z to x+1,y+1,z+1)
@@ -501,8 +525,11 @@ class UnifiedCollisionManager:
         for x in range(xmin, xmax + 1):
             for y in range(ymin, ymax + 1):
                 for z in range(zmin, zmax + 1):
-                    if (x, y, z) in self.world_blocks and self.world_blocks[(x, y, z)] != "air":
-                        intersecting_blocks.append((x, y, z))
+                    if (x, y, z) in self.world_blocks:
+                        block_data = self.world_blocks[(x, y, z)]
+                        block_type = get_block_type_from_data(block_data)
+                        if has_block_collision(block_data) and block_type != "air":
+                            intersecting_blocks.append((x, y, z))
         
         if not intersecting_blocks:
             return pos  # No intersecting blocks found
@@ -569,16 +596,18 @@ class UnifiedCollisionManager:
           if new_x > old_x:  # Moving right
               for block_x in range(int(math.floor(old_x)), int(math.floor(new_x)) + 2):
                   if (block_x, block_y, block_z) in self.world_blocks:
-                      block_type = self.world_blocks[(block_x, block_y, block_z)]
-                      if block_type != "air":
+                      block_data = self.world_blocks[(block_x, block_y, block_z)]
+                      block_type = get_block_type_from_data(block_data)
+                      if has_block_collision(block_data) and block_type != "air":
                           safe_x = float(block_x) - player_half_width - clearance
                           safe_x = max(safe_x, old_x)
                           break
           else:  # Moving left
               for block_x in range(int(math.floor(new_x)), int(math.floor(old_x)) + 2):
                   if (block_x, block_y, block_z) in self.world_blocks:
-                      block_type = self.world_blocks[(block_x, block_y, block_z)]
-                      if block_type != "air":
+                      block_data = self.world_blocks[(block_x, block_y, block_z)]
+                      block_type = get_block_type_from_data(block_data)
+                      if has_block_collision(block_data) and block_type != "air":
                           safe_x = float(block_x + 1) + player_half_width + clearance
                           safe_x = min(safe_x, old_x)
                           break
@@ -597,16 +626,18 @@ class UnifiedCollisionManager:
               if new_z > old_z:  # Moving forward
                   for block_z in range(int(math.floor(old_z)), int(math.floor(new_z)) + 2):
                       if (block_x, block_y, block_z) in self.world_blocks:
-                          block_type = self.world_blocks[(block_x, block_y, block_z)]
-                          if block_type != "air":
+                          block_data = self.world_blocks[(block_x, block_y, block_z)]
+                          block_type = get_block_type_from_data(block_data)
+                          if has_block_collision(block_data) and block_type != "air":
                               safe_z = float(block_z) - player_half_width - clearance
                               safe_z = max(safe_z, old_z)
                               break
               else:  # Moving backward
                   for block_z in range(int(math.floor(new_z)), int(math.floor(old_z)) + 2):
                       if (block_x, block_y, block_z) in self.world_blocks:
-                          block_type = self.world_blocks[(block_x, block_y, block_z)]
-                          if block_type != "air":
+                          block_data = self.world_blocks[(block_x, block_y, block_z)]
+                          block_type = get_block_type_from_data(block_data)
+                          if has_block_collision(block_data) and block_type != "air":
                               safe_z = float(block_z + 1) + player_half_width + clearance
                               safe_z = min(safe_z, old_z)
                               break
@@ -632,8 +663,9 @@ class UnifiedCollisionManager:
             # Find the first block that would cause collision with player's head
             for block_y in range(int(math.floor(old_y)), int(math.floor(new_y + PLAYER_HEIGHT)) + 2):
                 if (block_x, block_y, block_z) in self.world_blocks:
-                    block_type = self.world_blocks[(block_x, block_y, block_z)]
-                    if block_type != "air":
+                    block_data = self.world_blocks[(block_x, block_y, block_z)]
+                    block_type = get_block_type_from_data(block_data)
+                    if has_block_collision(block_data) and block_type != "air":
                         # Snap player feet to below this block with clearance
                         safe_y = float(block_y) - PLAYER_HEIGHT - clearance
                         return max(safe_y, old_y)  # Don't go backwards
@@ -641,8 +673,9 @@ class UnifiedCollisionManager:
             # Find the first block that would cause collision with player's feet
             for block_y in range(int(math.floor(new_y)), int(math.floor(old_y)) + 2):
                 if (block_x, block_y, block_z) in self.world_blocks:
-                    block_type = self.world_blocks[(block_x, block_y, block_z)]
-                    if block_type != "air":
+                    block_data = self.world_blocks[(block_x, block_y, block_z)]
+                    block_type = get_block_type_from_data(block_data)
+                    if has_block_collision(block_data) and block_type != "air":
                         # Snap player feet to on top of this block with clearance
                         safe_y = float(block_y + 1) + clearance
                         return min(safe_y, old_y)  # Don't go backwards

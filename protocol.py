@@ -74,6 +74,7 @@ class BlockType:
     LEAF = "leaf"
     WATER = "water"
     CAMERA = "camera"  # Camera block visible to all users
+    USER = "user"  # User/player block
     AIR = "air"  # Represents removed blocks
 
 class Message:
