@@ -277,13 +277,19 @@ class AdvancedNetworkClient:
         """Gère un message du serveur (appelé sur le thread principal)."""
         try:
             if message.type == MessageType.WORLD_INIT:
+                # Extract player_id from WORLD_INIT message
+                player_id = message.data.get("player_id")
+                if player_id:
+                    self.player_id = player_id
+                    print(f"✅ Player ID received: {player_id}")
+                
                 self.window.model.load_world_data(message.data)
                 if self.player_id and not self.window.local_player_cube:
                     player_name = config.get("player", "name", "Joueur")
                     self.window.local_player_cube = self.window.model.create_local_player(
                         self.player_id, self.window.position, self.window.rotation, player_name
                     )
-                # Request camera list to check for owned cameras
+                # Request camera list to check for owned cameras (now that player_id is set)
                 self.window.request_cameras_list()
             elif message.type == MessageType.WORLD_CHUNK:
                 self.window.model.load_world_chunk(message.data)
@@ -1267,7 +1273,10 @@ Statut: {connection_status}"""
         player_id = self.network.player_id
         
         if not player_id:
+            print("⚠️  Cannot update owned cameras: player_id not set")
             return
+        
+        print(f"🔍 Checking {len(cameras)} cameras for owner {player_id}")
         
         # Find cameras owned by this player
         for camera in cameras:
@@ -1275,15 +1284,26 @@ Statut: {connection_status}"""
                 camera_id = camera.get("block_id")
                 if camera_id:
                     self.owned_cameras.append(camera_id)
+                    print(f"  ✅ Found owned camera: {camera_id}")
         
         if self.owned_cameras:
             self.show_message(f"📹 {len(self.owned_cameras)} caméra(s) possédée(s): {', '.join(self.owned_cameras)}", 5.0)
+        else:
+            print(f"  ℹ️  No owned cameras found for player {player_id}")
     
     def request_cameras_list(self):
         """Request the list of cameras from the server."""
-        if self.network and self.network.player_id:
-            request_msg = Message(MessageType.GET_CAMERAS_LIST, {})
-            self.network.send_message(request_msg)
+        if not self.network:
+            print("⚠️  Cannot request cameras: network not available")
+            return
+        
+        if not self.network.player_id:
+            print("⚠️  Cannot request cameras: player_id not set yet")
+            return
+        
+        print(f"📹 Requesting camera list for player {self.network.player_id}")
+        request_msg = Message(MessageType.GET_CAMERAS_LIST, {})
+        self.network.send_message(request_msg)
 
     def _toggle_camera_recording(self, camera_index: int):
         """Toggle recording for a specific camera.
@@ -1295,9 +1315,14 @@ Statut: {connection_status}"""
             self.show_message("⚠️  Enregistrement non disponible", 3.0)
             return
         
+        # Check if we have any cameras
+        if len(self.owned_cameras) == 0:
+            self.show_message(f"⚠️  Aucune caméra possédée. Placez d'abord une caméra.", 3.0)
+            return
+        
         # Check if we have cameras
         if camera_index >= len(self.owned_cameras):
-            self.show_message(f"⚠️  Caméra {camera_index} n'existe pas", 3.0)
+            self.show_message(f"⚠️  Caméra {camera_index} n'existe pas. Vous avez {len(self.owned_cameras)} caméra(s).", 3.0)
             return
         
         camera_id = self.owned_cameras[camera_index]
