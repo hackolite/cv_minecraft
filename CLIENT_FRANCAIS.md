@@ -203,7 +203,7 @@ Le client génère automatiquement un fichier `client_config.json` avec toutes l
 
 2. **"Connection failed"**
    - Vérifier que le serveur fonctionne
-   - Tester avec `python3 test_minecraft_server.py`
+   - Tester avec `python3 tests/test_minecraft_server.py`
    - Vérifier l'adresse/port dans la configuration
 
 3. **Latence élevée**
@@ -218,7 +218,7 @@ Le client génère automatiquement un fichier `client_config.json` avec toutes l
 python3 launcher.py --check
 
 # Test de connexion serveur
-python3 test_minecraft_server.py
+python3 tests/test_minecraft_server.py
 
 # Mode debug complet
 python3 minecraft_client_fr.py --debug

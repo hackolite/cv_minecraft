@@ -50,16 +50,16 @@ Le système utilise maintenant :
 
 ```bash
 # Tests unitaires de base
-python3 test_game_recorder.py
+python3 tests/test_game_recorder.py
 
 # Tests des améliorations de threading
-python3 test_threaded_recorder.py
+python3 tests/test_threaded_recorder.py
 
 # Démonstration des améliorations de performance
-python3 demo_recorder_improvements.py
+python3 tests/demo_recorder_improvements.py
 
 # Démonstration interactive
-python3 demo_recording.py
+python3 tests/demo_recording.py
 ```
 
 ## ✅ C'est Fait!

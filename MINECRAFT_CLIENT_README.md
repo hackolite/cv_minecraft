@@ -54,13 +54,13 @@ client.run()
 
 ```bash
 # Mode GUI
-python3 demo_minecraft_client.py --gui
+python3 tests/demo_minecraft_client.py --gui
 
 # Mode headless
-python3 demo_minecraft_client.py --headless
+python3 tests/demo_minecraft_client.py --headless
 
 # Configuration personnalisée
-python3 demo_minecraft_client.py --position 100 150 100 --block-type BRICK
+python3 tests/demo_minecraft_client.py --position 100 150 100 --block-type BRICK
 ```
 
 ## Configuration

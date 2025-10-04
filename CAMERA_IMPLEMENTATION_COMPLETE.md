@@ -35,13 +35,13 @@
    - Combines query and reconstruction in single command
    - Provides comprehensive options for customization
 
-4. **Test Suite** (`test_camera_screenshot_system.py`)
+4. **Test Suite** (`tests/test_camera_screenshot_system.py`)
    - Comprehensive tests for the complete workflow
    - Validates WebSocket queries
    - Tests different rotations and view distances
    - Verifies data format
 
-5. **Demo Script** (`demo_camera_screenshots.py`)
+5. **Demo Script** (`tests/demo_camera_screenshots.py`)
    - Generates multiple example screenshots
    - Demonstrates different camera perspectives
    - Shows various configuration options
@@ -52,8 +52,8 @@
 - `camera_view_query.py` - Query camera view data via WebSocket
 - `camera_view_reconstruction.py` - Reconstruct view and generate screenshot
 - `generate_camera_screenshot.py` - Complete workflow (recommended)
-- `test_camera_screenshot_system.py` - Comprehensive test suite
-- `demo_camera_screenshots.py` - Demo with multiple examples
+- `tests/test_camera_screenshot_system.py` - Comprehensive test suite
+- `tests/demo_camera_screenshots.py` - Demo with multiple examples
 
 ### Documentation
 - `CAMERA_SCREENSHOT_SYSTEM.md` - Complete system documentation (EN/FR)
@@ -94,10 +94,10 @@ python3 generate_camera_screenshot.py \
 
 ```bash
 # Run comprehensive tests / Exécuter les tests complets
-python3 test_camera_screenshot_system.py
+python3 tests/test_camera_screenshot_system.py
 
 # Generate demo screenshots / Générer des screenshots de démo
-python3 demo_camera_screenshots.py
+python3 tests/demo_camera_screenshots.py
 ```
 
 ## Architecture

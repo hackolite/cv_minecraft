@@ -153,10 +153,10 @@ recorder.stop_recording()
 
 ## Tests
 
-Un fichier de tests complet a été créé : `test_game_recorder.py`
+Un fichier de tests complet a été créé : `tests/test_game_recorder.py`
 
 ```bash
-python3 test_game_recorder.py
+python3 tests/test_game_recorder.py
 ```
 
 Tests couverts :
@@ -257,13 +257,13 @@ ffmpeg -framerate 30 -pattern_type glob -i 'frame_*.png' \
 ### Tests Réussis
 
 ```bash
-$ python3 test_game_recorder.py
+$ python3 tests/test_game_recorder.py
 # Tests de base - compatibilité préservée
 ============================================================
 ✅ Tous les tests existants passent!
 ============================================================
 
-$ python3 test_threaded_recorder.py
+$ python3 tests/test_threaded_recorder.py
 # Tests des nouvelles fonctionnalités
 ============================================================
 Test 1: Création du thread d'écriture
