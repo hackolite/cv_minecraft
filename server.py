@@ -40,6 +40,11 @@ STANDARD_TERMINAL_VELOCITY = TERMINAL_VELOCITY
 STANDARD_PLAYER_HEIGHT = PLAYER_HEIGHT
 PHYSICS_TICK_RATE = 20  # Updates per second
 
+# Water collision configuration
+# When True, water blocks are solid (players walk on top of water)
+# When False, water blocks have no collision (players can pass through water)
+WATER_COLLISION_ENABLED = True
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -119,9 +124,16 @@ def validate_block_type(block_type: str) -> bool:
 
 def get_block_collision(block_type: str) -> bool:
     """Get whether a block type has collision."""
-    # Only air doesn't have collision, everything else does (including water)
-    non_collision_types = {BlockType.AIR}
-    return block_type not in non_collision_types
+    # Air never has collision
+    if block_type == BlockType.AIR:
+        return False
+    
+    # Water collision is configurable
+    if block_type == BlockType.WATER:
+        return WATER_COLLISION_ENABLED
+    
+    # All other blocks have collision
+    return True
 
 
 def create_block_data(block_type: str, block_id: Optional[str] = None) -> Dict[str, Any]:
