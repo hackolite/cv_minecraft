@@ -133,10 +133,10 @@ Les streams RTSP sont disponibles aux URLs:
 
 ```bash
 # Test complet du système
-python3 test_rtsp_users.py
+python3 tests/test_rtsp_users.py
 
 # Test d'intégration serveur
-python3 test_integration_final.py
+python3 tests/test_integration_final.py
 ```
 
 ## API
@@ -231,10 +231,10 @@ Le système fournit des logs détaillés:
 python3 test_camera_streaming.py
 
 # Test d'intégration utilisateurs RTSP
-python3 test_rtsp_users.py
+python3 tests/test_rtsp_users.py
 
 # Test d'intégration serveur complet
-python3 test_integration_final.py
+python3 tests/test_integration_final.py
 ```  
 - Intégration avec le serveur principal
 - Messages de player_list

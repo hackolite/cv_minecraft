@@ -75,13 +75,13 @@ Les endpoints de capture d'écran ont été supprimés avec l'API REST.
 
 ```bash
 # Mode GUI avec API
-python3 demo_minecraft_client.py --gui --port 8080
+python3 tests/demo_minecraft_client.py --gui --port 8080
 
 # Mode headless
-python3 demo_minecraft_client.py --headless
+python3 tests/demo_minecraft_client.py --headless
 
 # Configuration custom
-python3 demo_minecraft_client.py --position 100 150 100 --block-type BRICK
+python3 tests/demo_minecraft_client.py --position 100 150 100 --block-type BRICK
 ```
 
 ## Résultat
