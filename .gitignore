@@ -59,3 +59,9 @@ camera_view_data.json
 demo_screenshots/
 screenshot*.png
 test_*.png
+
+# Gameplay recordings
+recordings/
+demo_recordings/
+*.mp4
+*.webm
