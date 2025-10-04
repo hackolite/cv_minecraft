@@ -105,6 +105,90 @@ class Message:
         return cls(msg_type, data["data"], data.get("player_id"))
 
 
+def render_world_scene(model, position, rotation, window_size, fov=70.0, 
+                       render_players_func=None, render_focused_block_func=None,
+                       setup_perspective_func=None):
+    """Shared rendering pipeline for world/scene rendering.
+    
+    This function provides a common rendering pipeline that can be used by both
+    the main client window (player view) and camera cubes (headless/offscreen rendering).
+    
+    Both the main view and camera cubes use exactly the same rendering function for 
+    world view to ensure consistency.
+    
+    Args:
+        model: The world model containing blocks to render (EnhancedClientModel)
+        position: Camera position as (x, y, z) tuple
+        rotation: Camera rotation as (horizontal, vertical) tuple in degrees
+        window_size: Window dimensions as (width, height) tuple
+        fov: Field of view in degrees (default: 70.0)
+        render_players_func: Optional function to render players (callable)
+        render_focused_block_func: Optional function to render focused block outline (callable)
+        setup_perspective_func: Optional custom perspective setup function. If None, uses default.
+                               Should accept (position, rotation, window_size, fov) args.
+    
+    Usage:
+        # For camera cube (headless) - uses default perspective:
+        render_world_scene(self.model, camera_pos, self.cube.rotation, 
+                          self.window.get_size())
+        
+        # For main window - can provide custom perspective setup:
+        render_world_scene(self.model, camera_pos, self.rotation, self.get_size(),
+                          render_players_func=self.draw_players,
+                          render_focused_block_func=self.draw_focused_block,
+                          setup_perspective_func=lambda pos, rot, size, fov: self.set_3d())
+    """
+    if not PYGLET_AVAILABLE or not model:
+        return
+    
+    try:
+        # Set up 3D perspective - either custom or default
+        if setup_perspective_func:
+            setup_perspective_func(position, rotation, window_size, fov)
+        else:
+            # Default perspective setup for camera cubes
+            width, height = window_size
+            glEnable(GL_DEPTH_TEST)
+            glViewport(0, 0, max(1, width), max(1, height))
+            glMatrixMode(GL_PROJECTION)
+            glLoadIdentity()
+            
+            # Use gluPerspective for perspective projection
+            from pyglet.gl import gluPerspective
+            aspect = width / float(height) if height > 0 else 1.0
+            gluPerspective(fov, aspect, 0.1, 60.0)
+            
+            glMatrixMode(GL_MODELVIEW)
+            glLoadIdentity()
+            
+            # Apply camera rotation
+            rotation_x, rotation_y = rotation
+            glRotatef(rotation_x, 0, 1, 0)
+            glRotatef(-rotation_y, math.cos(math.radians(rotation_x)), 0, math.sin(math.radians(rotation_x)))
+            
+            # Apply camera position
+            camera_x, camera_y, camera_z = position
+            glTranslatef(-camera_x, -camera_y, -camera_z)
+        
+        # Render the world using the model's batch (common for all views)
+        glColor3d(1, 1, 1)
+        if model.batch:
+            model.batch.draw()
+        
+        # Optionally render focused block outline (main window only)
+        if render_focused_block_func:
+            render_focused_block_func()
+        
+        # Optionally render players (both main window and cameras can show players)
+        if render_players_func:
+            render_players_func()
+            
+    except Exception as e:
+        print(f"⚠️  World scene rendering failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 class CubeWindow:
     """Pyglet window abstraction for camera-type cubes."""
     
@@ -203,7 +287,15 @@ class CubeWindow:
             return None
     
     def _render_simple_scene(self):
-        """Render the world from the cube's perspective."""
+        """Render the world from the cube's perspective.
+        
+        This method is called when capturing frames from camera cubes.
+        It automatically selects between world rendering (if model available)
+        and placeholder rendering (fallback).
+        
+        Uses the shared render_world_scene() function for consistency with
+        the main client window rendering.
+        """
         if not PYGLET_AVAILABLE:
             return
             
@@ -219,43 +311,31 @@ class CubeWindow:
             print(f"⚠️  Scene rendering failed for cube {self.cube_id}: {e}")
     
     def _render_world_from_camera(self):
-        """Render the actual world from the camera cube's perspective."""
+        """Render the actual world from the camera cube's perspective.
+        
+        Uses the shared render_world_scene() function to ensure consistency
+        with the main window rendering pipeline.
+        """
         if not PYGLET_AVAILABLE or not self.model or not self.cube:
             return
         
         try:
-            # Set up 3D perspective
-            width, height = self.window.get_size()
-            glEnable(GL_DEPTH_TEST)
-            glViewport(0, 0, max(1, width), max(1, height))
-            glMatrixMode(GL_PROJECTION)
-            glLoadIdentity()
-            
-            # Use gluPerspective like the main window
-            # FOV of 70 degrees, near plane at 0.1, far plane at 60.0
-            from pyglet.gl import gluPerspective
-            fov = 70.0
-            aspect = width / float(height) if height > 0 else 1.0
-            gluPerspective(fov, aspect, 0.1, 60.0)
-            
-            glMatrixMode(GL_MODELVIEW)
-            glLoadIdentity()
-            
-            # Apply camera rotation from cube
-            rotation_x, rotation_y = self.cube.rotation
-            glRotatef(rotation_x, 0, 1, 0)
-            glRotatef(-rotation_y, math.cos(math.radians(rotation_x)), 0, math.sin(math.radians(rotation_x)))
-            
-            # Apply camera position from cube
+            # Calculate camera position (elevated to eye height)
             camera_x, camera_y, camera_z = self.cube.position
-            # Camera is elevated slightly (eye height)
-            camera_y += 0.6
-            glTranslatef(-camera_x, -camera_y, -camera_z)
+            camera_y += 0.6  # Eye height offset
+            camera_position = (camera_x, camera_y, camera_z)
             
-            # Render the world using the model's batch
-            glColor3d(1, 1, 1)
-            if self.model.batch:
-                self.model.batch.draw()
+            # Use shared rendering pipeline - cameras render world only (no UI, no focused block)
+            # This ensures both main window and camera cubes use exactly the same rendering logic
+            render_world_scene(
+                model=self.model,
+                position=camera_position,
+                rotation=self.cube.rotation,
+                window_size=self.window.get_size(),
+                fov=70.0,
+                render_players_func=None,  # Cameras don't render player cubes by default
+                render_focused_block_func=None  # Cameras don't show focused block outline
+            )
             
         except Exception as e:
             print(f"⚠️  World rendering failed for cube {self.cube_id}: {e}")
