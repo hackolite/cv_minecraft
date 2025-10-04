@@ -17,6 +17,8 @@ Usage:
 import sys, math, random, time, json, argparse, asyncio, threading, os
 from collections import deque
 from typing import Optional, Tuple, Dict, Any
+from datetime import datetime
+import pathlib
 
 # Third-party imports with display environment handling
 def setup_display_environment():
@@ -573,6 +575,110 @@ else:
             pass
 
 
+class GameRecorder:
+    """Classe pour enregistrer le gameplay en utilisant le buffer Pyglet."""
+    
+    def __init__(self, output_dir: str = "recordings"):
+        """Initialise le recorder.
+        
+        Args:
+            output_dir: Répertoire de sortie pour les enregistrements
+        """
+        self.output_dir = pathlib.Path(output_dir)
+        self.output_dir.mkdir(exist_ok=True)
+        self.is_recording = False
+        self.frame_count = 0
+        self.session_dir = None
+        self.start_time = None
+        self.last_capture_time = 0
+        self.capture_interval = 1.0 / 30.0  # 30 FPS par défaut
+        
+        print(f"📹 GameRecorder initialisé - Répertoire: {self.output_dir}")
+    
+    def start_recording(self):
+        """Démarre l'enregistrement."""
+        if self.is_recording:
+            print("⚠️  Enregistrement déjà en cours")
+            return
+        
+        # Créer un nouveau répertoire de session
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.session_dir = self.output_dir / f"session_{timestamp}"
+        self.session_dir.mkdir(exist_ok=True)
+        
+        self.is_recording = True
+        self.frame_count = 0
+        self.start_time = time.time()
+        self.last_capture_time = 0
+        
+        print(f"🎬 Enregistrement démarré - Session: {self.session_dir}")
+        return self.session_dir
+    
+    def stop_recording(self):
+        """Arrête l'enregistrement."""
+        if not self.is_recording:
+            print("⚠️  Aucun enregistrement en cours")
+            return
+        
+        self.is_recording = False
+        duration = time.time() - self.start_time
+        
+        print(f"⏹️  Enregistrement arrêté")
+        print(f"   Durée: {duration:.2f}s")
+        print(f"   Frames: {self.frame_count}")
+        print(f"   FPS moyen: {self.frame_count / duration:.2f}")
+        print(f"   Fichiers sauvegardés dans: {self.session_dir}")
+        
+        # Créer un fichier d'info
+        if self.session_dir:
+            info_file = self.session_dir / "session_info.json"
+            info_data = {
+                "duration_seconds": duration,
+                "frame_count": self.frame_count,
+                "average_fps": self.frame_count / duration if duration > 0 else 0,
+                "start_time": datetime.fromtimestamp(self.start_time).isoformat(),
+                "end_time": datetime.now().isoformat()
+            }
+            with open(info_file, 'w') as f:
+                json.dump(info_data, f, indent=2)
+    
+    def capture_frame(self, window):
+        """Capture une frame depuis le buffer Pyglet.
+        
+        Args:
+            window: La fenêtre Pyglet dont on veut capturer le buffer
+        """
+        if not self.is_recording:
+            return
+        
+        current_time = time.time()
+        if current_time - self.last_capture_time < self.capture_interval:
+            return  # Respecter l'intervalle de capture
+        
+        try:
+            # Utiliser get_buffer_manager().get_color_buffer() comme demandé
+            buffer = pyglet.image.get_buffer_manager().get_color_buffer()
+            
+            # Sauvegarder l'image
+            frame_filename = self.session_dir / f"frame_{self.frame_count:06d}.png"
+            buffer.save(str(frame_filename))
+            
+            self.frame_count += 1
+            self.last_capture_time = current_time
+            
+        except Exception as e:
+            print(f"⚠️  Erreur capture frame: {e}")
+    
+    def set_fps(self, fps: int):
+        """Définit le FPS d'enregistrement.
+        
+        Args:
+            fps: Frames par seconde (ex: 30, 60)
+        """
+        self.capture_interval = 1.0 / fps
+        print(f"📹 FPS d'enregistrement: {fps}")
+
+
 class MinecraftWindow(BaseWindow):
     """Fenêtre de jeu principale avec collision de caméra améliorée."""
 
@@ -651,6 +757,9 @@ class MinecraftWindow(BaseWindow):
         # Cache pour la collision de caméra
         self._camera_collision_cache = {}
         self._cache_clear_counter = 0
+
+        # Système d'enregistrement
+        self.recorder = GameRecorder() if PYGLET_AVAILABLE else None
 
         # Initialisation
         pyglet.clock.schedule_interval(self.update, 1.0 / TICKS_PER_SEC)
@@ -899,6 +1008,8 @@ class MinecraftWindow(BaseWindow):
         if self.flying: status_indicators.append("Vol")
         if self.sprinting: status_indicators.append("Course")
         if self.crouch: status_indicators.append("Accroupi")
+        if self.recorder and self.recorder.is_recording:
+            status_indicators.append(f"🔴 REC ({self.recorder.frame_count} frames)")
 
         debug_text = f"""Minecraft Client Français v1.0 - Collision Corrigée
 Position: {x:.1f}, {y:.1f}, {z:.1f}
@@ -1017,6 +1128,17 @@ Statut: {connection_status}"""
             self.show_message(status)
         elif symbol == key.F11:
             self.set_fullscreen(not self.fullscreen)
+        elif symbol == key.F9:
+            # Démarrer/arrêter l'enregistrement
+            if self.recorder:
+                if not self.recorder.is_recording:
+                    session_dir = self.recorder.start_recording()
+                    self.show_message(f"🎬 Enregistrement démarré: {session_dir.name}", 3.0)
+                else:
+                    self.recorder.stop_recording()
+                    self.show_message("⏹️  Enregistrement arrêté", 3.0)
+            else:
+                self.show_message("⚠️  Enregistrement non disponible", 3.0)
         elif symbol in self.num_keys:
             index = (symbol - self.num_keys[0]) % len(self.inventory)
             self.block = self.inventory[index]
@@ -1058,6 +1180,11 @@ Statut: {connection_status}"""
     def on_close(self):
         """Gère la fermeture de la fenêtre."""
         print("Fermeture du client...")
+        
+        # Arrêter l'enregistrement si actif
+        if self.recorder and self.recorder.is_recording:
+            self.recorder.stop_recording()
+        
         self.network.disconnect()
         config.save_config()
         super(MinecraftWindow, self).on_close()
@@ -1259,6 +1386,10 @@ Statut: {connection_status}"""
         # Interface 2D
         self.set_2d()
         self.draw_ui()
+        
+        # Capture frame si enregistrement actif
+        if self.recorder and self.recorder.is_recording:
+            self.recorder.capture_frame(self)
 
     def draw_focused_block(self):
         """Dessine les contours du bloc visé."""
