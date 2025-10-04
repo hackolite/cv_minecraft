@@ -42,7 +42,7 @@ PLAYER_HEIGHT = 1.0         # Player height (Y dimension)
 PLAYER_EYE_HEIGHT = 1.62    # Eye height from feet
 
 # Physics constants matching Minecraft's behavior
-GRAVITY = 32.0              # Blocks per second squared
+GRAVITY = 16.0              # Blocks per second squared
 TERMINAL_VELOCITY = 78.4    # Maximum falling speed
 JUMP_VELOCITY = 10.0        # Initial jump speed
 WALKING_SPEED = 4.317       # Blocks per second
