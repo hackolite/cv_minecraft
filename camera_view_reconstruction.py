@@ -164,8 +164,10 @@ def render_camera_view(
     blocks = view_data["blocks"]
     
     print(f"🎨 Rendering {len(blocks)} blocks from camera perspective...")
+    print(f"   Camera ID: {camera_info['block_id']}")
     print(f"   Camera position: {camera_pos}")
     print(f"   Camera rotation: {rotation}")
+    print(f"   FOV: {fov}°")
     
     # Sort blocks by distance (far to near for proper occlusion)
     blocks_with_depth = []

@@ -79,6 +79,28 @@ async def generate_screenshot(
             print(f"\n❌ Query failed: {view_data['error']}")
             return 1
         
+        # Extract the actual camera_id used (might be different if none was specified)
+        actual_camera_id = view_data["camera"]["block_id"]
+        print(f"📷 Using camera: {actual_camera_id}")
+        
+        # Determine output path - save in recordings/{camera_id}/ directory
+        if output_image == "screenshot.png":
+            # Default name - use camera-specific directory
+            camera_dir = f"recordings/{actual_camera_id}"
+            os.makedirs(camera_dir, exist_ok=True)
+            
+            # Generate timestamp-based filename
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_image = os.path.join(camera_dir, f"screenshot_{timestamp}.png")
+            print(f"💾 Output will be saved to camera directory: {output_image}")
+        else:
+            # Custom output path specified - still ensure parent directory exists
+            output_dir = os.path.dirname(output_image)
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+            print(f"💾 Output will be saved to: {output_image}")
+        
         # Save intermediate data
         save_view_data(view_data, temp_data_file)
         
@@ -95,6 +117,7 @@ async def generate_screenshot(
         
         # Save screenshot
         save_screenshot(img, output_image)
+        print(f"📁 Screenshot saved in camera directory: {output_image}")
         
         # Clean up temporary file unless requested to keep
         if not keep_json and os.path.exists(temp_data_file):

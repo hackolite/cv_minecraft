@@ -106,14 +106,23 @@ class Message:
 class CubeWindow:
     """Pyglet window abstraction for camera-type cubes."""
     
-    def __init__(self, cube_id: str, width: int = 800, height: int = 600, visible: bool = False):
-        """Initialize a cube window."""
+    def __init__(self, cube_id: str, width: int = 800, height: int = 600, visible: bool = False, cube_ref: Optional['Cube'] = None):
+        """Initialize a cube window.
+        
+        Args:
+            cube_id: ID of the cube this window belongs to
+            width: Window width in pixels
+            height: Window height in pixels
+            visible: Whether the window should be visible
+            cube_ref: Reference to the Cube object (for accessing position/rotation)
+        """
         self.cube_id = cube_id
         self.width = width
         self.height = height
         self.visible = visible
         self.window = None
         self.app_running = False
+        self.cube_ref = cube_ref  # Store reference to parent cube
         
         if PYGLET_AVAILABLE:
             try:
@@ -159,13 +168,21 @@ class CubeWindow:
             return None
             
         try:
+            # Log camera information for diagnostics
+            if self.cube_ref:
+                print(f"📸 Taking screenshot from camera cube: {self.cube_id}")
+                print(f"   Position: {self.cube_ref.position}")
+                print(f"   Rotation: {self.cube_ref.rotation}")
+            else:
+                print(f"📸 Taking screenshot from cube: {self.cube_id} (no position/rotation info)")
+            
             # Make sure this window's context is current
             self.window.switch_to()
             
             # Clear and render a simple scene
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
             
-            # Simple cube rendering (placeholder - in real implementation this would render the world from cube's perspective)
+            # Render scene from camera's perspective
             self._render_simple_scene()
             
             # Force flush to ensure rendering is complete
@@ -183,6 +200,8 @@ class CubeWindow:
             # Convert to PNG bytes
             img_buffer = io.BytesIO()
             image.save(img_buffer, format='PNG')
+            
+            print(f"✅ Screenshot captured successfully from camera {self.cube_id}")
             return img_buffer.getvalue()
             
         except Exception as e:
@@ -209,8 +228,22 @@ class CubeWindow:
             glMatrixMode(GL_MODELVIEW)
             glLoadIdentity()
             
-            # Move camera back
-            glTranslatef(0, 0, -5)
+            # Apply camera rotation and position if we have a cube reference
+            if self.cube_ref:
+                # Apply camera's rotation (vertical then horizontal)
+                h_rot, v_rot = self.cube_ref.rotation
+                glRotatef(-v_rot, 1, 0, 0)  # Vertical rotation (pitch)
+                glRotatef(-h_rot, 0, 1, 0)  # Horizontal rotation (yaw)
+                
+                # Apply camera position (negate to move world opposite of camera)
+                cx, cy, cz = self.cube_ref.position
+                glTranslatef(-cx, -cy, -cz - 5)  # -5 to move back from camera
+                
+                print(f"🎥 Rendering from camera position {self.cube_ref.position} with rotation {self.cube_ref.rotation}")
+            else:
+                # Fallback: move camera back from origin
+                glTranslatef(0, 0, -5)
+                print(f"🎥 Rendering from default position (no cube reference)")
             
             # Draw a simple colored cube as placeholder
             self._draw_colored_cube()
@@ -330,8 +363,9 @@ class Cube:
     def _create_window(self):
         """Create a pyglet window for this cube (used for camera-type cubes)."""
         try:
-            self.window = CubeWindow(self.id, width=800, height=600, visible=False)
-            print(f"✅ Created window for {self.cube_type} cube {self.id}")
+            # Pass self reference to CubeWindow so it can access position and rotation
+            self.window = CubeWindow(self.id, width=800, height=600, visible=False, cube_ref=self)
+            print(f"✅ Created window for {self.cube_type} cube {self.id} at position {self.position}")
         except Exception as e:
             print(f"⚠️  Failed to create window for cube {self.id}: {e}")
             self.window = None

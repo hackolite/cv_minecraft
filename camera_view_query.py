@@ -93,6 +93,7 @@ async def query_camera_view(
         
         camera_block_id = selected_camera["block_id"]
         print(f"\n🎯 Querying view from camera: {camera_block_id}")
+        print(f"   Camera ID: {camera_block_id}")
         print(f"   Position: {selected_camera['position']}")
         print(f"   Rotation: {rotation}")
         print(f"   View distance: {view_distance}")

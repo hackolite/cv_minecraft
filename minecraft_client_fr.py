@@ -670,6 +670,8 @@ class GameRecorder:
         self.writer_thread.start()
         
         print(f"🎬 Enregistrement démarré - Session: {self.session_dir}")
+        print(f"   📁 Dossier d'enregistrement: {self.output_dir}")
+        print(f"   📂 Session: {self.session_dir.name}")
         return self.session_dir
     
     def stop_recording(self):

@@ -440,10 +440,13 @@ class GameWorld:
                 position = self.block_id_map[block_id]
                 # Convert to float tuple
                 position = tuple(float(x) for x in position)
+                logging.info(f"📷 Getting view from camera {block_id} at position {position} with rotation {rotation}")
             else:
                 # Block ID not found, return empty list
                 logging.warning(f"Block ID {block_id} not found in block_id_map")
                 return []
+        else:
+            logging.info(f"📷 Getting view from position {position} with rotation {rotation}")
         
         blocks = []
         px, py, pz = position
@@ -481,6 +484,7 @@ class GameWorld:
                 "distance": distance
             })
         
+        logging.info(f"📷 Found {len(blocks)} blocks in view from {'camera ' + block_id if block_id else 'position ' + str(position)}")
         return blocks
     
     def add_user_block(self, player_id: str, position: Tuple[float, float, float]) -> bool:
