@@ -124,7 +124,7 @@ done
 
 ```bash
 # Test the complete system / Tester le système complet
-python3 test_camera_screenshot_system.py
+python3 tests/test_camera_screenshot_system.py
 
 # Generate demo screenshots / Générer des screenshots de démo
 python3 demo_camera_screenshots.py
@@ -218,5 +218,5 @@ Solution:
 | `camera_view_query.py` | Query camera data | Requêter données caméra |
 | `camera_view_reconstruction.py` | Render screenshot | Rendre screenshot |
 | `generate_camera_screenshot.py` | Complete workflow | Workflow complet |
-| `test_camera_screenshot_system.py` | System tests | Tests système |
+| `tests/test_camera_screenshot_system.py` | System tests | Tests système |
 | `demo_camera_screenshots.py` | Generate demos | Générer démos |

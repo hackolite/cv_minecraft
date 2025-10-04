@@ -32,7 +32,7 @@ The changes use a defensive programming approach:
 - Provide multiple fallback levels for robustness
 
 ## Testing
-Created `test_pyglet_compatibility.py` to verify:
+Created `tests/test_pyglet_compatibility.py` to verify:
 - ✅ Syntax correctness of all Python files
 - ✅ Compatibility code presence
 - ✅ Requirements.txt updates
@@ -51,7 +51,7 @@ Created `test_pyglet_compatibility.py` to verify:
 ## Files Modified
 1. `minecraft.py` - Main compatibility updates
 2. `requirements.txt` - Version specification
-3. `test_pyglet_compatibility.py` - New test file (can be removed after verification)
+3. `tests/test_pyglet_compatibility.py` - New test file (can be removed after verification)
 
 ## Verification
 All changes maintain backwards compatibility while supporting Pyglet 2.1.8. The code will work with both older and newer versions of Pyglet through the fallback mechanisms implemented.

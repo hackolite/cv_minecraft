@@ -65,7 +65,7 @@ curl http://localhost:8080/health
 
 #### Test Complet
 ```bash
-python test_server_connectivity.py
+python tests/test_server_connectivity.py
 ```
 
 #### Tests Manuels
@@ -117,7 +117,7 @@ python -m uvicorn fastapi_camera_server:fastapi_camera_server.app --host 0.0.0.0
 ### Support
 
 1. **Diagnostic automatique:** `python server_health_check.py`
-2. **Test de connectivité:** `python test_server_connectivity.py`
+2. **Test de connectivité:** `python tests/test_server_connectivity.py`
 3. **Démonstration:** `python demo_fastapi_cameras.py`
 4. **Serveur complet:** `python server_with_cameras.py`
 

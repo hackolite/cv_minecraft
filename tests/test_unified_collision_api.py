@@ -5,7 +5,7 @@ Test the unified collision API to ensure all functions work properly.
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from minecraft_physics import (
     unified_check_collision, unified_check_player_collision,

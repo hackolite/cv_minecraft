@@ -144,10 +144,10 @@ recorder.stop_recording()
 
 ## Tests
 
-Un fichier de tests complet a été créé : `test_game_recorder.py`
+Un fichier de tests complet a été créé : `tests/test_game_recorder.py`
 
 ```bash
-python3 test_game_recorder.py
+python3 tests/test_game_recorder.py
 ```
 
 Tests couverts :
@@ -177,7 +177,7 @@ Tests couverts :
    - Documentation de la nouvelle fonctionnalité
    - Ajout du hotkey F9 dans les contrôles
 
-4. **test_game_recorder.py** (nouveau, 140 lignes)
+4. **tests/test_game_recorder.py** (nouveau, 140 lignes)
    - Tests unitaires complets
    - Validation de toutes les fonctionnalités
 
@@ -246,7 +246,7 @@ ffmpeg -framerate 30 -pattern_type glob -i 'frame_*.png' \
 ### Tests Réussis
 
 ```bash
-$ python3 test_game_recorder.py
+$ python3 tests/test_game_recorder.py
 ============================================================
 Tests du système GameRecorder
 ============================================================

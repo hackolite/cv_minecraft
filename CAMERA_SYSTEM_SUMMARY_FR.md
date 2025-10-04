@@ -117,7 +117,7 @@ python3 camera_view_reconstruction.py --input vue_camera.json --output screensho
 
 ### Test Complet
 ```bash
-python3 test_camera_screenshot_system.py
+python3 tests/test_camera_screenshot_system.py
 ```
 
 Ce test vérifie :

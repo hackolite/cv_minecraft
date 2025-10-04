@@ -193,8 +193,8 @@ python3 client.py  # Terminal 3 (etc.)
 
 ### Run Tests
 ```bash
-python3 test_connection.py     # Basic connectivity
-python3 test_multiplayer.py    # Multi-client simulation
+python3 tests/test_connection.py     # Basic connectivity
+python3 tests/test_multiplayer.py    # Multi-client simulation
 ```
 
 ## Benefits Achieved

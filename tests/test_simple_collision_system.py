@@ -9,7 +9,7 @@ checking instead of complex bounding box collision detection.
 import sys
 import os
 import math
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from minecraft_physics import UnifiedCollisionManager, PLAYER_HEIGHT, PLAYER_WIDTH
 

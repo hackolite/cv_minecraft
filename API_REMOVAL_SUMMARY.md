@@ -24,11 +24,11 @@ All REST API functionality has been successfully removed from the cv_minecraft c
 12. **demo_cube_window.py** - Updated to work without API
 
 ### Test Files
-13. **test_cube_system.py** - Updated to test without API
-14. **test_server_integration.py** - Updated to test without API
+13. **tests/test_cube_system.py** - Updated to test without API
+14. **tests/test_server_integration.py** - Updated to test without API
 
 ### Files Removed
-15. **test_api_demo.py** - Deleted (obsolete API test)
+15. **tests/test_api_demo.py** - Deleted (obsolete API test)
 
 ## Remaining Files with FastAPI
 The following standalone utility files still contain FastAPI but are NOT part of the main systems:

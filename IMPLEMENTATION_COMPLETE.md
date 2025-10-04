@@ -129,12 +129,12 @@ This is exactly as requested in the problem statement.
    - Maintains backward compatibility
 
 ### Tests & Documentation
-4. **test_block_metadata.py** (NEW)
+4. **tests/test_block_metadata.py** (NEW)
    - Unit tests for all features
    - 6 comprehensive test functions
    - All tests passing ✅
 
-5. **test_block_id_integration.py** (NEW)
+5. **tests/test_block_id_integration.py** (NEW)
    - Integration tests with live server
    - Tests block_id queries
    - All tests passing ✅
@@ -151,7 +151,7 @@ This is exactly as requested in the problem statement.
 
 ## Test Results
 
-### Unit Tests (test_block_metadata.py)
+### Unit Tests (tests/test_block_metadata.py)
 ```
 ✅ Block data creation tests passed
 ✅ Block collision function tests passed
@@ -161,13 +161,13 @@ This is exactly as requested in the problem statement.
 ✅ get_blocks_in_view with block_id tests passed
 ```
 
-### Integration Tests (test_block_id_integration.py)
+### Integration Tests (tests/test_block_id_integration.py)
 ```
 ✅ Query by block_id test passed
 ✅ Blocks metadata test passed
 ```
 
-### Existing Tests (test_query_services.py)
+### Existing Tests (tests/test_query_services.py)
 ```
 ✅ PASSED: GET_CAMERAS_LIST
 ✅ PASSED: GET_USERS_LIST

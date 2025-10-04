@@ -259,4 +259,4 @@ Déjà dans `requirements.txt` / Already in `requirements.txt`
 
 - `BLOCK_METADATA_SYSTEM.md`: Documentation du système block_id
 - `example_block_id_query.py`: Exemple de requête par block_id
-- `test_block_id_integration.py`: Tests d'intégration
+- `tests/test_block_id_integration.py`: Tests d'intégration

@@ -62,10 +62,10 @@ Run the comprehensive test suite:
 
 ```bash
 # Test core cube system
-python test_cube_system.py
+python tests/test_cube_system.py
 
 # Test server integration
-python test_server_integration.py
+python tests/test_server_integration.py
 ```
 
 ## Configuration

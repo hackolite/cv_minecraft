@@ -63,12 +63,12 @@ You can start multiple clients to test multiplayer functionality.
 
 ### Test Server Connection
 ```shell
-python3 test_connection.py
+python3 tests/test_connection.py
 ```
 
 ### Test Multiplayer
 ```shell
-python3 test_multiplayer.py
+python3 tests/test_multiplayer.py
 ```
 
 ## Original Monolithic Version

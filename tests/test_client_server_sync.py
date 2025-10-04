@@ -8,7 +8,7 @@ cube positions are always correctly synchronized and never float.
 import sys
 import os
 import json
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from protocol import PlayerState, Cube, Message, MessageType, create_player_update_message
 from client import ClientModel

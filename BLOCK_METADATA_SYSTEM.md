@@ -202,7 +202,7 @@ blocks_request = {
 
 Two comprehensive test suites verify the implementation:
 
-1. **test_block_metadata.py**: Unit tests for:
+1. **tests/test_block_metadata.py**: Unit tests for:
    - Block data creation
    - Collision function
    - Block management with metadata
@@ -210,7 +210,7 @@ Two comprehensive test suites verify the implementation:
    - Camera metadata retrieval
    - Block_id query support
 
-2. **test_block_id_integration.py**: Integration tests with running server:
+2. **tests/test_block_id_integration.py**: Integration tests with running server:
    - Query by block_id functionality
    - Complete metadata in responses
    - Backward compatibility

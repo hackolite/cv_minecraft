@@ -135,7 +135,7 @@ Verify the fix is working:
 python3 /tmp/test_vlc_fix_demo.py
 
 # Run existing regression tests
-python3 test_unified_collision_api.py
+python3 tests/test_unified_collision_api.py
 ```
 
 ## Common Issues and Solutions
@@ -193,7 +193,7 @@ CMD ["xvfb-run", "python3", "launcher.py"]
     sudo apt-get install -y libglu1-mesa-dev xvfb
     
 - name: Run tests
-  run: xvfb-run python3 test_unified_collision_api.py
+  run: xvfb-run python3 tests/test_unified_collision_api.py
 ```
 
 ## Files Modified

@@ -25,7 +25,7 @@ qui privilégie la fluidité du mouvement et évite les blocages dans les coins.
 import sys
 import os
 import math
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from minecraft_physics import (
     UnifiedCollisionManager, 

@@ -42,7 +42,7 @@ ffmpeg -framerate 30 -pattern_type glob -i 'frame_*.png' \
 
 ```bash
 # Tests unitaires
-python3 test_game_recorder.py
+python3 tests/test_game_recorder.py
 
 # Démonstration interactive
 python3 demo_recording.py

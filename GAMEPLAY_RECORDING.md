@@ -243,7 +243,7 @@ Améliorations futures possibles :
 Pour toute question ou problème :
 1. Vérifiez cette documentation
 2. Consultez les logs du client
-3. Testez avec `test_game_recorder.py`
+3. Testez avec `tests/test_game_recorder.py`
 4. Ouvrez une issue sur GitHub
 
 ## Licence

@@ -156,10 +156,10 @@ python demo_cube_window.py
 
 ```bash
 # Test window creation and API
-DISPLAY=:99 xvfb-run -a python test_cube_window.py
+DISPLAY=:99 xvfb-run -a python tests/test_cube_window.py
 
 # Test integration with existing cube system  
-DISPLAY=:99 xvfb-run -a python test_cube_system.py
+DISPLAY=:99 xvfb-run -a python tests/test_cube_system.py
 ```
 
 ### Demo

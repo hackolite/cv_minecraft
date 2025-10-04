@@ -16,7 +16,7 @@ La demande initiale était de créer une abstraction du client Minecraft.
 - `user_manager.py` - Gestionnaire d'utilisateurs avec caméras
 - `rtsp_video_streamer.py` - Streaming RTSP
 - `demo_fastapi_cameras.py`, `demo_rtsp_streaming.py` - Démos obsolètes
-- `test_camera_streaming.py`, `test_rtsp_users.py` - Tests obsolètes
+- `tests/test_camera_streaming.py`, `tests/test_rtsp_users.py` - Tests obsolètes
 
 ### 2. Abstraction du Client ✅
 
