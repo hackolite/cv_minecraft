@@ -867,6 +867,13 @@ class MinecraftWindow(BaseWindow):
             color=(255, 255, 0, 255)
         )
 
+        # Label de statut d'enregistrement (permanent, affiché quand enregistrement actif)
+        self.recording_status_label = pyglet.text.Label(
+            '', font_name='Arial', font_size=14,
+            x=10, y=self.height - 110, anchor_x='left', anchor_y='top',
+            color=(255, 50, 50, 255)  # Rouge pour indiquer l'enregistrement
+        )
+
         # Viseur simple
         self.setup_crosshair()
 
@@ -1062,10 +1069,27 @@ class MinecraftWindow(BaseWindow):
         block_text = f"Bloc: {self.block}"
         self.block_label.text = block_text
 
+    def update_recording_status_display(self):
+        """Met à jour l'affichage permanent du statut d'enregistrement."""
+        status_lines = []
+        
+        # Vérifier l'enregistrement du joueur principal
+        if self.recorder and self.recorder.is_recording:
+            status_lines.append("🔴 REC Joueur")
+        
+        # Vérifier l'enregistrement des caméras
+        for idx, camera_id in enumerate(self.owned_cameras):
+            if camera_id in self.camera_recorders and self.camera_recorders[camera_id].is_recording:
+                status_lines.append(f"🔴 REC Caméra {idx} ({camera_id})")
+        
+        # Mettre à jour le label
+        self.recording_status_label.text = " | ".join(status_lines)
+
     def update_ui(self):
         """Met à jour l'interface utilisateur."""
         self.update_position_display()
         self.update_block_display()
+        self.update_recording_status_display()
 
         if not self.show_debug:
             self.label.text = ""
@@ -1315,6 +1339,7 @@ Statut: {connection_status}"""
         self.label.y = height - 10
         self.position_label.y = height - 60
         self.block_label.y = height - 85
+        self.recording_status_label.y = height - 110
         self.message_label.x = width // 2
         self.message_label.y = height - 50
 
@@ -1634,6 +1659,10 @@ Statut: {connection_status}"""
         
         # Bloc actuel (toujours affiché)
         self.block_label.draw()
+
+        # Statut d'enregistrement (toujours affiché si enregistrement actif)
+        if self.recording_status_label.text:
+            self.recording_status_label.draw()
 
         # Labels de debug
         if self.show_debug:
