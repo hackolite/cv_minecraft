@@ -8,6 +8,7 @@ This system implements a window abstraction for cubes in the Minecraft server, w
 
 ✅ **Window Abstraction**: Each cube can have an optional pyglet window  
 ✅ **Camera Type Cubes**: Cubes with `cube_type="camera"` automatically get windows  
+✅ **World Rendering**: Camera cubes render the actual world from their perspective  
 ✅ **Screenshot API**: Camera cubes provide `/camera/image` endpoint returning PNG images  
 ✅ **Headless Compatibility**: Works without display using dummy classes  
 ✅ **Resource Management**: Automatic window cleanup when cubes are destroyed  
@@ -20,10 +21,13 @@ This system implements a window abstraction for cubes in the Minecraft server, w
 1. **CubeWindow Class** (`protocol.py`)
    - Manages individual pyglet windows for cubes
    - Handles OpenGL rendering and screenshot capture
+   - Renders actual world from camera's perspective when model is provided
+   - Provides fallback placeholder rendering when model is not available
    - Provides fallback dummy implementation for headless environments
 
 2. **Enhanced Cube Class** (`protocol.py`)
    - Added `cube_type` parameter to distinguish cube types
+   - Added `model` parameter to enable world rendering
    - Added `window` attribute for window abstraction
    - Automatic window creation for camera-type cubes
    - Enhanced API endpoints with camera functionality
@@ -39,12 +43,19 @@ This system implements a window abstraction for cubes in the Minecraft server, w
 
 ```python
 from protocol import Cube
+from minecraft_client_fr import EnhancedClientModel
+
+# Create a world model
+model = EnhancedClientModel()
 
 # Create a normal cube (no window)
 normal_cube = Cube("normal_1", (10, 50, 10), cube_type="normal")
 
-# Create a camera cube (with window)
+# Create a camera cube with placeholder rendering (no model)
 camera_cube = Cube("camera_1", (20, 50, 20), cube_type="camera")
+
+# Create a camera cube with world rendering (with model)
+camera_with_world = Cube("camera_2", (30, 50, 30), cube_type="camera", model=model)
 ```
 
 ### API Usage
@@ -92,24 +103,53 @@ curl http://localhost:8082/
 
 ### Window Creation
 
-Camera-type cubes automatically create a `CubeWindow` instance:
+Camera-type cubes automatically create a `CubeWindow` instance with optional model for world rendering:
 
 ```python
-def _create_window(self):
-    """Create a pyglet window for this cube (used for camera-type cubes)."""
+def _create_window(self, model=None):
+    """Create a pyglet window for this cube (used for camera-type cubes).
+    
+    Args:
+        model: Optional world model to render from camera's perspective
+    """
     try:
-        self.window = CubeWindow(self.id, width=800, height=600, visible=False)
+        self.window = CubeWindow(self.id, width=800, height=600, visible=False, model=model, cube=self)
         print(f"✅ Created window for {self.cube_type} cube {self.id}")
     except Exception as e:
         print(f"⚠️  Failed to create window for cube {self.id}: {e}")
         self.window = None
 ```
 
+### World Rendering
+
+The `CubeWindow` now supports rendering the actual world from the camera's perspective:
+
+1. **With Model** - `_render_world_from_camera()`:
+   - Sets up 3D perspective using camera's FOV (70 degrees)
+   - Applies camera's rotation (horizontal and vertical)
+   - Positions camera at cube's position (with eye height offset)
+   - Renders the world using the model's batch
+
+2. **Without Model** - `_render_placeholder_cube()`:
+   - Falls back to rendering a simple colored cube
+   - Used when model is not provided (e.g., on server side)
+
+The rendering method is automatically selected in `_render_simple_scene()`:
+
+```python
+def _render_simple_scene(self):
+    """Render the world from the cube's perspective."""
+    if self.model and self.cube:
+        self._render_world_from_camera()  # Render actual world
+    else:
+        self._render_placeholder_cube()   # Fallback to placeholder
+```
+
 ### Screenshot Capture
 
 The `CubeWindow.take_screenshot()` method:
 1. Switches to the window's OpenGL context
-2. Renders a simple 3D scene (placeholder)
+2. Renders the scene (world or placeholder) using `_render_simple_scene()`
 3. Reads pixels from the framebuffer
 4. Converts to PNG format using PIL
 

@@ -9,6 +9,7 @@ import socket
 import threading
 import time
 import io
+import math
 from enum import Enum
 from typing import Dict, List, Tuple, Any, Optional, Set
 
@@ -106,14 +107,25 @@ class Message:
 class CubeWindow:
     """Pyglet window abstraction for camera-type cubes."""
     
-    def __init__(self, cube_id: str, width: int = 800, height: int = 600, visible: bool = False):
-        """Initialize a cube window."""
+    def __init__(self, cube_id: str, width: int = 800, height: int = 600, visible: bool = False, model=None, cube=None):
+        """Initialize a cube window.
+        
+        Args:
+            cube_id: Unique identifier for this cube
+            width: Window width in pixels
+            height: Window height in pixels
+            visible: Whether the window should be visible
+            model: The world model to render (EnhancedClientModel instance)
+            cube: The cube instance this window belongs to (for position/rotation)
+        """
         self.cube_id = cube_id
         self.width = width
         self.height = height
         self.visible = visible
         self.window = None
         self.app_running = False
+        self.model = model  # World model to render
+        self.cube = cube  # Camera cube instance for position/rotation
         
         if PYGLET_AVAILABLE:
             try:
@@ -190,10 +202,70 @@ class CubeWindow:
             return None
     
     def _render_simple_scene(self):
-        """Render a simple scene from the cube's perspective."""
+        """Render the world from the cube's perspective."""
         if not PYGLET_AVAILABLE:
             return
             
+        try:
+            # If we have a model and cube, render the actual world from camera's perspective
+            if self.model and self.cube:
+                self._render_world_from_camera()
+            else:
+                # Fallback to simple colored cube if model/cube not available
+                self._render_placeholder_cube()
+            
+        except Exception as e:
+            print(f"⚠️  Scene rendering failed for cube {self.cube_id}: {e}")
+    
+    def _render_world_from_camera(self):
+        """Render the actual world from the camera cube's perspective."""
+        if not PYGLET_AVAILABLE or not self.model or not self.cube:
+            return
+        
+        try:
+            # Set up 3D perspective
+            width, height = self.window.get_size()
+            glEnable(GL_DEPTH_TEST)
+            glViewport(0, 0, max(1, width), max(1, height))
+            glMatrixMode(GL_PROJECTION)
+            glLoadIdentity()
+            
+            # Use gluPerspective like the main window
+            # FOV of 70 degrees, near plane at 0.1, far plane at 60.0
+            from pyglet.gl import gluPerspective
+            fov = 70.0
+            aspect = width / float(height) if height > 0 else 1.0
+            gluPerspective(fov, aspect, 0.1, 60.0)
+            
+            glMatrixMode(GL_MODELVIEW)
+            glLoadIdentity()
+            
+            # Apply camera rotation from cube
+            rotation_x, rotation_y = self.cube.rotation
+            glRotatef(rotation_x, 0, 1, 0)
+            glRotatef(-rotation_y, math.cos(math.radians(rotation_x)), 0, math.sin(math.radians(rotation_x)))
+            
+            # Apply camera position from cube
+            camera_x, camera_y, camera_z = self.cube.position
+            # Camera is elevated slightly (eye height)
+            camera_y += 0.6
+            glTranslatef(-camera_x, -camera_y, -camera_z)
+            
+            # Render the world using the model's batch
+            glColor3d(1, 1, 1)
+            if self.model.batch:
+                self.model.batch.draw()
+            
+        except Exception as e:
+            print(f"⚠️  World rendering failed for cube {self.cube_id}: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _render_placeholder_cube(self):
+        """Render a simple colored cube as placeholder when model is not available."""
+        if not PYGLET_AVAILABLE:
+            return
+        
         try:
             # Set up 3D perspective
             glMatrixMode(GL_PROJECTION)
@@ -216,7 +288,7 @@ class CubeWindow:
             self._draw_colored_cube()
             
         except Exception as e:
-            print(f"⚠️  Scene rendering failed for cube {self.cube_id}: {e}")
+            print(f"⚠️  Placeholder rendering failed for cube {self.cube_id}: {e}")
     
     def _draw_colored_cube(self):
         """Draw a simple colored cube."""
@@ -276,7 +348,7 @@ class Cube:
     
     def __init__(self, cube_id: str, position: Tuple[float, float, float],
                  rotation: Tuple[float, float] = (0, 0), size: float = 0.5, 
-                 cube_type: str = "normal", owner: Optional[str] = None):
+                 cube_type: str = "normal", owner: Optional[str] = None, model=None):
         self.id = cube_id
         self.position = position  # (x, y, z)
         self.rotation = rotation  # (horizontal, vertical)
@@ -298,7 +370,7 @@ class Cube:
         
         # Create window for camera-type cubes
         if self.cube_type == "camera":
-            self._create_window()
+            self._create_window(model=model)
     
     def update_position(self, position: Tuple[float, float, float]):
         """Update the cube's position with validation."""
@@ -327,10 +399,14 @@ class Cube:
         render_y = y + self.size
         return (x, render_y, z)  # Elevate by half-size so bottom touches ground
 
-    def _create_window(self):
-        """Create a pyglet window for this cube (used for camera-type cubes)."""
+    def _create_window(self, model=None):
+        """Create a pyglet window for this cube (used for camera-type cubes).
+        
+        Args:
+            model: Optional world model to render from camera's perspective
+        """
         try:
-            self.window = CubeWindow(self.id, width=800, height=600, visible=False)
+            self.window = CubeWindow(self.id, width=800, height=600, visible=False, model=model, cube=self)
             print(f"✅ Created window for {self.cube_type} cube {self.id}")
         except Exception as e:
             print(f"⚠️  Failed to create window for cube {self.id}: {e}")
