@@ -616,6 +616,9 @@ class GameRecorder:
         self.writer_thread = None
         self.writer_running = False
         
+        # Métadonnées de position pour chaque frame
+        self.frame_metadata = []  # Liste des métadonnées de position pour chaque frame
+        
         print(f"📹 GameRecorder initialisé - Répertoire: {self.output_dir}" + 
               (f", Caméra: {camera_cube.id}" if camera_cube else ""))
     
@@ -666,6 +669,7 @@ class GameRecorder:
         self.frame_count = 0
         self.start_time = time.time()
         self.last_capture_time = 0
+        self.frame_metadata = []  # Réinitialiser les métadonnées de frame
         
         # Démarrer le thread d'écriture
         self.writer_running = True
@@ -709,8 +713,31 @@ class GameRecorder:
                 "start_time": datetime.fromtimestamp(self.start_time).isoformat(),
                 "end_time": datetime.now().isoformat()
             }
+            
+            # Ajouter les informations de position de la caméra si disponible
+            if self.camera_cube:
+                info_data["camera_info"] = {
+                    "camera_id": self.camera_cube.id,
+                    "position": {
+                        "x": self.camera_cube.position[0],
+                        "y": self.camera_cube.position[1],
+                        "z": self.camera_cube.position[2]
+                    },
+                    "rotation": {
+                        "horizontal": self.camera_cube.rotation[0],
+                        "vertical": self.camera_cube.rotation[1]
+                    }
+                }
+            
             with open(info_file, 'w') as f:
                 json.dump(info_data, f, indent=2)
+            
+            # Sauvegarder les métadonnées de frame avec positions x,y,z
+            if self.frame_metadata:
+                frames_file = self.session_dir / "frames_metadata.json"
+                with open(frames_file, 'w') as f:
+                    json.dump(self.frame_metadata, f, indent=2)
+                print(f"   📊 Métadonnées de {len(self.frame_metadata)} frames sauvegardées")
     
     def capture_frame(self, window=None):
         """Capture une frame depuis le buffer Pyglet.
@@ -756,6 +783,28 @@ class GameRecorder:
                 width = image_data.width
                 height = image_data.height
                 raw_data = image_data.get_data('RGBA', image_data.width * 4)
+            
+            # Sauvegarder les métadonnées de position pour cette frame
+            frame_meta = {
+                "frame_number": self.frame_count,
+                "timestamp": current_time - self.start_time,
+                "width": width,
+                "height": height
+            }
+            
+            # Ajouter la position de la caméra si disponible
+            if self.camera_cube:
+                frame_meta["camera_position"] = {
+                    "x": self.camera_cube.position[0],
+                    "y": self.camera_cube.position[1],
+                    "z": self.camera_cube.position[2]
+                }
+                frame_meta["camera_rotation"] = {
+                    "horizontal": self.camera_cube.rotation[0],
+                    "vertical": self.camera_cube.rotation[1]
+                }
+            
+            self.frame_metadata.append(frame_meta)
             
             # Mettre les données dans la queue pour écriture asynchrone
             self.frame_queue.append((self.frame_count, raw_data, width, height))

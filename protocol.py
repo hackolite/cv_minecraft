@@ -17,6 +17,7 @@ from typing import Dict, List, Tuple, Any, Optional, Set
 try:
     import pyglet
     from pyglet.gl import *
+    from OpenGL.GL import *  # For legacy OpenGL functions like glMatrixMode
     from PIL import Image
     PYGLET_AVAILABLE = True
     print("✅ Pyglet and OpenGL are available for window abstraction")

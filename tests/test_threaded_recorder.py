@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 # Ajouter le répertoire parent au path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def test_thread_creation():
