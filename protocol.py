@@ -276,7 +276,7 @@ class Cube:
     
     def __init__(self, cube_id: str, position: Tuple[float, float, float],
                  rotation: Tuple[float, float] = (0, 0), size: float = 0.5, 
-                 cube_type: str = "normal"):
+                 cube_type: str = "normal", owner: Optional[str] = None):
         self.id = cube_id
         self.position = position  # (x, y, z)
         self.rotation = rotation  # (horizontal, vertical)
@@ -284,6 +284,7 @@ class Cube:
         self.velocity = [0.0, 0.0, 0.0]  # (dx, dy, dz)
         self.color = None  # Will be set by the model
         self.cube_type = cube_type  # Type of cube: "normal", "camera", etc.
+        self.owner = owner  # Player ID who owns this cube (for camera cubes)
         
         # Child cube management
         self.child_cubes: Dict[str, 'Cube'] = {}
@@ -335,13 +336,13 @@ class Cube:
             print(f"⚠️  Failed to create window for cube {self.id}: {e}")
             self.window = None
 
-    def create_child_cube(self, child_id: str, position: Tuple[float, float, float], cube_type: str = "normal") -> 'Cube':
+    def create_child_cube(self, child_id: str, position: Tuple[float, float, float], cube_type: str = "normal", owner: Optional[str] = None) -> 'Cube':
         """Create a child cube."""
         if child_id in self.child_cubes:
             raise ValueError(f"Child cube {child_id} already exists")
         
         # Create child cube with specified type
-        child_cube = Cube(child_id, position, cube_type=cube_type)
+        child_cube = Cube(child_id, position, cube_type=cube_type, owner=owner)
         child_cube.parent_cube = self
         
         # Add to children
