@@ -287,7 +287,15 @@ class CubeWindow:
             return None
     
     def _render_simple_scene(self):
-        """Render the world from the cube's perspective."""
+        """Render the world from the cube's perspective.
+        
+        This method is called when capturing frames from camera cubes.
+        It automatically selects between world rendering (if model available)
+        and placeholder rendering (fallback).
+        
+        Uses the shared render_world_scene() function for consistency with
+        the main client window rendering.
+        """
         if not PYGLET_AVAILABLE:
             return
             
