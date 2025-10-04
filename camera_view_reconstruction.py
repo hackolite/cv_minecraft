@@ -192,7 +192,7 @@ def render_camera_view(
         blocks_with_depth.append((depth, block, screen_x, screen_y))
     
     # Sort by depth (furthest first)
-    blocks_with_depth.sort(reverse=True)
+    blocks_with_depth.sort(key=lambda x: x[0], reverse=True)
     
     print(f"   Rendering {len(blocks_with_depth)} visible blocks...")
     
