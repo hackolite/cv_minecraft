@@ -53,5 +53,14 @@
         "movement_speed": 5.0,
         "jump_speed": 8.0,
         "flying_speed": 15.0
+    },
+    "rtsp": {
+        "enabled": true,
+        "host": "localhost",
+        "base_port": 8554,
+        "resolution": "1280x720",
+        "fps": 30,
+        "bitrate": 2000000,
+        "auto_start_users": true
     }
 }
