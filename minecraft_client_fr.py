@@ -763,8 +763,10 @@ class GameRecorder:
                 # TODO: Render actual world from camera position
                 self.camera_cube.window._render_simple_scene()
                 
-                # Force flush to ensure rendering is complete before capturing
-                glFlush()
+                # Force finish to ensure ALL rendering is complete before capturing
+                # glFinish() blocks until all OpenGL commands are fully executed
+                # This prevents capturing white/incomplete images
+                glFinish()
                 
                 # Capture from camera window
                 buffer = pyglet.image.get_buffer_manager().get_color_buffer()

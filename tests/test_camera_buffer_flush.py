@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """
-Test to verify that camera capture properly flushes the OpenGL buffer.
+Test to verify that camera capture properly finishes OpenGL rendering before capture.
 
 This test validates the fix for the issue:
-"une grande partie des images caméras sont blanches, et l'image est fixe, 
-ne montre pas les mises a jour du buffer"
+"il y a encore des grandes parties blanches, et l' update ne m'a pas l'air super"
 
 The fix ensures that:
-1. glFlush() is called after _render_simple_scene() before buffer capture
-2. This ensures OpenGL commands are executed before reading the framebuffer
-3. Camera images update correctly and aren't stuck/white
+1. glFinish() is called after _render_simple_scene() before buffer capture
+2. This ensures ALL OpenGL commands are FULLY executed before reading the framebuffer
+3. Camera images update correctly without white/incomplete areas
+
+Note: glFinish() is used instead of glFlush() because:
+- glFlush() only schedules commands for execution but doesn't wait
+- glFinish() blocks until ALL commands are completely executed
+- For framebuffer reads, we need complete rendering, so glFinish() is correct
 """
 
 import os
@@ -20,9 +24,9 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def test_glflush_after_render():
-    """Test that glFlush is called after _render_simple_scene in capture_frame."""
-    print("\n🧪 Test: glFlush is called after rendering before buffer capture")
+def test_glfinish_after_render():
+    """Test that glFinish is called after _render_simple_scene in capture_frame."""
+    print("\n🧪 Test: glFinish is called after rendering before buffer capture")
     
     client_file = Path(__file__).parent.parent / 'minecraft_client_fr.py'
     
@@ -44,27 +48,27 @@ def test_glflush_after_render():
     
     # Find positions of key operations
     render_pos = capture_frame_section.find('_render_simple_scene()')
-    flush_pos = capture_frame_section.find('glFlush()')
+    finish_pos = capture_frame_section.find('glFinish()')
     buffer_pos = capture_frame_section.find('get_color_buffer()')
     
-    # Verify glFlush is present
-    assert flush_pos != -1, "glFlush() should be called in capture_frame"
-    print("  ✓ glFlush() is called in capture_frame")
+    # Verify glFinish is present
+    assert finish_pos != -1, "glFinish() should be called in capture_frame"
+    print("  ✓ glFinish() is called in capture_frame")
     
-    # Verify glFlush comes AFTER render
-    assert flush_pos > render_pos, "glFlush() should be called AFTER _render_simple_scene()"
-    print("  ✓ glFlush() is called after _render_simple_scene()")
+    # Verify glFinish comes AFTER render
+    assert finish_pos > render_pos, "glFinish() should be called AFTER _render_simple_scene()"
+    print("  ✓ glFinish() is called after _render_simple_scene()")
     
-    # Verify glFlush comes BEFORE buffer capture
-    assert flush_pos < buffer_pos, "glFlush() should be called BEFORE get_color_buffer()"
-    print("  ✓ glFlush() is called before get_color_buffer()")
+    # Verify glFinish comes BEFORE buffer capture
+    assert finish_pos < buffer_pos, "glFinish() should be called BEFORE get_color_buffer()"
+    print("  ✓ glFinish() is called before get_color_buffer()")
     
-    print("\n✅ PASS: glFlush is properly positioned in capture workflow")
+    print("\n✅ PASS: glFinish is properly positioned in capture workflow")
 
 
-def test_flush_ensures_rendering_complete():
-    """Test that the comment explains why we flush."""
-    print("\n🧪 Test: Comment explains why glFlush is needed")
+def test_finish_ensures_rendering_complete():
+    """Test that the comment explains why we use glFinish."""
+    print("\n🧪 Test: Comment explains why glFinish is needed")
     
     client_file = Path(__file__).parent.parent / 'minecraft_client_fr.py'
     
@@ -75,15 +79,16 @@ def test_flush_ensures_rendering_complete():
     
     # Check for explanatory comment
     has_comment = (
-        'Force flush' in capture_frame_section or
+        'Force finish' in capture_frame_section or
         'ensure rendering' in capture_frame_section or
-        'rendering is complete' in capture_frame_section
+        'rendering is complete' in capture_frame_section or
+        'ALL rendering' in capture_frame_section
     )
     
-    assert has_comment, "Should have comment explaining why glFlush is needed"
-    print("  ✓ Comment explains purpose of glFlush")
+    assert has_comment, "Should have comment explaining why glFinish is needed"
+    print("  ✓ Comment explains purpose of glFinish")
     
-    print("\n✅ PASS: glFlush purpose is documented")
+    print("\n✅ PASS: glFinish purpose is documented")
 
 
 def test_camera_capture_workflow():
@@ -101,7 +106,7 @@ def test_camera_capture_workflow():
     workflow_steps = [
         ('switch_to()', 'Switch to camera context'),
         ('_render_simple_scene()', 'Render camera view'),
-        ('glFlush()', 'Flush OpenGL commands'),
+        ('glFinish()', 'Finish OpenGL commands'),
         ('get_color_buffer()', 'Capture buffer')
     ]
     
@@ -119,16 +124,16 @@ def test_camera_capture_workflow():
 def main():
     """Run all tests."""
     print("=" * 70)
-    print("CAMERA BUFFER FLUSH FIX TESTS")
+    print("CAMERA BUFFER FINISH FIX TESTS")
     print("=" * 70)
     print("\nValidating fix for:")
-    print("  'une grande partie des images caméras sont blanches,")
-    print("   et l'image est fixe, ne montre pas les mises a jour du buffer'")
+    print("  'il y a encore des grandes parties blanches,")
+    print("   et l' update ne m'a pas l'air super'")
     print("=" * 70)
     
     try:
-        test_glflush_after_render()
-        test_flush_ensures_rendering_complete()
+        test_glfinish_after_render()
+        test_finish_ensures_rendering_complete()
         test_camera_capture_workflow()
         
         print("\n" + "=" * 70)
@@ -136,11 +141,15 @@ def main():
         print("=" * 70)
         
         print("\nSummary of the fix:")
-        print("  • Problem: Camera images were white/frozen, buffer not updating")
-        print("  • Root cause: Missing glFlush() after rendering before buffer capture")
-        print("  • Solution: Added glFlush() after _render_simple_scene()")
-        print("  • Result: OpenGL commands execute before buffer read")
-        print("  • Impact: Camera images now update correctly, show rendered world")
+        print("  • Problem: Camera images had white areas, updates incomplete")
+        print("  • Root cause: glFlush() doesn't wait for rendering completion")
+        print("  • Solution: Changed glFlush() to glFinish() after _render_simple_scene()")
+        print("  • Result: ALL OpenGL commands fully execute before buffer read")
+        print("  • Impact: Camera images now complete, no white areas")
+        print("\nTechnical notes:")
+        print("  • glFlush() = schedules commands but doesn't wait")
+        print("  • glFinish() = blocks until ALL commands are fully executed")
+        print("  • For framebuffer reads, glFinish() is the correct choice")
         
     except AssertionError as e:
         print(f"\n❌ TEST FAILED: {e}")

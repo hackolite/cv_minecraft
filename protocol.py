@@ -265,8 +265,10 @@ class CubeWindow:
             # Simple cube rendering (placeholder - in real implementation this would render the world from cube's perspective)
             self._render_simple_scene()
             
-            # Force flush to ensure rendering is complete
-            glFlush()
+            # Force finish to ensure ALL rendering is complete
+            # glFinish() blocks until all OpenGL commands are fully executed
+            # This prevents capturing white/incomplete images
+            glFinish()
             
             # Read pixels from framebuffer
             width, height = self.window.get_size()
