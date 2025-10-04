@@ -76,6 +76,7 @@ class BlockType:
     CAMERA = "camera"  # Camera block visible to all users
     USER = "user"  # User/player block
     AIR = "air"  # Represents removed blocks
+    CAT = "cat"  # Cat block
 
 class Message:
     """Base message class for client-server communication."""

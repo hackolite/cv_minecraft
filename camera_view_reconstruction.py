@@ -35,6 +35,7 @@ BLOCK_COLORS = {
     "camera": (255, 0, 255),     # Magenta
     "user": (255, 255, 0),       # Yellow
     "air": (0, 0, 0, 0),         # Transparent
+    "cat": (255, 165, 0),        # Orange
 }
 
 

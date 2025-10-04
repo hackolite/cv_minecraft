@@ -82,6 +82,7 @@ WOOD = tex_coords((3, 1), (3, 1), (3, 1))
 LEAF = tex_coords((3, 0), (3, 0), (3, 0))
 WATER = tex_coords((0, 2), (0, 2), (0, 2))
 CAMERA = tex_coords((0, 3), (0, 3), (0, 3))  # Camera block - distinctive texture
+CAT = tex_coords((1, 3), (1, 3), (1, 3))  # Cat block
 
 # ---------- Utility functions ----------
 
@@ -110,7 +111,8 @@ def validate_block_type(block_type: str) -> bool:
     allowed_types = {
         BlockType.GRASS, BlockType.SAND, BlockType.BRICK, 
         BlockType.STONE, BlockType.WOOD, BlockType.LEAF, 
-        BlockType.WATER, BlockType.CAMERA, BlockType.USER, BlockType.AIR
+        BlockType.WATER, BlockType.CAMERA, BlockType.USER, BlockType.AIR,
+        BlockType.CAT
     }
     return block_type in allowed_types
 
