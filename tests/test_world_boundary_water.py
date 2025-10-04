@@ -14,18 +14,18 @@ from server import get_block_collision, create_block_data
 from protocol import BlockType
 
 
-def test_water_has_no_collision():
-    """Test that water blocks don't have collision."""
+def test_water_has_collision():
+    """Test that water blocks have collision (behave like solid blocks)."""
     print("🧪 Testing water block collision...")
     
-    # Water should not have collision
-    assert get_block_collision(BlockType.WATER) == False, "Water should not have collision"
+    # Water should have collision (like grass/stone blocks)
+    assert get_block_collision(BlockType.WATER) == True, "Water should have collision"
     
     # Create water block data and verify
     water_data = create_block_data(BlockType.WATER)
-    assert water_data["collision"] == False, "Water block data should have collision=False"
+    assert water_data["collision"] == True, "Water block data should have collision=True"
     
-    print("✅ Water blocks correctly have no collision\n")
+    print("✅ Water blocks correctly have collision\n")
 
 
 def test_world_boundary_prevents_falling():
@@ -84,41 +84,41 @@ def test_world_boundary_prevents_falling():
     print("✅ World boundary collision tests passed\n")
 
 
-def test_player_on_water_does_not_sink():
-    """Test that players don't sink into water blocks."""
+def test_player_on_water_cannot_sink():
+    """Test that players are blocked by water blocks (water is solid)."""
     print("🧪 Testing player on water block...")
     
     # Create a world with water blocks at y=15
     world_blocks = {}
     for x in range(60, 70):
         for z in range(60, 70):
-            # Add water block with no collision
+            # Add water block with collision (solid)
             world_blocks[(x, 15, z)] = create_block_data(BlockType.WATER)
     
     collision_manager = UnifiedCollisionManager(world_blocks, world_size=128, world_height=256)
     
     # Player starting above water
     old_pos = (65.0, 20.0, 65.0)
-    new_pos = (65.0, 15.5, 65.0)  # Moving down onto water level
+    new_pos = (65.0, 15.5, 65.0)  # Trying to move down onto water level
     
     safe_pos, collision_info = collision_manager.resolve_collision(old_pos, new_pos)
     
-    # Player should pass through water (no collision)
-    # Water is at y=15, so player should be able to move to y=15.5
-    assert safe_pos[1] == new_pos[1], f"Player should move freely through water, expected y={new_pos[1]}, got y={safe_pos[1]}"
-    assert collision_info['y'] == False, "Y collision should not be detected for water"
-    print(f"  ✅ Player moved through water from y={old_pos[1]} to y={safe_pos[1]}")
+    # Player should be blocked by water (collision detected)
+    # Water is at y=15, player height is 2, so player should land on top at y=17
+    assert safe_pos[1] > new_pos[1], f"Player should be blocked by water, expected y>{new_pos[1]}, got y={safe_pos[1]}"
+    assert collision_info['y'] == True, "Y collision should be detected for water"
+    print(f"  ✅ Player blocked by water, stopped at y={safe_pos[1]} instead of y={new_pos[1]}")
     
-    # Player should be able to fall through water
+    # Player should NOT be able to fall through water
     old_pos = (65.0, 16.0, 65.0)
-    new_pos = (65.0, 14.5, 65.0)  # Falling through water block at y=15
+    new_pos = (65.0, 14.5, 65.0)  # Trying to fall through water block at y=15
     
     safe_pos, collision_info = collision_manager.resolve_collision(old_pos, new_pos)
     
-    # Player should pass through water
-    assert safe_pos[1] == new_pos[1], f"Player should fall through water, expected y={new_pos[1]}, got y={safe_pos[1]}"
-    assert collision_info['y'] == False, "Y collision should not be detected when falling through water"
-    print(f"  ✅ Player fell through water from y={old_pos[1]} to y={safe_pos[1]}")
+    # Player should be blocked by water
+    assert safe_pos[1] > new_pos[1], f"Player should be blocked by water, expected y>{new_pos[1]}, got y={safe_pos[1]}"
+    assert collision_info['y'] == True, "Y collision should be detected when trying to fall through water"
+    print(f"  ✅ Player blocked by water, stopped at y={safe_pos[1]} instead of falling to y={new_pos[1]}")
     
     print("✅ Water collision tests passed\n")
 
@@ -130,9 +130,9 @@ def main():
     print("="*60 + "\n")
     
     try:
-        test_water_has_no_collision()
+        test_water_has_collision()
         test_world_boundary_prevents_falling()
-        test_player_on_water_does_not_sink()
+        test_player_on_water_cannot_sink()
         
         print("\n" + "="*60)
         print("✅ ALL TESTS PASSED!")
