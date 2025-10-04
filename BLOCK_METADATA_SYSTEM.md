@@ -17,6 +17,7 @@ This implementation adds comprehensive block metadata support to the Minecraft s
   - `type`: Block type (string)
   - `collision`: Whether the block has collision (boolean)
   - `block_id`: Unique identifier for camera and user blocks (string or None)
+  - `owner`: Player ID who placed the block (string or None, only for camera blocks)
 
 ### 2. New Features
 
@@ -30,6 +31,16 @@ All blocks now have a `collision` attribute that indicates whether they block pl
 - Only **camera** and **user** blocks have populated block_ids
 - Camera blocks: auto-assigned IDs like `camera_0`, `camera_1`, etc.
 - User blocks: assigned using player_id (e.g., player's UUID)
+
+#### Camera Block Ownership
+- Camera blocks now track their owner (the player who placed them)
+- Each camera block has an `owner` field containing the player_id of the creator
+- When a player places a camera block:
+  - A unique `block_id` is auto-generated (e.g., `camera_5`, `camera_6`)
+  - The `owner` field is set to the player's ID
+  - A Cube instance is created for the camera (similar to user cubes)
+- Players can control recording for their owned cameras using F1/F2/F3 keys
+- Timestamps are used for session naming to enable video synchronization
 
 #### Block ID Mapping
 - Server maintains a `block_id_map` dictionary: `block_id -> position`
@@ -120,17 +131,52 @@ The system maintains backward compatibility:
 
 ```python
 cameras_request = {"type": "get_cameras_list", "data": {}}
-# Response includes block_id and collision:
+# Response includes block_id, collision, and owner:
 # {
 #   "cameras": [
 #     {
 #       "position": [69, 102, 64],
 #       "block_type": "camera",
 #       "block_id": "camera_0",
-#       "collision": true
+#       "collision": true,
+#       "owner": null  # Pre-placed cameras have no owner
+#     },
+#     {
+#       "position": [75, 100, 70],
+#       "block_type": "camera",
+#       "block_id": "camera_5",
+#       "collision": true,
+#       "owner": "player_uuid_123"  # Player-placed camera
 #     }
 #   ]
 # }
+```
+
+### Control Camera Recording (Client-Side)
+
+Players can control recording for their owned cameras using keyboard shortcuts:
+- **F1**: Toggle recording for camera 0 (first owned camera)
+- **F2**: Toggle recording for camera 1 (second owned camera)
+- **Shift+F3**: Toggle recording for camera 2 (third owned camera)
+- **F9**: Toggle recording for the main player view (existing functionality)
+
+Each camera records to a separate directory with synchronized timestamps:
+```
+recordings/
+  ├── camera_5/
+  │   └── session_20231004_143025/
+  │       ├── frame_000001.jpg
+  │       ├── frame_000002.jpg
+  │       └── session_info.json
+  ├── camera_6/
+  │   └── session_20231004_143025/
+  │       ├── frame_000001.jpg
+  │       └── ...
+  └── session_20231004_143025/  # Main player view
+      └── ...
+```
+
+The timestamp format (`%Y%m%d_%H%M%S`) ensures videos can be synchronized later.
 ```
 
 ### Query Blocks from Camera Perspective

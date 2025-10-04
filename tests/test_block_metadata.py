@@ -22,6 +22,7 @@ def test_block_data_creation():
     assert block_data["type"] == BlockType.GRASS
     assert block_data["collision"] == True
     assert block_data["block_id"] is None
+    assert block_data["owner"] is None
     print("  ✅ Grass block without block_id: OK")
     
     # Test with block_id (camera)
@@ -29,13 +30,23 @@ def test_block_data_creation():
     assert block_data["type"] == BlockType.CAMERA
     assert block_data["collision"] == True
     assert block_data["block_id"] == "camera_1"
+    assert block_data["owner"] is None  # No owner specified
     print("  ✅ Camera block with block_id: OK")
+    
+    # Test camera with owner
+    block_data = create_block_data(BlockType.CAMERA, block_id="camera_2", owner="player_789")
+    assert block_data["type"] == BlockType.CAMERA
+    assert block_data["collision"] == True
+    assert block_data["block_id"] == "camera_2"
+    assert block_data["owner"] == "player_789"
+    print("  ✅ Camera block with owner: OK")
     
     # Test water (with collision - behaves like solid block)
     block_data = create_block_data(BlockType.WATER)
     assert block_data["type"] == BlockType.WATER
     assert block_data["collision"] == True
     assert block_data["block_id"] is None
+    assert block_data["owner"] is None
     print("  ✅ Water block (with collision): OK")
     
     # Test user block
@@ -43,6 +54,7 @@ def test_block_data_creation():
     assert block_data["type"] == BlockType.USER
     assert block_data["collision"] == True
     assert block_data["block_id"] == "player_123"
+    assert block_data["owner"] is None  # User blocks don't have owners
     print("  ✅ User block with block_id: OK")
     
     print("✅ Block data creation tests passed\n")
