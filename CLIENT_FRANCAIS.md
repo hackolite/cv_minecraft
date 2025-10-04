@@ -21,6 +21,7 @@ Le nouveau client apporte de nombreuses améliorations par rapport au client ori
 - **Interface de debug avancée** (F3 pour basculer)
 - **Indicateurs de performance** (FPS, ping, statut connexion)
 - **Vue du dessus** (F6) pour une perspective aérienne sur votre personnage
+- **📹 Enregistrement de gameplay** (F9) pour capturer vos sessions de jeu
 
 #### ⚙️ Configuration Flexible
 - **Fichier de configuration JSON** (`client_config.json`)
@@ -89,6 +90,7 @@ python3 minecraft_client_fr.py --lang en
 - **F3** : Informations de debug
 - **F5** : Afficher/masquer le cube joueur
 - **F6** : Basculer en vue du dessus (top-down)
+- **F9** : 📹 Démarrer/Arrêter l'enregistrement de gameplay
 - **F11** : Plein écran
 - **Échap** : Libérer la souris
 - **1-5** : Sélection de bloc
@@ -97,6 +99,24 @@ python3 minecraft_client_fr.py --lang en
 - **Clic gauche** : Détruire un bloc
 - **Clic droit** : Placer un bloc
 - **Mouvement** : Regarder autour
+
+### 📹 Enregistrement de Gameplay
+
+Le client intègre un système d'enregistrement qui capture vos sessions de jeu :
+
+- **F9** : Démarrer/Arrêter l'enregistrement
+- Les frames sont sauvegardées dans le dossier `recordings/`
+- Chaque session crée un sous-dossier avec timestamp
+- Format de sortie : PNG (convertible en vidéo avec ffmpeg)
+- Indicateur visuel dans l'interface de debug
+
+**Exemple d'utilisation :**
+1. Appuyez sur **F9** pour démarrer l'enregistrement
+2. Jouez normalement (l'indicateur 🔴 REC apparaît avec F3)
+3. Appuyez à nouveau sur **F9** pour arrêter
+4. Trouvez vos frames dans `recordings/session_YYYYMMDD_HHMMSS/`
+
+Pour plus de détails, consultez [GAMEPLAY_RECORDING.md](GAMEPLAY_RECORDING.md)
 
 ## ⚙️ Configuration
 
