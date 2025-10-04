@@ -136,12 +136,19 @@ def get_block_collision(block_type: str) -> bool:
     return True
 
 
-def create_block_data(block_type: str, block_id: Optional[str] = None) -> Dict[str, Any]:
-    """Create block data dictionary with all required attributes."""
+def create_block_data(block_type: str, block_id: Optional[str] = None, owner: Optional[str] = None) -> Dict[str, Any]:
+    """Create block data dictionary with all required attributes.
+    
+    Args:
+        block_type: Type of block (grass, camera, etc.)
+        block_id: Unique identifier for camera and user blocks
+        owner: Player ID who placed the block (for camera blocks)
+    """
     return {
         "type": block_type,
         "collision": get_block_collision(block_type),
-        "block_id": block_id  # Only populated for camera and user types
+        "block_id": block_id,  # Only populated for camera and user types
+        "owner": owner  # Only populated for camera blocks to track who placed it
     }
 
 # ---------- Game World ----------
@@ -244,7 +251,7 @@ class GameWorld:
         
         logging.info(f"Enhanced world initialized with {blocks_created} blocks including water, sand, grass, stone, trees, and {len(camera_locations)} camera blocks")
 
-    def _add_block_internal(self, position: Tuple[int, int, int], block_type: str, block_id: Optional[str] = None) -> bool:
+    def _add_block_internal(self, position: Tuple[int, int, int], block_type: str, block_id: Optional[str] = None, owner: Optional[str] = None) -> bool:
         """Internal method to add blocks without validation (for world generation)."""
         if position in self.world:
             return False
@@ -254,8 +261,8 @@ class GameWorld:
         if not (0 <= x < WORLD_SIZE and y >= 0 and y < 256 and 0 <= z < WORLD_SIZE):
             return False
         
-        # Create block data with collision and block_id attributes
-        block_data = create_block_data(block_type, block_id)
+        # Create block data with collision, block_id, and owner attributes
+        block_data = create_block_data(block_type, block_id, owner)
         self.world[position] = block_data
         self.sectors.setdefault(sectorize(position), []).append(position)
         
@@ -265,7 +272,7 @@ class GameWorld:
             
         return True
 
-    def add_block(self, position: Tuple[int, int, int], block_type: str, block_id: Optional[str] = None) -> bool:
+    def add_block(self, position: Tuple[int, int, int], block_type: str, block_id: Optional[str] = None, owner: Optional[str] = None) -> bool:
         """Add a block at the specified position."""
         if not validate_position(position):
             logging.warning(f"Invalid position for block placement: {position}")
@@ -278,8 +285,8 @@ class GameWorld:
         if position in self.world:
             return False  # Block already exists
         
-        # Create block data with collision and block_id attributes
-        block_data = create_block_data(block_type, block_id)
+        # Create block data with collision, block_id, and owner attributes
+        block_data = create_block_data(block_type, block_id, owner)
         self.world[position] = block_data
         self.sectors.setdefault(sectorize(position), []).append(position)
         
@@ -365,10 +372,12 @@ class GameWorld:
                 block_type = block_data.get("type")
                 block_id = block_data.get("block_id")
                 collision = block_data.get("collision", True)
+                owner = block_data.get("owner")
             else:
                 block_type = block_data
                 block_id = None
                 collision = get_block_collision(block_type)
+                owner = None
             
             if block_type == BlockType.CAMERA:
                 x, y, z = pos
@@ -376,7 +385,8 @@ class GameWorld:
                     "position": [x, y, z],
                     "block_type": block_type,
                     "block_id": block_id,
-                    "collision": collision
+                    "collision": collision,
+                    "owner": owner
                 })
         return cameras
 
@@ -555,6 +565,7 @@ class MinecraftServer:
         self.clients: Dict[str, websockets.WebSocketServerProtocol] = {}
         self.players: Dict[str, PlayerState] = {}
         self.user_cubes: Dict[str, Cube] = {}  # Player ID -> Cube mapping
+        self.camera_cubes: Dict[str, Cube] = {}  # Camera block_id -> Cube mapping
         self.rtsp_users: Dict[str, Any] = {}  # Kept for compatibility but unused
         self.running = False
         self.logger = logging.getLogger(__name__)
@@ -970,14 +981,25 @@ class MinecraftServer:
             if not validate_block_type(block_type):
                 raise InvalidWorldDataError(f"Invalid block type: {block_type}")
             
-            # Auto-generate block_id for camera blocks
+            # Auto-generate block_id and owner for camera blocks
             block_id = None
+            owner = None
             if block_type == BlockType.CAMERA:
                 block_id = f"camera_{self._camera_counter}"
                 self._camera_counter += 1
-                self.logger.info(f"Auto-generated block_id '{block_id}' for camera block")
+                owner = player_id  # Track who placed this camera
+                self.logger.info(f"Auto-generated block_id '{block_id}' for camera block placed by {player_id}")
                 
-            if self.world.add_block(position, block_type, block_id=block_id):
+                # Create a Cube instance for this camera (like user cubes)
+                camera_cube = Cube(
+                    cube_id=block_id,
+                    position=position,
+                    cube_type="camera"
+                )
+                self.camera_cubes[block_id] = camera_cube
+                self.logger.info(f"Created camera cube '{block_id}' owned by player {player_id}")
+                
+            if self.world.add_block(position, block_type, block_id=block_id, owner=owner):
                 update_message = create_world_update_message([
                     BlockUpdate(position, block_type, player_id)
                 ])
@@ -1000,8 +1022,25 @@ class MinecraftServer:
             
             if not isinstance(position, (list, tuple)) or len(position) != 3:
                 raise InvalidWorldDataError("Invalid position format")
+            
+            # Get block data before removing to check if it's a camera
+            block_data = self.world.world.get(position)
+            camera_block_id = None
+            if isinstance(block_data, dict):
+                if block_data.get("type") == BlockType.CAMERA:
+                    camera_block_id = block_data.get("block_id")
                 
             if self.world.remove_block(position):
+                # Clean up camera cube if this was a camera block
+                if camera_block_id and camera_block_id in self.camera_cubes:
+                    camera_cube = self.camera_cubes[camera_block_id]
+                    # Clean up window if it exists
+                    if camera_cube.window:
+                        camera_cube.window.close()
+                        camera_cube.window = None
+                    del self.camera_cubes[camera_block_id]
+                    self.logger.info(f"Cleaned up camera cube '{camera_block_id}'")
+                    
                 update_message = create_world_update_message([
                     BlockUpdate(position, BlockType.AIR, player_id)
                 ])
