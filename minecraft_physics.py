@@ -56,6 +56,8 @@ GROUND_TOLERANCE = 0.05     # Distance to consider "on ground"
 
 # World constants
 BLOCK_SIZE = 1.0            # Each block is 1×1×1
+WORLD_SIZE = 128            # World size (X and Z dimensions)
+WORLD_HEIGHT = 256          # Maximum world height (Y dimension)
 
 # Setup collision logger
 collision_logger = logging.getLogger('minecraft_collision')
@@ -95,10 +97,13 @@ class UnifiedCollisionManager:
     Consolidates all collision detection into a single, clean interface.
     """
     
-    def __init__(self, world_blocks: Dict[Tuple[int, int, int], str]):
+    def __init__(self, world_blocks: Dict[Tuple[int, int, int], str], 
+                 world_size: int = WORLD_SIZE, world_height: int = WORLD_HEIGHT):
         """Initialize the collision manager."""
         self.world_blocks = world_blocks
         self.other_players = []  # List of other players for player-to-player collision
+        self.world_size = world_size
+        self.world_height = world_height
         
     def set_other_players(self, players: List) -> None:
         """Set other players for collision detection."""
@@ -107,6 +112,22 @@ class UnifiedCollisionManager:
     def update_world(self, world_blocks: Dict[Tuple[int, int, int], str]) -> None:
         """Update the world blocks."""
         self.world_blocks = world_blocks
+    
+    def _clamp_to_world_bounds(self, position: Tuple[float, float, float]) -> Tuple[float, float, float]:
+        """Clamp position to world boundaries to prevent falling off the edge."""
+        x, y, z = position
+        player_half_width = PLAYER_WIDTH / 2
+        
+        # Clamp X coordinate (allow player center from half_width to world_size - half_width)
+        x = max(player_half_width, min(x, self.world_size - player_half_width))
+        
+        # Clamp Z coordinate (allow player center from half_width to world_size - half_width)
+        z = max(player_half_width, min(z, self.world_size - player_half_width))
+        
+        # Clamp Y coordinate (don't allow falling below 0 or above world height)
+        y = max(0.0, min(y, self.world_height - PLAYER_HEIGHT))
+        
+        return (x, y, z)
     
     def check_block_collision(self, position: Tuple[float, float, float]) -> bool:
         """
@@ -271,8 +292,23 @@ class UnifiedCollisionManager:
         2. Checking if the direct path would go through any blocks
         3. If so, using axis-by-axis movement that prevents traversal
         4. Ensuring the final position is safe and reachable without traversal
+        5. Clamping to world boundaries to prevent falling off the edge
         """
         collision_info = {'x': False, 'y': False, 'z': False, 'ground': False}
+        
+        # CRITICAL FIX: Clamp new position to world boundaries first
+        clamped_new_pos = self._clamp_to_world_bounds(new_pos)
+        
+        # Check if position was clamped (hit world boundary)
+        if clamped_new_pos != new_pos:
+            # Mark collision on axes that were clamped
+            if clamped_new_pos[0] != new_pos[0]:
+                collision_info['x'] = True
+            if clamped_new_pos[1] != new_pos[1]:
+                collision_info['y'] = True
+            if clamped_new_pos[2] != new_pos[2]:
+                collision_info['z'] = True
+            new_pos = clamped_new_pos
         
         # CRITICAL FIX: Check if starting position is already in a block
         # This prevents the player from being stuck inside blocks
@@ -835,8 +871,9 @@ class SimplePhysicsManager:
 class MinecraftCollisionDetector:
     """Legacy compatibility wrapper around UnifiedCollisionManager."""
     
-    def __init__(self, world_blocks: Dict[Tuple[int, int, int], str]):
-        self.manager = UnifiedCollisionManager(world_blocks)
+    def __init__(self, world_blocks: Dict[Tuple[int, int, int], str], 
+                 world_size: int = WORLD_SIZE, world_height: int = WORLD_HEIGHT):
+        self.manager = UnifiedCollisionManager(world_blocks, world_size, world_height)
         self.world_blocks = world_blocks  # For compatibility
         
     def set_other_cubes(self, other_cubes: List) -> None:
@@ -909,11 +946,13 @@ class MinecraftPhysics:
 _global_collision_manager = None
 _global_physics_manager = None
 
-def get_collision_manager(world_blocks: Dict[Tuple[int, int, int], str]) -> UnifiedCollisionManager:
+def get_collision_manager(world_blocks: Dict[Tuple[int, int, int], str],
+                         world_size: int = WORLD_SIZE, 
+                         world_height: int = WORLD_HEIGHT) -> UnifiedCollisionManager:
     """Get or create global collision manager."""
     global _global_collision_manager
     if _global_collision_manager is None or _global_collision_manager.world_blocks != world_blocks:
-        _global_collision_manager = UnifiedCollisionManager(world_blocks)
+        _global_collision_manager = UnifiedCollisionManager(world_blocks, world_size, world_height)
     return _global_collision_manager
 
 def get_physics_manager(world_blocks: Dict[Tuple[int, int, int], str]) -> SimplePhysicsManager:
@@ -933,7 +972,9 @@ def get_physics_manager(world_blocks: Dict[Tuple[int, int, int], str]) -> Simple
 def unified_check_collision(position: Tuple[float, float, float], 
                            world_blocks: Dict[Tuple[int, int, int], str],
                            other_players: List = None,
-                           player_id: str = None) -> bool:
+                           player_id: str = None,
+                           world_size: int = WORLD_SIZE,
+                           world_height: int = WORLD_HEIGHT) -> bool:
     """
     Unified collision check for both blocks and players.
     
@@ -942,8 +983,10 @@ def unified_check_collision(position: Tuple[float, float, float],
         world_blocks: World block dictionary
         other_players: List of other players
         player_id: Player ID for collision avoidance
+        world_size: World size (X and Z dimensions)
+        world_height: World height (Y dimension)
     """
-    manager = get_collision_manager(world_blocks)
+    manager = get_collision_manager(world_blocks, world_size, world_height)
     if other_players:
         manager.set_other_players(other_players)
     return manager.check_collision(position, player_id)
