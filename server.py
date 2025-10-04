@@ -156,11 +156,15 @@ def create_block_data(block_type: str, block_id: Optional[str] = None, owner: Op
 class GameWorld:
     """Game world management with spatial indexing and validation."""
     
-    def __init__(self):
+    def __init__(self, reset_to_natural: bool = False):
         self.world = {}       # position -> block data dict {type, collision, block_id}
         self.sectors = {}     # sector -> list of positions
         self.block_id_map = {}  # block_id -> position (for camera and user blocks)
         self._initialize_world()
+        
+        # Reset to natural terrain if requested
+        if reset_to_natural:
+            self.reset_to_natural_terrain()
 
     def _initialize_world(self):
         """Initialize world with enhanced terrain generation including water, sand, grass, stone, and trees."""
@@ -536,6 +540,67 @@ class GameWorld:
         del self.block_id_map[player_id]
         return True
 
+    def reset_to_natural_terrain(self) -> int:
+        """Remove all blocks that have owners, block_ids (cameras, users), or are player-added.
+        
+        Keeps only natural terrain blocks (grass, sand, stone, water, wood, leaf).
+        Returns the number of blocks removed.
+        """
+        # Natural terrain block types that should be kept
+        natural_blocks = {
+            BlockType.GRASS,
+            BlockType.SAND,
+            BlockType.STONE,
+            BlockType.WATER,
+            BlockType.WOOD,
+            BlockType.LEAF
+        }
+        
+        blocks_to_remove = []
+        
+        # Identify blocks to remove
+        for position, block_data in self.world.items():
+            if isinstance(block_data, dict):
+                block_type = block_data.get("type")
+                block_id = block_data.get("block_id")
+                owner = block_data.get("owner")
+                
+                # Remove if:
+                # 1. Block has an owner (player-placed camera)
+                # 2. Block has a block_id (camera or user block)
+                # 3. Block type is not in natural terrain
+                if owner is not None or block_id is not None or block_type not in natural_blocks:
+                    blocks_to_remove.append(position)
+            else:
+                # Old format - if it's not in natural blocks, remove it
+                block_type = block_data
+                if block_type not in natural_blocks:
+                    blocks_to_remove.append(position)
+        
+        # Remove identified blocks
+        removed_count = 0
+        for position in blocks_to_remove:
+            block_data = self.world[position]
+            
+            # Remove from block_id_map if it has a block_id
+            if isinstance(block_data, dict) and block_data.get("block_id"):
+                block_id = block_data["block_id"]
+                if block_id in self.block_id_map:
+                    del self.block_id_map[block_id]
+            
+            # Remove from world
+            del self.world[position]
+            
+            # Remove from sectors
+            sector = sectorize(position)
+            if sector in self.sectors and position in self.sectors[sector]:
+                self.sectors[sector].remove(position)
+            
+            removed_count += 1
+        
+        logging.info(f"Reset world to natural terrain: removed {removed_count} blocks")
+        return removed_count
+
 # ---------- Custom Exceptions ----------
 
 class ServerError(Exception):
@@ -558,10 +623,10 @@ class InvalidWorldDataError(ServerError):
 class MinecraftServer:
     """WebSocket-based Minecraft server handling multiple clients."""
     
-    def __init__(self, host: str = 'localhost', port: int = 8765):
+    def __init__(self, host: str = 'localhost', port: int = 8765, reset_world: bool = False):
         self.host = host
         self.port = port
-        self.world = GameWorld()
+        self.world = GameWorld(reset_to_natural=reset_world)
         self.clients: Dict[str, websockets.WebSocketServerProtocol] = {}
         self.players: Dict[str, PlayerState] = {}
         self.user_cubes: Dict[str, Cube] = {}  # Player ID -> Cube mapping
@@ -1236,7 +1301,22 @@ class MinecraftServer:
 
 def main():
     """Main entry point for the server."""
-    server = MinecraftServer()
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Serveur Minecraft - Serveur de jeu multijoueur')
+    parser.add_argument('--host', type=str, default='localhost', 
+                        help='Adresse hôte du serveur (défaut: localhost)')
+    parser.add_argument('--port', type=int, default=8765,
+                        help='Port du serveur (défaut: 8765)')
+    parser.add_argument('--reset-world', action='store_true',
+                        help='Réinitialiser le monde au terrain naturel (supprime tous les blocs avec propriétaire, caméras, utilisateurs et blocs ajoutés)')
+    
+    args = parser.parse_args()
+    
+    if args.reset_world:
+        logging.info("🔄 Mode réinitialisation du monde activé - suppression des blocs non-naturels au démarrage")
+    
+    server = MinecraftServer(host=args.host, port=args.port, reset_world=args.reset_world)
     try:
         asyncio.run(server.start_server())
     except KeyboardInterrupt:
