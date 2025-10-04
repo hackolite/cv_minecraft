@@ -4,7 +4,12 @@ Test block metadata (collision and block_id) functionality.
 """
 
 import sys
+import os
 import asyncio
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from server import GameWorld, create_block_data, get_block_collision
 from protocol import BlockType
 
