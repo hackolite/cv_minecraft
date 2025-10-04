@@ -546,6 +546,8 @@ class MinecraftServer:
         self.logger = logging.getLogger(__name__)
         # Physics tick timing
         self.last_physics_update = time.time()
+        # Camera counter for auto-generating camera block_ids (starts at 5 since 0-4 are used in world init)
+        self._camera_counter = 5
         
         
     def _check_ground_collision(self, position: Tuple[float, float, float]) -> bool:
@@ -953,13 +955,21 @@ class MinecraftServer:
                 
             if not validate_block_type(block_type):
                 raise InvalidWorldDataError(f"Invalid block type: {block_type}")
+            
+            # Auto-generate block_id for camera blocks
+            block_id = None
+            if block_type == BlockType.CAMERA:
+                block_id = f"camera_{self._camera_counter}"
+                self._camera_counter += 1
+                self.logger.info(f"Auto-generated block_id '{block_id}' for camera block")
                 
-            if self.world.add_block(position, block_type):
+            if self.world.add_block(position, block_type, block_id=block_id):
                 update_message = create_world_update_message([
                     BlockUpdate(position, block_type, player_id)
                 ])
                 await self.broadcast_message(update_message)
-                self.logger.info(f"Player {player_id} placed {block_type} at {position}")
+                self.logger.info(f"Player {player_id} placed {block_type} at {position}" + 
+                               (f" with block_id {block_id}" if block_id else ""))
             else:
                 await self.send_to_client(player_id, Message(
                     MessageType.ERROR, 
