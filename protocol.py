@@ -300,6 +300,9 @@ class CubeWindow:
             return
             
         try:
+            # Clear the framebuffer before rendering to avoid capturing stale data
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+            
             # If we have a model and cube, render the actual world from camera's perspective
             if self.model and self.cube:
                 self._render_world_from_camera()
