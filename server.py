@@ -110,9 +110,25 @@ def validate_block_type(block_type: str) -> bool:
     allowed_types = {
         BlockType.GRASS, BlockType.SAND, BlockType.BRICK, 
         BlockType.STONE, BlockType.WOOD, BlockType.LEAF, 
-        BlockType.WATER, BlockType.CAMERA, BlockType.AIR
+        BlockType.WATER, BlockType.CAMERA, BlockType.USER, BlockType.AIR
     }
     return block_type in allowed_types
+
+
+def get_block_collision(block_type: str) -> bool:
+    """Get whether a block type has collision."""
+    # Water and air don't have collision, everything else does
+    non_collision_types = {BlockType.WATER, BlockType.AIR}
+    return block_type not in non_collision_types
+
+
+def create_block_data(block_type: str, block_id: Optional[str] = None) -> Dict[str, Any]:
+    """Create block data dictionary with all required attributes."""
+    return {
+        "type": block_type,
+        "collision": get_block_collision(block_type),
+        "block_id": block_id  # Only populated for camera and user types
+    }
 
 # ---------- Game World ----------
 
@@ -120,8 +136,9 @@ class GameWorld:
     """Game world management with spatial indexing and validation."""
     
     def __init__(self):
-        self.world = {}       # position -> block type
+        self.world = {}       # position -> block data dict {type, collision, block_id}
         self.sectors = {}     # sector -> list of positions
+        self.block_id_map = {}  # block_id -> position (for camera and user blocks)
         self._initialize_world()
 
     def _initialize_world(self):
@@ -204,14 +221,16 @@ class GameWorld:
             (spawn_x, spawn_y + 5, spawn_z),          # Directly above spawn
         ]
         
-        for camera_pos in camera_locations:
-            if self._add_block_internal(camera_pos, BlockType.CAMERA):
+        for i, camera_pos in enumerate(camera_locations):
+            # Assign block_id to camera blocks
+            camera_block_id = f"camera_{i}"
+            if self._add_block_internal(camera_pos, BlockType.CAMERA, block_id=camera_block_id):
                 blocks_created += 1
-                logging.info(f"Added camera block at position {camera_pos}")
+                logging.info(f"Added camera block at position {camera_pos} with block_id {camera_block_id}")
         
         logging.info(f"Enhanced world initialized with {blocks_created} blocks including water, sand, grass, stone, trees, and {len(camera_locations)} camera blocks")
 
-    def _add_block_internal(self, position: Tuple[int, int, int], block_type: str) -> bool:
+    def _add_block_internal(self, position: Tuple[int, int, int], block_type: str, block_id: Optional[str] = None) -> bool:
         """Internal method to add blocks without validation (for world generation)."""
         if position in self.world:
             return False
@@ -220,12 +239,19 @@ class GameWorld:
         # Ensure position is within bounds before adding
         if not (0 <= x < WORLD_SIZE and y >= 0 and y < 256 and 0 <= z < WORLD_SIZE):
             return False
-            
-        self.world[position] = block_type
+        
+        # Create block data with collision and block_id attributes
+        block_data = create_block_data(block_type, block_id)
+        self.world[position] = block_data
         self.sectors.setdefault(sectorize(position), []).append(position)
+        
+        # Track block_id if provided (for camera and user blocks)
+        if block_id:
+            self.block_id_map[block_id] = position
+            
         return True
 
-    def add_block(self, position: Tuple[int, int, int], block_type: str) -> bool:
+    def add_block(self, position: Tuple[int, int, int], block_type: str, block_id: Optional[str] = None) -> bool:
         """Add a block at the specified position."""
         if not validate_position(position):
             logging.warning(f"Invalid position for block placement: {position}")
@@ -237,9 +263,16 @@ class GameWorld:
             
         if position in self.world:
             return False  # Block already exists
-            
-        self.world[position] = block_type
+        
+        # Create block data with collision and block_id attributes
+        block_data = create_block_data(block_type, block_id)
+        self.world[position] = block_data
         self.sectors.setdefault(sectorize(position), []).append(position)
+        
+        # Track block_id if provided (for camera and user blocks)
+        if block_id:
+            self.block_id_map[block_id] = position
+            
         return True
 
     def remove_block(self, position: Tuple[int, int, int]) -> bool:
@@ -250,10 +283,19 @@ class GameWorld:
             
         if position not in self.world:
             return False  # No block to remove
-            
+        
+        block_data = self.world[position]
+        block_type = block_data.get("type") if isinstance(block_data, dict) else block_data
+        
         # Prevent removal of stone blocks (bedrock protection)
-        if self.world[position] == BlockType.STONE:
+        if block_type == BlockType.STONE:
             return False
+        
+        # Remove block_id mapping if it exists
+        if isinstance(block_data, dict) and block_data.get("block_id"):
+            block_id = block_data["block_id"]
+            if block_id in self.block_id_map:
+                del self.block_id_map[block_id]
             
         del self.world[position]
         sector = sectorize(position)
@@ -263,7 +305,13 @@ class GameWorld:
 
     def get_block(self, position: Tuple[int, int, int]) -> Optional[str]:
         """Get block type at specified position."""
-        return self.world.get(position)
+        block_data = self.world.get(position)
+        if block_data:
+            # Handle both old string format and new dict format for compatibility
+            if isinstance(block_data, dict):
+                return block_data.get("type")
+            return block_data
+        return None
 
     def get_world_data(self) -> Dict[str, Any]:
         """Get basic world information for client initialization."""
@@ -278,9 +326,14 @@ class GameWorld:
         start_x, start_z = chunk_x * chunk_size, chunk_z * chunk_size
         end_x, end_z = start_x + chunk_size, start_z + chunk_size
         
-        for pos, block_type in self.world.items():
+        for pos, block_data in self.world.items():
             x, y, z = pos
             if start_x <= x < end_x and start_z <= z < end_z:
+                # Handle both old string format and new dict format
+                if isinstance(block_data, dict):
+                    block_type = block_data.get("type")
+                else:
+                    block_type = block_data
                 blocks[f"{x},{y},{z}"] = block_type
                 
         return {
@@ -292,12 +345,24 @@ class GameWorld:
     def get_cameras(self) -> List[Dict[str, Any]]:
         """Get all camera blocks in the world."""
         cameras = []
-        for pos, block_type in self.world.items():
+        for pos, block_data in self.world.items():
+            # Handle both old string format and new dict format
+            if isinstance(block_data, dict):
+                block_type = block_data.get("type")
+                block_id = block_data.get("block_id")
+                collision = block_data.get("collision", True)
+            else:
+                block_type = block_data
+                block_id = None
+                collision = get_block_collision(block_type)
+            
             if block_type == BlockType.CAMERA:
                 x, y, z = pos
                 cameras.append({
                     "position": [x, y, z],
-                    "block_type": block_type
+                    "block_type": block_type,
+                    "block_id": block_id,
+                    "collision": collision
                 })
         return cameras
 
@@ -306,24 +371,51 @@ class GameWorld:
         blocks = []
         cx, cy, cz = center
         
-        for pos, block_type in self.world.items():
+        for pos, block_data in self.world.items():
             x, y, z = pos
             # Calculate distance from center
             distance = ((x - cx)**2 + (y - cy)**2 + (z - cz)**2)**0.5
             
             if distance <= radius:
+                # Handle both old string format and new dict format
+                if isinstance(block_data, dict):
+                    block_type = block_data.get("type")
+                    block_id = block_data.get("block_id")
+                    collision = block_data.get("collision", True)
+                else:
+                    block_type = block_data
+                    block_id = None
+                    collision = get_block_collision(block_type)
+                
                 blocks.append({
                     "position": [x, y, z],
-                    "block_type": block_type
+                    "block_type": block_type,
+                    "block_id": block_id,
+                    "collision": collision
                 })
         
         return blocks
 
     def get_blocks_in_view(self, position: Tuple[float, float, float], 
                            rotation: Tuple[float, float], 
-                           view_distance: float = 50.0) -> List[Dict[str, Any]]:
-        """Get blocks visible from a position with given rotation (simplified view frustum)."""
+                           view_distance: float = 50.0,
+                           block_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get blocks visible from a position with given rotation (simplified view frustum).
+        
+        If block_id is provided, uses that block's position instead of the position parameter.
+        """
         import math
+        
+        # If block_id is provided, look up the position
+        if block_id:
+            if block_id in self.block_id_map:
+                position = self.block_id_map[block_id]
+                # Convert to float tuple
+                position = tuple(float(x) for x in position)
+            else:
+                # Block ID not found, return empty list
+                logging.warning(f"Block ID {block_id} not found in block_id_map")
+                return []
         
         blocks = []
         px, py, pz = position
@@ -331,7 +423,7 @@ class GameWorld:
         
         # For simplicity, use a cone-based approximation
         # This is a simplified version - a proper implementation would use a view frustum
-        for pos, block_type in self.world.items():
+        for pos, block_data in self.world.items():
             x, y, z = pos
             
             # Vector from position to block
@@ -341,15 +433,84 @@ class GameWorld:
             if distance > view_distance or distance < 0.1:
                 continue
             
+            # Handle both old string format and new dict format
+            if isinstance(block_data, dict):
+                block_type = block_data.get("type")
+                blk_id = block_data.get("block_id")
+                collision = block_data.get("collision", True)
+            else:
+                block_type = block_data
+                blk_id = None
+                collision = get_block_collision(block_type)
+            
             # Calculate angle to block (simplified)
             # In a real implementation, this would properly check against the view frustum
             blocks.append({
                 "position": [x, y, z],
                 "block_type": block_type,
+                "block_id": blk_id,
+                "collision": collision,
                 "distance": distance
             })
         
         return blocks
+    
+    def add_user_block(self, player_id: str, position: Tuple[float, float, float]) -> bool:
+        """Add or update a user block at the player's position."""
+        # Normalize position to block coordinates
+        block_pos = normalize(position)
+        
+        # Remove old user block if player moved to a different block position
+        if player_id in self.block_id_map:
+            old_pos = self.block_id_map[player_id]
+            if old_pos != block_pos and old_pos in self.world:
+                old_block = self.world[old_pos]
+                # Only remove if it's a user block with this player's ID
+                if (isinstance(old_block, dict) and 
+                    old_block.get("type") == BlockType.USER and 
+                    old_block.get("block_id") == player_id):
+                    del self.world[old_pos]
+                    sector = sectorize(old_pos)
+                    if sector in self.sectors and old_pos in self.sectors[sector]:
+                        self.sectors[sector].remove(old_pos)
+        
+        # Don't overwrite existing solid blocks with user blocks
+        if block_pos in self.world:
+            existing = self.world[block_pos]
+            if isinstance(existing, dict):
+                existing_type = existing.get("type")
+            else:
+                existing_type = existing
+            # Only overwrite if it's air, water, or another user block
+            if existing_type not in {BlockType.AIR, BlockType.WATER, BlockType.USER}:
+                return False
+        
+        # Add user block
+        block_data = create_block_data(BlockType.USER, block_id=player_id)
+        self.world[block_pos] = block_data
+        self.sectors.setdefault(sectorize(block_pos), []).append(block_pos)
+        self.block_id_map[player_id] = block_pos
+        return True
+    
+    def remove_user_block(self, player_id: str) -> bool:
+        """Remove a user block."""
+        if player_id not in self.block_id_map:
+            return False
+        
+        position = self.block_id_map[player_id]
+        if position in self.world:
+            block_data = self.world[position]
+            # Verify it's actually a user block with this player's ID
+            if (isinstance(block_data, dict) and 
+                block_data.get("type") == BlockType.USER and 
+                block_data.get("block_id") == player_id):
+                del self.world[position]
+                sector = sectorize(position)
+                if sector in self.sectors and position in self.sectors[sector]:
+                    self.sectors[sector].remove(position)
+        
+        del self.block_id_map[player_id]
+        return True
 
 # ---------- Custom Exceptions ----------
 
@@ -528,6 +689,9 @@ class MinecraftServer:
                 del self.user_cubes[player_id]
                 self.logger.info(f"Cleaned up cube for player {player_id}")
             
+            # Remove user block
+            self.world.remove_user_block(player_id)
+            
             # Only remove connected players, not RTSP users
             player = self.players.get(player_id)
             if player and not player.is_rtsp_user:
@@ -653,6 +817,10 @@ class MinecraftServer:
             
         self.players[player_id].name = player_name.strip()
         
+        # Add user block for this player
+        player = self.players[player_id]
+        self.world.add_user_block(player_id, player.position)
+        
         # Send world initialization with player ID
         world_data = self.world.get_world_data()
         world_data["player_id"] = player_id  # Include player ID so client knows its own ID
@@ -750,6 +918,9 @@ class MinecraftServer:
             
             player.position = new_position
             player.rotation = tuple(rotation)
+            
+            # Update user block position
+            self.world.add_user_block(player_id, new_position)
             
             # Reset velocity when player makes deliberate movement to prevent physics interference
             # This prevents gravity from immediately affecting the player's intended position
@@ -881,7 +1052,10 @@ class MinecraftServer:
             raise InvalidPlayerDataError(f"Failed to get users list: {e}")
 
     async def _handle_get_blocks_list(self, player_id: str, message: Message):
-        """Handle request for list of blocks (optionally filtered by region or view)."""
+        """Handle request for list of blocks (optionally filtered by region or view).
+        
+        Supports querying by block_id for view queries.
+        """
         try:
             # Check if request specifies a filter
             query_type = message.data.get("query_type", "region")
@@ -898,24 +1072,43 @@ class MinecraftServer:
                 
             elif query_type == "view":
                 # Get blocks visible from a specific position and rotation
+                # Can use block_id to specify the viewing position instead of explicit coordinates
+                block_id = message.data.get("block_id")
                 position = message.data.get("position")
                 rotation = message.data.get("rotation")
                 view_distance = message.data.get("view_distance", 50.0)
                 
-                if not position or not rotation:
-                    raise InvalidWorldDataError("Position and rotation required for view query")
-                
-                if not isinstance(position, (list, tuple)) or len(position) != 3:
-                    raise InvalidWorldDataError("Invalid position format")
-                
-                if not isinstance(rotation, (list, tuple)) or len(rotation) != 2:
-                    raise InvalidWorldDataError("Invalid rotation format")
-                
-                blocks = self.world.get_blocks_in_view(
-                    tuple(position), 
-                    tuple(rotation), 
-                    view_distance
-                )
+                # If block_id is provided, it takes precedence over position
+                if block_id:
+                    if not rotation:
+                        raise InvalidWorldDataError("Rotation required for view query")
+                    
+                    if not isinstance(rotation, (list, tuple)) or len(rotation) != 2:
+                        raise InvalidWorldDataError("Invalid rotation format")
+                    
+                    # Position will be looked up from block_id in get_blocks_in_view
+                    blocks = self.world.get_blocks_in_view(
+                        (0, 0, 0),  # Dummy position, will be replaced by block_id lookup
+                        tuple(rotation),
+                        view_distance,
+                        block_id=block_id
+                    )
+                else:
+                    # Use explicit position
+                    if not position or not rotation:
+                        raise InvalidWorldDataError("Position and rotation required for view query")
+                    
+                    if not isinstance(position, (list, tuple)) or len(position) != 3:
+                        raise InvalidWorldDataError("Invalid position format")
+                    
+                    if not isinstance(rotation, (list, tuple)) or len(rotation) != 2:
+                        raise InvalidWorldDataError("Invalid rotation format")
+                    
+                    blocks = self.world.get_blocks_in_view(
+                        tuple(position), 
+                        tuple(rotation), 
+                        view_distance
+                    )
             else:
                 raise InvalidWorldDataError(f"Unknown query_type: {query_type}")
             
