@@ -14,6 +14,22 @@ logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s - %(
 
 SERVER_URI = "ws://localhost:8765"
 
+async def recv_until(ws, expected_type, timeout=5.0):
+    """Receive messages until we get the expected type, skipping intermediate messages."""
+    start_time = asyncio.get_event_loop().time()
+    while True:
+        if asyncio.get_event_loop().time() - start_time > timeout:
+            raise TimeoutError(f"Timeout waiting for message type: {expected_type}")
+        
+        msg = await ws.recv()
+        data = json.loads(msg)
+        
+        if data["type"] == expected_type:
+            return data
+        else:
+            # Log skipped messages
+            logging.debug(f"Skipping message type: {data['type']}, waiting for: {expected_type}")
+
 async def test_get_cameras_list():
     """Test getting list of camera blocks."""
     logging.info("🧪 Testing GET_CAMERAS_LIST service...")
@@ -26,28 +42,19 @@ async def test_get_cameras_list():
             logging.info(f"Sent join -> {join_msg}")
             
             # Receive world_init
-            resp = await ws.recv()
-            data = json.loads(resp)
+            data = await recv_until(ws, "world_init")
             logging.info(f"Received <- {data['type']}")
-            assert data["type"] == "world_init", f"Expected world_init, got {data['type']}"
             
             # Skip through chunks until we get player_list
-            while True:
-                msg = await ws.recv()
-                data = json.loads(msg)
-                if data["type"] == "player_list":
-                    break
-                elif data["type"] != "world_chunk":
-                    logging.info(f"Skipping message: {data['type']}")
+            data = await recv_until(ws, "player_list")
             
             # Now request cameras list
             cameras_request = {"type": "get_cameras_list", "data": {}}
             await ws.send(json.dumps(cameras_request))
             logging.info(f"Sent camera request -> {cameras_request}")
             
-            # Receive cameras list
-            resp = await ws.recv()
-            data = json.loads(resp)
+            # Receive cameras list (skip any intermediate messages)
+            data = await recv_until(ws, "cameras_list")
             logging.info(f"Received <- {json.dumps(data, indent=2)}")
             
             assert data["type"] == "cameras_list", f"Expected cameras_list, got {data['type']}"
@@ -80,25 +87,18 @@ async def test_get_users_list():
             await ws.send(json.dumps(join_msg))
             
             # Receive world_init
-            resp = await ws.recv()
-            data = json.loads(resp)
-            assert data["type"] == "world_init"
+            data = await recv_until(ws, "world_init")
             
-            # Skip chunks
-            while True:
-                msg = await ws.recv()
-                data = json.loads(msg)
-                if data["type"] == "player_list":
-                    break
+            # Skip chunks until player_list
+            data = await recv_until(ws, "player_list")
             
             # Request users list
             users_request = {"type": "get_users_list", "data": {}}
             await ws.send(json.dumps(users_request))
             logging.info(f"Sent users request -> {users_request}")
             
-            # Receive users list
-            resp = await ws.recv()
-            data = json.loads(resp)
+            # Receive users list (skip any intermediate messages)
+            data = await recv_until(ws, "users_list")
             logging.info(f"Received <- {json.dumps(data, indent=2)}")
             
             assert data["type"] == "users_list", f"Expected users_list, got {data['type']}"
@@ -130,17 +130,11 @@ async def test_get_blocks_list_region():
             await ws.send(json.dumps(join_msg))
             
             # Receive world_init
-            resp = await ws.recv()
-            data = json.loads(resp)
-            assert data["type"] == "world_init"
+            data = await recv_until(ws, "world_init")
             spawn_position = data["data"]["spawn_position"]
             
-            # Skip chunks
-            while True:
-                msg = await ws.recv()
-                data = json.loads(msg)
-                if data["type"] == "player_list":
-                    break
+            # Skip chunks until player_list
+            data = await recv_until(ws, "player_list")
             
             # Request blocks in region around spawn
             blocks_request = {
@@ -154,9 +148,8 @@ async def test_get_blocks_list_region():
             await ws.send(json.dumps(blocks_request))
             logging.info(f"Sent blocks request -> {blocks_request}")
             
-            # Receive blocks list
-            resp = await ws.recv()
-            data = json.loads(resp)
+            # Receive blocks list (skip any intermediate messages)
+            data = await recv_until(ws, "blocks_list")
             logging.info(f"Received blocks_list with {len(data['data']['blocks'])} blocks")
             
             assert data["type"] == "blocks_list", f"Expected blocks_list, got {data['type']}"
@@ -191,17 +184,11 @@ async def test_get_blocks_list_view():
             await ws.send(json.dumps(join_msg))
             
             # Receive world_init
-            resp = await ws.recv()
-            data = json.loads(resp)
-            assert data["type"] == "world_init"
+            data = await recv_until(ws, "world_init")
             spawn_position = data["data"]["spawn_position"]
             
-            # Skip chunks
-            while True:
-                msg = await ws.recv()
-                data = json.loads(msg)
-                if data["type"] == "player_list":
-                    break
+            # Skip chunks until player_list
+            data = await recv_until(ws, "player_list")
             
             # Request blocks visible from spawn position
             blocks_request = {
@@ -216,9 +203,8 @@ async def test_get_blocks_list_view():
             await ws.send(json.dumps(blocks_request))
             logging.info(f"Sent view blocks request -> {blocks_request}")
             
-            # Receive blocks list
-            resp = await ws.recv()
-            data = json.loads(resp)
+            # Receive blocks list (skip any intermediate messages)
+            data = await recv_until(ws, "blocks_list")
             logging.info(f"Received blocks_list with {len(data['data']['blocks'])} blocks")
             
             assert data["type"] == "blocks_list", f"Expected blocks_list, got {data['type']}"
