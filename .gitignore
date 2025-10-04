@@ -52,4 +52,10 @@ Thumbs.db
 test_new_features.py
 test_client_config.py
 test_integration.py
-run_all_tests.pyscreenshot*.png
+run_all_tests.py
+
+# Camera screenshot system temporary files
+camera_view_data.json
+demo_screenshots/
+screenshot*.png
+test_*.png
