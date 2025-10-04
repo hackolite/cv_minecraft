@@ -594,11 +594,12 @@ else:
 class GameRecorder:
     """Classe pour enregistrer le gameplay en utilisant le buffer Pyglet."""
     
-    def __init__(self, output_dir: str = "recordings"):
+    def __init__(self, output_dir: str = "recordings", camera_cube: Optional['Cube'] = None):
         """Initialise le recorder.
         
         Args:
             output_dir: Répertoire de sortie pour les enregistrements
+            camera_cube: Optional Cube instance for camera recording
         """
         self.output_dir = pathlib.Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
@@ -608,13 +609,15 @@ class GameRecorder:
         self.start_time = None
         self.last_capture_time = 0
         self.capture_interval = 1.0 / 30.0  # 30 FPS par défaut
+        self.camera_cube = camera_cube  # Camera cube for recording from camera perspective
         
         # Queue pour les frames à écrire et thread d'écriture
         self.frame_queue = deque()
         self.writer_thread = None
         self.writer_running = False
         
-        print(f"📹 GameRecorder initialisé - Répertoire: {self.output_dir}")
+        print(f"📹 GameRecorder initialisé - Répertoire: {self.output_dir}" + 
+              (f", Caméra: {camera_cube.id}" if camera_cube else ""))
     
     def _writer_worker(self):
         """Thread worker qui écrit les frames sur disque de manière asynchrone."""
@@ -713,7 +716,7 @@ class GameRecorder:
         """Capture une frame depuis le buffer Pyglet.
         
         Args:
-            window: La fenêtre Pyglet dont on veut capturer le buffer
+            window: La fenêtre Pyglet dont on veut capturer le buffer (peut être ignoré si camera_cube est défini)
         """
         if not self.is_recording:
             return
@@ -723,14 +726,36 @@ class GameRecorder:
             return  # Respecter l'intervalle de capture
         
         try:
-            # Utiliser get_buffer_manager().get_color_buffer() comme demandé
-            buffer = pyglet.image.get_buffer_manager().get_color_buffer()
-            
-            # Extraire les données brutes de l'image (pas d'écriture disque ici)
-            image_data = buffer.get_image_data()
-            width = image_data.width
-            height = image_data.height
-            raw_data = image_data.get_data('RGBA', image_data.width * 4)
+            # Si on enregistre depuis une caméra, utiliser sa fenêtre
+            if self.camera_cube and self.camera_cube.window:
+                # Capturer depuis la fenêtre de la caméra
+                # Switch to camera window context
+                self.camera_cube.window.window.switch_to()
+                
+                # Render camera's view (simple scene for now)
+                # TODO: Render actual world from camera position
+                self.camera_cube.window._render_simple_scene()
+                
+                # Capture from camera window
+                buffer = pyglet.image.get_buffer_manager().get_color_buffer()
+                image_data = buffer.get_image_data()
+                width = image_data.width
+                height = image_data.height
+                raw_data = image_data.get_data('RGBA', image_data.width * 4)
+                
+                # Switch back to main window context (if window is provided)
+                if window and hasattr(window, 'switch_to'):
+                    window.switch_to()
+            else:
+                # Enregistrement depuis la fenêtre principale (joueur)
+                # Utiliser get_buffer_manager().get_color_buffer() comme demandé
+                buffer = pyglet.image.get_buffer_manager().get_color_buffer()
+                
+                # Extraire les données brutes de l'image (pas d'écriture disque ici)
+                image_data = buffer.get_image_data()
+                width = image_data.width
+                height = image_data.height
+                raw_data = image_data.get_data('RGBA', image_data.width * 4)
             
             # Mettre les données dans la queue pour écriture asynchrone
             self.frame_queue.append((self.frame_count, raw_data, width, height))
@@ -838,6 +863,7 @@ class MinecraftWindow(BaseWindow):
         self.recorder = GameRecorder() if PYGLET_AVAILABLE else None  # Main player recorder
         self.camera_recorders = {}  # Dictionary of camera recorders: camera_id -> GameRecorder
         self.owned_cameras = []  # List of camera block_ids owned by this player
+        self.camera_cubes = {}  # Dictionary of camera cubes: camera_id -> Cube
         self._pending_camera_placement = None  # Track camera block placement position
 
         # Initialisation
@@ -1278,13 +1304,49 @@ Statut: {connection_status}"""
         
         print(f"🔍 Checking {len(cameras)} cameras for owner {player_id}")
         
-        # Find cameras owned by this player
+        # Track which cameras are still owned
+        current_camera_ids = set()
+        
+        # Find cameras owned by this player and create Cube instances
         for camera in cameras:
             if camera.get("owner") == player_id:
                 camera_id = camera.get("block_id")
                 if camera_id:
                     self.owned_cameras.append(camera_id)
-                    print(f"  ✅ Found owned camera: {camera_id}")
+                    current_camera_ids.add(camera_id)
+                    
+                    # Create or update camera cube instance
+                    if camera_id not in self.camera_cubes:
+                        camera_position = tuple(camera.get("position", [0, 0, 0]))
+                        # Create camera cube with window for recording
+                        camera_cube = Cube(
+                            cube_id=camera_id,
+                            position=camera_position,
+                            cube_type="camera",
+                            owner=player_id
+                        )
+                        self.camera_cubes[camera_id] = camera_cube
+                        print(f"  ✅ Found owned camera: {camera_id} at {camera_position}, created Cube instance")
+                    else:
+                        print(f"  ✅ Found owned camera: {camera_id} (already exists)")
+        
+        # Clean up camera cubes that are no longer owned
+        cameras_to_remove = [cid for cid in self.camera_cubes.keys() if cid not in current_camera_ids]
+        for camera_id in cameras_to_remove:
+            camera_cube = self.camera_cubes[camera_id]
+            # Close window if it exists
+            if camera_cube.window:
+                camera_cube.window.close()
+            del self.camera_cubes[camera_id]
+            print(f"  🗑️  Removed camera cube {camera_id} (no longer owned)")
+            
+            # Also stop and remove recorder if it exists
+            if camera_id in self.camera_recorders:
+                recorder = self.camera_recorders[camera_id]
+                if recorder.is_recording:
+                    recorder.stop_recording()
+                del self.camera_recorders[camera_id]
+                print(f"  🗑️  Removed recorder for {camera_id}")
         
         if self.owned_cameras:
             self.show_message(f"📹 {len(self.owned_cameras)} caméra(s) possédée(s): {', '.join(self.owned_cameras)}", 5.0)
@@ -1327,9 +1389,18 @@ Statut: {connection_status}"""
         
         camera_id = self.owned_cameras[camera_index]
         
+        # Get the camera cube instance
+        camera_cube = self.camera_cubes.get(camera_id)
+        if not camera_cube:
+            self.show_message(f"⚠️  Cube caméra {camera_id} non trouvé", 3.0)
+            return
+        
         # Create recorder for this camera if it doesn't exist
         if camera_id not in self.camera_recorders:
-            self.camera_recorders[camera_id] = GameRecorder(output_dir=f"recordings/{camera_id}")
+            self.camera_recorders[camera_id] = GameRecorder(
+                output_dir=f"recordings/{camera_id}",
+                camera_cube=camera_cube  # Pass camera cube for recording from its perspective
+            )
         
         recorder = self.camera_recorders[camera_id]
         
