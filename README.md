@@ -61,21 +61,17 @@ You can start multiple clients to test multiplayer functionality.
 
 ## Testing
 
-### Test Server Connection
-```shell
-python3 test_connection.py
-```
+See the `tests/` directory for various test scripts:
 
-### Test Multiplayer
 ```shell
-python3 test_multiplayer.py
-```
+# Test camera screenshot system
+python3 tests/test_camera_screenshot_system.py
 
-## Original Monolithic Version
+# Test server integration
+python3 tests/test_server_integration.py
 
-The original single-player version is still available in `minecraft.py` and can be run with:
-```shell
-python3 main.py
+# Run demo client
+python3 tests/demo_minecraft_client.py
 ```
 
 ### Mac
@@ -115,6 +111,10 @@ For git:
 
 See the [wiki](https://github.com/fogleman/Minecraft/wiki) for this project to install Python, and other tips.
 
-## Architecture Conversion
+## Additional Documentation
 
-See `CONVERSION_GUIDE.md` for technical details about the conversion from monolithic to client-server architecture.
+- `CAMERA_SCREENSHOT_SYSTEM.md` - Camera screenshot system documentation
+- `BLOCK_METADATA_SYSTEM.md` - Block metadata system documentation
+- `CUBE_SYSTEM_README.md` - Cube abstraction system documentation
+- `GAMEPLAY_RECORDING.md` - Gameplay recording system documentation
+- `TROUBLESHOOTING.md` - Common issues and solutions
