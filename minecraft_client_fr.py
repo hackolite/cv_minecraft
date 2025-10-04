@@ -1563,6 +1563,11 @@ Statut: {connection_status}"""
         # Capture frame si enregistrement actif
         if self.recorder and self.recorder.is_recording:
             self.recorder.capture_frame(self)
+        
+        # Capture frames pour toutes les caméras en enregistrement
+        for camera_id, recorder in self.camera_recorders.items():
+            if recorder.is_recording:
+                recorder.capture_frame(self)
 
     def draw_focused_block(self):
         """Dessine les contours du bloc visé."""
