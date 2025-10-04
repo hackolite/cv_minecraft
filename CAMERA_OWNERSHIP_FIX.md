@@ -292,3 +292,4 @@ Server-side code was already correct and did not need changes:
 - `server.py`: Already includes owner in CAMERAS_LIST response ✅
 
 The bug was purely client-side - the server was doing everything correctly, but the client wasn't extracting the player_id!
+

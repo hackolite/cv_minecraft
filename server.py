@@ -1059,7 +1059,8 @@ class MinecraftServer:
                 camera_cube = Cube(
                     cube_id=block_id,
                     position=position,
-                    cube_type="camera"
+                    cube_type="camera",
+                    owner=player_id  # Set owner to track who placed this camera
                 )
                 self.camera_cubes[block_id] = camera_cube
                 self.logger.info(f"Created camera cube '{block_id}' owned by player {player_id}")
