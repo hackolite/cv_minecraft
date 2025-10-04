@@ -79,7 +79,7 @@ except Exception as e:
     
     class DummyKey:
         """Dummy key constants for headless mode"""
-        _1 = 49; _2 = 50; _3 = 51; _4 = 52; _5 = 53
+        _1 = 49; _2 = 50; _3 = 51; _4 = 52; _5 = 53; _6 = 54
         LCTRL = 65507; RCTRL = 65508; LSHIFT = 65505; RSHIFT = 65506
         SPACE = 32; ESCAPE = 65307; TAB = 65289; F3 = 65472; F5 = 65474; F6 = 65475; R = 114
     
@@ -783,12 +783,12 @@ class MinecraftWindow(BaseWindow):
         self.flying_speed = config.get("player", "flying_speed", 15.0)
 
         # Inventaire
-        self.inventory = [BlockType.BRICK, BlockType.GRASS, BlockType.SAND, BlockType.STONE, BlockType.CAMERA]
+        self.inventory = [BlockType.BRICK, BlockType.GRASS, BlockType.SAND, BlockType.STONE, BlockType.CAMERA, BlockType.CAT]
         self.block = self.inventory[0]
         
         # Touches de mouvement configurables
         self.movement_keys = config.get_movement_keys()
-        self.num_keys = [key._1, key._2, key._3, key._4, key._5]
+        self.num_keys = [key._1, key._2, key._3, key._4, key._5, key._6]
         self.keys = {}  # Dictionnaire pour suivre l'état des touches
 
         # Modèle et réseau

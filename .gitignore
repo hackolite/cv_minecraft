@@ -60,6 +60,9 @@ demo_screenshots/
 screenshot*.png
 test_*.png
 
+# Test generated files
+tests/client_config.json
+
 # Gameplay recordings
 recordings/
 demo_recordings/
