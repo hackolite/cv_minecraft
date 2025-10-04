@@ -18,7 +18,7 @@ os.environ['DISPLAY'] = ':99'
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from server import GameWorld, MinecraftServer, create_block_data
-from protocol import BlockType, Message, MessageType
+from protocol import BlockType, Message, MessageType, Cube
 from typing import Tuple
 
 def test_camera_placement_creates_owner():
@@ -66,6 +66,37 @@ def test_camera_placement_creates_owner():
     print(f"  ✅ block_id_map updated correctly")
     
     print("✅ Camera placement with owner test passed\n")
+
+def test_camera_cube_has_owner():
+    """Test that camera Cube instances store owner information."""
+    print("🧪 Testing camera Cube owner field...")
+    
+    player_id = "test_player_456"
+    camera_position = (20, 200, 20)
+    camera_id = "camera_test"
+    
+    # Create a camera cube with owner
+    camera_cube = Cube(
+        cube_id=camera_id,
+        position=camera_position,
+        cube_type="camera",
+        owner=player_id
+    )
+    
+    assert camera_cube.owner == player_id
+    print(f"  ✅ Camera cube has correct owner: {camera_cube.owner}")
+    
+    # Test backward compatibility (cube without owner)
+    normal_cube = Cube(
+        cube_id="normal_cube",
+        position=(0, 0, 0),
+        cube_type="normal"
+    )
+    
+    assert normal_cube.owner is None
+    print("  ✅ Normal cube without owner has None owner (backward compatible)")
+    
+    print("✅ Camera Cube owner field test passed\n")
 
 def test_multiple_cameras_different_owners():
     """Test that multiple cameras can have different owners."""
@@ -152,6 +183,7 @@ if __name__ == "__main__":
     print("=" * 60 + "\n")
     
     test_camera_placement_creates_owner()
+    test_camera_cube_has_owner()
     test_multiple_cameras_different_owners()
     test_camera_list_filtering()
     
