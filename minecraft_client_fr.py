@@ -759,9 +759,10 @@ class GameRecorder:
                 # Switch to camera window context
                 self.camera_cube.window.window.switch_to()
                 
-                # Render camera's view (simple scene for now)
-                # TODO: Render actual world from camera position
+                # Clear and render camera's view
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
                 self.camera_cube.window._render_simple_scene()
+                glFlush()
                 
                 # Capture from camera window
                 buffer = pyglet.image.get_buffer_manager().get_color_buffer()
