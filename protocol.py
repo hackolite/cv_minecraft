@@ -598,6 +598,8 @@ class PlayerState(Cube):
         player.flying = data.get("flying", False)
         player.sprinting = data.get("sprinting", False)
         player.size = data.get("size", 0.5)
+        player.velocity = data.get("velocity", [0.0, 0.0, 0.0])
+        player.on_ground = data.get("on_ground", False)
         return player
 
 class BlockUpdate:
