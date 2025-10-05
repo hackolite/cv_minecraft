@@ -411,10 +411,10 @@ class CubeWindow:
                 if block_type == BlockType.CAMERA:
                     x, y, z = position
                     
-                    # Draw a black circle on top of the camera block
+                    # Draw a black circle on the front face of the camera block (face the camera sees)
                     glPushMatrix()
-                    glTranslatef(x, y + 0.51, z)  # Position slightly above the block
-                    glRotatef(-90, 1, 0, 0)  # Rotate so the circle is horizontal
+                    glTranslatef(x, y, z + 0.51)  # Position slightly in front of the block (Z+)
+                    # No rotation needed - circle is already in the correct plane (XY)
                     
                     # Draw black disc
                     glColor3f(0, 0, 0)  # Black color
