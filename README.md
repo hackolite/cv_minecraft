@@ -61,18 +61,7 @@ You can start multiple clients to test multiplayer functionality.
 
 ## Testing
 
-See the `tests/` directory for various test scripts:
-
-```shell
-# Test camera screenshot system
-python3 tests/test_camera_screenshot_system.py
-
-# Test server integration
-python3 tests/test_server_integration.py
-
-# Run demo client
-python3 tests/demo_minecraft_client.py
-```
+See the `tests/` directory for various test scripts.
 
 ### Mac
 
@@ -110,11 +99,3 @@ For git:
 - Windows or Linux: see [Installing Git](http://git-scm.com/book/en/Getting-Started-Installing-Git) from the _Pro Git_ book.
 
 See the [wiki](https://github.com/fogleman/Minecraft/wiki) for this project to install Python, and other tips.
-
-## Additional Documentation
-
-- `CAMERA_SCREENSHOT_SYSTEM.md` - Camera screenshot system documentation
-- `BLOCK_METADATA_SYSTEM.md` - Block metadata system documentation
-- `CUBE_SYSTEM_README.md` - Cube abstraction system documentation
-- `GAMEPLAY_RECORDING.md` - Gameplay recording system documentation
-- `TROUBLESHOOTING.md` - Common issues and solutions
