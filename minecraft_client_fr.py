@@ -308,10 +308,12 @@ class AdvancedNetworkClient:
                 player_id = player_data["id"]
                 if player_id == self.player_id:
                     self.window.position = tuple(player_data["position"])
+                    self.window.rotation = tuple(player_data["rotation"])
                     self.window.dy = player_data["velocity"][1]
                     self.window.on_ground = player_data.get("on_ground", False)
                     if self.window.local_player_cube:
                         self.window.local_player_cube.update_position(self.window.position)
+                        self.window.local_player_cube.update_rotation(self.window.rotation)
                         self.window.local_player_cube.velocity = player_data["velocity"]
                         self.window.local_player_cube.on_ground = player_data.get("on_ground", False)
                 else:
@@ -1246,6 +1248,10 @@ Statut: {connection_status}"""
                 y_rot = max(-90, min(90, y_rot))
             
             self.rotation = (x_rot, y_rot)
+            
+            # Update local player cube rotation to match view rotation
+            if self.local_player_cube:
+                self.local_player_cube.update_rotation(self.rotation)
 
     def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
         """Gère la molette de la souris pour changer le type de bloc."""
