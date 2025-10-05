@@ -347,8 +347,8 @@ class CubeWindow:
             
             # Render the local player cube if it exists
             # This ensures the camera owner is visible in their own camera views
-            if hasattr(self.model, 'local_player_cube') and self.model.local_player_cube:
-                player_cube = self.model.local_player_cube
+            if hasattr(self.model, 'local_player') and self.model.local_player:
+                player_cube = self.model.local_player
                 color = getattr(player_cube, 'color', (0.2, 0.8, 0.2))
                 x, y, z = player_cube.get_render_position()
                 size = getattr(player_cube, 'size', 0.5)
