@@ -21,6 +21,7 @@ except ImportError:
             self.world, self.shown, self._shown, self.sectors = {}, {}, {}, {}
             self.queue = deque()
             self.other_players = {}
+            self.local_player_cube = None  # Local player cube for camera rendering
             self.world_size, self.spawn_position = 128, [30, 50, 80]
 
 class ClientModel(EnhancedClientModel):
@@ -59,6 +60,9 @@ class ClientModel(EnhancedClientModel):
         
         # Add to cubes collection
         self.cubes[player_id] = self.local_player
+        
+        # Also set as local_player_cube for camera rendering visibility
+        self.local_player_cube = self.local_player
         
         return self.local_player
     
