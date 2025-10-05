@@ -30,18 +30,11 @@ def test_cube_window_creation():
     assert camera_cube.window is not None, "Camera cube should have a window"
     print("   ✅ Camera cube created correctly (with window)")
     
-    # Test 3: Test window screenshot functionality
-    print("\n3. Testing camera cube screenshot...")
+    # Test 3: Verify window has necessary attributes
+    print("\n3. Verifying camera cube window attributes...")
     if camera_cube.window:
-        try:
-            screenshot_bytes = camera_cube.window.take_screenshot()
-            if screenshot_bytes:
-                print(f"   Screenshot captured: {len(screenshot_bytes)} bytes")
-                print("   ✅ Screenshot functionality works")
-            else:
-                print("   ⚠️  Screenshot returned None")
-        except Exception as e:
-            print(f"   ⚠️  Screenshot failed: {e}")
+        print(f"   Window type: {type(camera_cube.window).__name__}")
+        print("   ✅ Camera cube window initialized correctly")
     
     # Cleanup
     print("\n4. Cleaning up...")

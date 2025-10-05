@@ -8,7 +8,6 @@ import asyncio
 import socket
 import threading
 import time
-import io
 import math
 from enum import Enum
 from typing import Dict, List, Tuple, Any, Optional, Set
@@ -18,7 +17,6 @@ try:
     import pyglet
     from pyglet.gl import *
     from OpenGL.GL import *  # For legacy OpenGL functions like glMatrixMode
-    from PIL import Image
     PYGLET_AVAILABLE = True
     print("✅ Pyglet and OpenGL are available for window abstraction")
 except ImportError as e:
@@ -264,44 +262,6 @@ class CubeWindow:
             
         except Exception as e:
             print(f"⚠️  OpenGL setup failed for cube {self.cube_id}: {e}")
-    
-    def take_screenshot(self) -> Optional[bytes]:
-        """Take a screenshot of the cube's view."""
-        if not PYGLET_AVAILABLE or not self.window or not hasattr(self.window, 'get_size'):
-            return None
-            
-        try:
-            # Make sure this window's context is current
-            self.window.switch_to()
-            
-            # Clear and render a simple scene
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-            
-            # Simple cube rendering (placeholder - in real implementation this would render the world from cube's perspective)
-            self._render_simple_scene()
-            
-            # Force finish to ensure ALL rendering is complete
-            # glFinish() blocks until all OpenGL commands are fully executed
-            # This prevents capturing white/incomplete images
-            glFinish()
-            
-            # Read pixels from framebuffer
-            width, height = self.window.get_size()
-            pixels = (GLubyte * (3 * width * height))(0)
-            glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels)
-            
-            # Convert to PIL Image and flip vertically
-            image = Image.frombytes('RGB', (width, height), pixels)
-            image = image.transpose(Image.FLIP_TOP_BOTTOM)
-            
-            # Convert to PNG bytes
-            img_buffer = io.BytesIO()
-            image.save(img_buffer, format='PNG')
-            return img_buffer.getvalue()
-            
-        except Exception as e:
-            print(f"⚠️  Screenshot failed for cube {self.cube_id}: {e}")
-            return None
     
     def _render_simple_scene(self):
         """Render the world from the cube's perspective.
