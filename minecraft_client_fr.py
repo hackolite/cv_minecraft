@@ -733,7 +733,7 @@ class GameRecorder:
             try:
                 # Récupérer la frame de la queue
                 frame_data = self.frame_queue.popleft()
-                frame_number, image_data, width, height = frame_data
+                unix_timestamp, image_data, width, height = frame_data
                 
                 # Convertir les données brutes en image PIL
                 # Pyglet utilise RGBA, donc 4 bytes par pixel
@@ -743,7 +743,8 @@ class GameRecorder:
                 pil_image = pil_image.convert('RGB')
                 
                 # Sauvegarder en JPEG avec qualité 85
-                frame_filename = self.session_dir / f"frame_{frame_number:06d}.jpg"
+                # Use unix timestamp from capture time
+                frame_filename = self.session_dir / f"frame_{unix_timestamp:.6f}.jpg"
                 pil_image.save(str(frame_filename), 'JPEG', quality=85, optimize=True)
                 
             except Exception as e:
@@ -885,8 +886,10 @@ class GameRecorder:
                 raw_data = image_data.get_data('RGBA', image_data.width * 4)
             
             # Sauvegarder les métadonnées de position pour cette frame
+            unix_timestamp = time.time()
             frame_meta = {
                 "frame_number": self.frame_count,
+                "unix_timestamp": unix_timestamp,
                 "timestamp": current_time - self.start_time,
                 "width": width,
                 "height": height
@@ -906,8 +909,8 @@ class GameRecorder:
             
             self.frame_metadata.append(frame_meta)
             
-            # Mettre les données dans la queue pour écriture asynchrone
-            self.frame_queue.append((self.frame_count, raw_data, width, height))
+            # Mettre les données dans la queue pour écriture asynchrone avec unix timestamp
+            self.frame_queue.append((unix_timestamp, raw_data, width, height))
             
             self.frame_count += 1
             self.last_capture_time = current_time
@@ -1795,6 +1798,9 @@ Statut: {connection_status}"""
         # Rendu du monde
         self.model.batch.draw()
 
+        # Rendu des indicateurs de caméra (rond noir)
+        self.draw_camera_indicators()
+
         # Rendu du bloc visé
         self.draw_focused_block()
 
@@ -1826,6 +1832,41 @@ Statut: {connection_status}"""
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
             pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+
+    def draw_camera_indicators(self):
+        """Dessine un rond noir sur les blocs caméra pour indiquer l'emplacement de la caméra."""
+        if not PYGLET_AVAILABLE:
+            return
+            
+        # Parcourir tous les blocs du monde pour trouver les caméras
+        for position, block_type in self.model.world.items():
+            if block_type == BlockType.CAMERA:
+                x, y, z = position
+                
+                # Dessiner un cercle noir sur la face supérieure du bloc caméra
+                # Le cercle sera centré sur le dessus du bloc
+                glPushMatrix()
+                glTranslatef(x, y + 0.51, z)  # Position légèrement au-dessus du bloc
+                glRotatef(-90, 1, 0, 0)  # Rotation pour que le cercle soit horizontal
+                
+                # Dessiner un disque noir
+                glColor3f(0, 0, 0)  # Noir
+                glDisable(GL_TEXTURE_2D)  # Désactiver les textures pour le cercle
+                
+                # Dessiner le cercle comme un polygone
+                num_segments = 32
+                radius = 0.3  # Rayon du cercle (70% de la moitié de la taille du bloc)
+                
+                glBegin(GL_TRIANGLE_FAN)
+                glVertex3f(0, 0, 0)  # Centre du cercle
+                for i in range(num_segments + 1):
+                    angle = 2.0 * math.pi * i / num_segments
+                    glVertex3f(radius * math.cos(angle), radius * math.sin(angle), 0)
+                glEnd()
+                
+                glEnable(GL_TEXTURE_2D)  # Réactiver les textures
+                glPopMatrix()
+
 
     def draw_players(self):
         """Dessine tous les cubes des joueurs."""
