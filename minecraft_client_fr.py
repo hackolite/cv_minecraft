@@ -382,6 +382,10 @@ class EnhancedClientModel:
         self.other_players = {}
         self.world_size, self.spawn_position = 128, [30, 50, 80]
         
+        # Local player and cubes management
+        self.local_player = None
+        self.cubes = {}  # All cubes (local + remote)
+        
         self.group = self._load_texture_group()
 
     def _load_texture_group(self):
@@ -555,6 +559,97 @@ class EnhancedClientModel:
             return False
         # Tous les blocs sauf l'air sont considérés comme solides
         return block_type != "air" and block_type != BlockType.AIR
+    
+    def create_local_player(self, player_id: str, position: tuple, rotation: tuple = (0, 0), name: str = None):
+        """Create a local player as a cube with strict validation."""
+        # Validate input parameters
+        if not isinstance(position, (tuple, list)) or len(position) != 3:
+            raise ValueError(f"Position must be a 3-element tuple/list: {position}")
+        
+        if not isinstance(rotation, (tuple, list)) or len(rotation) != 2:
+            raise ValueError(f"Rotation must be a 2-element tuple/list: {rotation}")
+        
+        # Validate position coordinates
+        x, y, z = position
+        if not all(isinstance(coord, (int, float)) for coord in [x, y, z]):
+            raise ValueError(f"Position coordinates must be numeric: {position}")
+        
+        # Validate rotation values
+        h, v = rotation
+        if not all(isinstance(angle, (int, float)) for angle in [h, v]):
+            raise ValueError(f"Rotation angles must be numeric: {rotation}")
+        
+        self.local_player = PlayerState(player_id, position, rotation, name)
+        self.local_player.is_local = True
+        self.local_player.size = 0.5  # Standard 1x1x1 cube size (0.5 half-size)
+        
+        # Assign a unique color to the local player
+        self.local_player.color = self._generate_player_color(player_id)
+        
+        # Add to cubes collection
+        self.cubes[player_id] = self.local_player
+        
+        return self.local_player
+    
+    def add_cube(self, cube):
+        """Add a cube (player) to the model with strict validation."""
+        if hasattr(cube, 'id'):
+            # Ensure standard 1x1x1 cube size for consistency
+            cube.size = 0.5  # Standard 1x1x1 cube size (0.5 half-size)
+            
+            # Validate cube position
+            if not hasattr(cube, 'position') or not isinstance(cube.position, (tuple, list)):
+                raise ValueError(f"Cube {cube.id} has invalid position: {getattr(cube, 'position', 'None')}")
+            
+            if len(cube.position) != 3:
+                raise ValueError(f"Cube {cube.id} position must have 3 coordinates: {cube.position}")
+            
+            # Validate position coordinates are numeric
+            x, y, z = cube.position
+            if not all(isinstance(coord, (int, float)) for coord in [x, y, z]):
+                raise ValueError(f"Cube {cube.id} coordinates must be numeric: {cube.position}")
+            
+            self.cubes[cube.id] = cube
+            
+            # Assign color if not already assigned
+            if not hasattr(cube, 'color') or cube.color is None:
+                cube.color = self._generate_player_color(cube.id)
+            
+            # Add to other_players if not local
+            if not getattr(cube, 'is_local', False):
+                self.other_players[cube.id] = cube
+    
+    def remove_cube(self, cube_id: str):
+        """Remove a cube (player) from the model."""
+        removed_cube = None
+        if cube_id in self.cubes:
+            removed_cube = self.cubes[cube_id]
+            del self.cubes[cube_id]
+        if cube_id in self.other_players:
+            del self.other_players[cube_id]
+        return removed_cube
+    
+    def get_all_cubes(self):
+        """Get all cubes (local + remote players)."""
+        return list(self.cubes.values())
+    
+    def _generate_player_color(self, player_id: str):
+        """Generate a unique color for a player based on their ID."""
+        # Use a deterministic approach without affecting global random state
+        colors = [
+            (1.0, 0.3, 0.3),  # Red
+            (0.3, 1.0, 0.3),  # Green  
+            (0.3, 0.3, 1.0),  # Blue
+            (1.0, 1.0, 0.3),  # Yellow
+            (1.0, 0.3, 1.0),  # Magenta
+            (0.3, 1.0, 1.0),  # Cyan
+            (1.0, 0.6, 0.3),  # Orange
+            (0.6, 0.3, 1.0),  # Purple
+        ]
+        
+        # Select color based on hash without using random.seed()
+        color_index = abs(hash(player_id)) % len(colors)
+        return colors[color_index]
 
 
 def block_texture_data(block_type):
