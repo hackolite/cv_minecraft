@@ -300,9 +300,20 @@ class CubeWindow:
             return
         
         try:
-            # Calculate camera position (elevated to eye height)
+            # Calculate camera position (elevated to eye height and moved forward)
             camera_x, camera_y, camera_z = self.cube.position
-            camera_y += 0.6  # Eye height offset
+            camera_y += 0.9  # Eye height offset - slightly higher for better view
+            
+            # Move camera forward in the viewing direction for better perspective
+            rotation_x, rotation_y = self.cube.rotation
+            # Calculate forward direction vector based on horizontal rotation
+            forward_distance = 1.5  # Distance to move forward
+            m = math.cos(math.radians(rotation_y))
+            forward_x = math.sin(math.radians(rotation_x)) * m * forward_distance
+            forward_z = -math.cos(math.radians(rotation_x)) * m * forward_distance
+            
+            camera_x += forward_x
+            camera_z += forward_z
             camera_position = (camera_x, camera_y, camera_z)
             
             # Use shared rendering pipeline - cameras now render players to make them visible
@@ -312,7 +323,7 @@ class CubeWindow:
                 position=camera_position,
                 rotation=self.cube.rotation,
                 window_size=self.window.get_size(),
-                fov=70.0,
+                fov=85.0,  # Wider field of view for better coverage
                 render_players_func=self._render_players,  # ✅ Render players including the original user
                 render_focused_block_func=None  # Cameras don't show focused block outline
             )
