@@ -739,6 +739,9 @@ class GameRecorder:
                 # Pyglet utilise RGBA, donc 4 bytes par pixel
                 pil_image = PIL.Image.frombytes('RGBA', (width, height), image_data)
                 
+                # Flip image vertically because OpenGL captures from bottom-left
+                pil_image = pil_image.transpose(PIL.Image.FLIP_TOP_BOTTOM)
+                
                 # Convertir en RGB (JPEG ne supporte pas la transparence)
                 pil_image = pil_image.convert('RGB')
                 
@@ -1843,11 +1846,11 @@ Statut: {connection_status}"""
             if block_type == BlockType.CAMERA:
                 x, y, z = position
                 
-                # Dessiner un cercle noir sur la face supérieure du bloc caméra
-                # Le cercle sera centré sur le dessus du bloc
+                # Dessiner un cercle noir sur la face avant du bloc caméra (face que la caméra voit)
+                # Le cercle sera centré sur la face avant (Z+)
                 glPushMatrix()
-                glTranslatef(x, y + 0.51, z)  # Position légèrement au-dessus du bloc
-                glRotatef(-90, 1, 0, 0)  # Rotation pour que le cercle soit horizontal
+                glTranslatef(x, y, z + 0.51)  # Position légèrement devant le bloc
+                # Pas de rotation nécessaire - le cercle est déjà dans le bon plan (XY)
                 
                 # Dessiner un disque noir
                 glColor3f(0, 0, 0)  # Noir
