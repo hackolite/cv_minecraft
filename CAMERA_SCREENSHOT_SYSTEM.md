@@ -218,7 +218,7 @@ The reconstruction script uses:
 | wood    | Saddle brown          | (139, 69, 19) |
 | leaf    | Green                 | (0, 128, 0)   |
 | water   | Dodger blue           | (64, 164, 223) |
-| camera  | Magenta               | (255, 0, 255) |
+| camera  | Blue                  | (0, 0, 255) |
 | user    | Yellow                | (255, 255, 0) |
 | cat     | Orange                | (255, 165, 0) |
 

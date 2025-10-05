@@ -32,7 +32,7 @@ BLOCK_COLORS = {
     "wood": (139, 69, 19),       # Saddle brown
     "leaf": (0, 128, 0),         # Green
     "water": (64, 164, 223),     # Dodger blue with transparency
-    "camera": (255, 0, 255),     # Magenta
+    "camera": (0, 0, 255),       # Blue
     "user": (255, 255, 0),       # Yellow
     "air": (0, 0, 0, 0),         # Transparent
     "cat": (255, 165, 0),        # Orange
