@@ -71,10 +71,10 @@ def test_render_players_method_exists():
         "_render_players should render other_players"
     print("  ✓ _render_players renders other_players")
     
-    # Verify it renders local_player_cube
-    assert 'local_player_cube' in render_players_section, \
-        "_render_players should render local_player_cube (the original user)"
-    print("  ✓ _render_players renders local_player_cube (original user)")
+    # Verify it renders local_player (the original user)
+    assert 'local_player' in render_players_section, \
+        "_render_players should render local_player (the original user)"
+    print("  ✓ _render_players renders local_player (original user)")
     
     print("\n✅ PASS: _render_players method is properly implemented")
 
