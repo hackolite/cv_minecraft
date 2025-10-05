@@ -105,7 +105,7 @@ class Message:
 
 def render_world_scene(model, position, rotation, window_size, fov=70.0, 
                        render_players_func=None, render_focused_block_func=None,
-                       setup_perspective_func=None):
+                       setup_perspective_func=None, render_camera_indicators_func=None):
     """Shared rendering pipeline for world/scene rendering.
     
     This function provides a common rendering pipeline that can be used by both
@@ -124,6 +124,7 @@ def render_world_scene(model, position, rotation, window_size, fov=70.0,
         render_focused_block_func: Optional function to render focused block outline (callable)
         setup_perspective_func: Optional custom perspective setup function. If None, uses default.
                                Should accept (position, rotation, window_size, fov) args.
+        render_camera_indicators_func: Optional function to render camera indicators (callable)
     
     Usage:
         # For camera cube (headless) - uses default perspective:
@@ -172,6 +173,10 @@ def render_world_scene(model, position, rotation, window_size, fov=70.0,
         glColor3d(1, 1, 1)
         if model.batch:
             model.batch.draw()
+        
+        # Optionally render camera indicators (black circles on camera blocks)
+        if render_camera_indicators_func:
+            render_camera_indicators_func()
         
         # Optionally render focused block outline (main window only)
         if render_focused_block_func:
@@ -325,7 +330,8 @@ class CubeWindow:
                 window_size=self.window.get_size(),
                 fov=85.0,  # Wider field of view for better coverage
                 render_players_func=self._render_players,  # ✅ Render players including the original user
-                render_focused_block_func=None  # Cameras don't show focused block outline
+                render_focused_block_func=None,  # Cameras don't show focused block outline
+                render_camera_indicators_func=self._render_camera_indicators  # ✅ Render black circles on camera blocks
             )
             
         except Exception as e:
@@ -388,6 +394,48 @@ class CubeWindow:
             b = max(b, min_brightness)
         
         return (r, g, b)
+    
+    def _render_camera_indicators(self):
+        """Render black circles on camera blocks to indicate camera placement.
+        
+        This method draws a black circle on the top face of each camera block
+        in the world, making it easy to identify camera locations.
+        """
+        if not PYGLET_AVAILABLE or not self.model:
+            return
+        
+        try:
+            # Iterate through all blocks in the world to find cameras
+            for position, block_type in self.model.world.items():
+                # Check if this is a camera block
+                if block_type == BlockType.CAMERA:
+                    x, y, z = position
+                    
+                    # Draw a black circle on top of the camera block
+                    glPushMatrix()
+                    glTranslatef(x, y + 0.51, z)  # Position slightly above the block
+                    glRotatef(-90, 1, 0, 0)  # Rotate so the circle is horizontal
+                    
+                    # Draw black disc
+                    glColor3f(0, 0, 0)  # Black color
+                    glDisable(GL_TEXTURE_2D)  # Disable textures for the circle
+                    
+                    # Draw the circle as a polygon
+                    num_segments = 32
+                    radius = 0.3  # Circle radius (60% of half block size)
+                    
+                    glBegin(GL_TRIANGLE_FAN)
+                    glVertex3f(0, 0, 0)  # Center of the circle
+                    for i in range(num_segments + 1):
+                        angle = 2.0 * math.pi * i / num_segments
+                        glVertex3f(radius * math.cos(angle), radius * math.sin(angle), 0)
+                    glEnd()
+                    
+                    glEnable(GL_TEXTURE_2D)  # Re-enable textures
+                    glPopMatrix()
+                    
+        except Exception as e:
+            print(f"⚠️  Camera indicator rendering failed for cube {self.cube_id}: {e}")
     
     def _render_placeholder_cube(self):
         """Render a simple colored cube as placeholder when model is not available."""
