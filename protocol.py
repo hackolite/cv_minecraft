@@ -189,6 +189,21 @@ def render_world_scene(model, position, rotation, window_size, fov=70.0,
         traceback.print_exc()
 
 
+def _cube_vertices(x, y, z, n):
+    """Return vertices for a cube at position x, y, z with size 2*n.
+    
+    Helper function for rendering player cubes in camera views.
+    """
+    return [
+        x-n,y+n,z-n, x-n,y+n,z+n, x+n,y+n,z+n, x+n,y+n,z-n,  # top
+        x-n,y-n,z-n, x+n,y-n,z-n, x+n,y-n,z+n, x-n,y-n,z+n,  # bottom
+        x-n,y-n,z-n, x-n,y-n,z+n, x-n,y+n,z+n, x-n,y+n,z-n,  # left
+        x+n,y-n,z+n, x+n,y-n,z-n, x+n,y+n,z-n, x+n,y+n,z+n,  # right
+        x-n,y-n,z+n, x+n,y-n,z+n, x+n,y+n,z+n, x-n,y+n,z+n,  # front
+        x+n,y-n,z-n, x-n,y-n,z-n, x-n,y+n,z-n, x+n,y+n,z-n,  # back
+    ]
+
+
 class CubeWindow:
     """Pyglet window abstraction for camera-type cubes."""
     
@@ -330,15 +345,15 @@ class CubeWindow:
             camera_y += 0.6  # Eye height offset
             camera_position = (camera_x, camera_y, camera_z)
             
-            # Use shared rendering pipeline - cameras render world only (no UI, no focused block)
-            # This ensures both main window and camera cubes use exactly the same rendering logic
+            # Use shared rendering pipeline - cameras now render players to make them visible
+            # This ensures the original user and other players are visible in camera views
             render_world_scene(
                 model=self.model,
                 position=camera_position,
                 rotation=self.cube.rotation,
                 window_size=self.window.get_size(),
                 fov=70.0,
-                render_players_func=None,  # Cameras don't render player cubes by default
+                render_players_func=self._render_players,  # ✅ Render players including the original user
                 render_focused_block_func=None  # Cameras don't show focused block outline
             )
             
@@ -346,6 +361,62 @@ class CubeWindow:
             print(f"⚠️  World rendering failed for cube {self.cube_id}: {e}")
             import traceback
             traceback.print_exc()
+    
+    def _render_players(self):
+        """Render all player cubes visible from the camera's perspective.
+        
+        This method renders both other players and the owner of the camera,
+        making them visible in camera views.
+        """
+        if not PYGLET_AVAILABLE or not self.model:
+            return
+        
+        try:
+            # Render all other players
+            if hasattr(self.model, 'other_players'):
+                for player_id, player in self.model.other_players.items():
+                    if hasattr(player, 'get_render_position'):
+                        # Calculate player color based on player_id
+                        color = self._get_player_color(player_id)
+                        x, y, z = player.get_render_position()
+                        size = getattr(player, 'size', 0.5)
+                        vertex_data = _cube_vertices(x, y, z, size)
+                        
+                        glColor3d(*color)
+                        pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))
+            
+            # Render the local player cube if it exists
+            # This ensures the camera owner is visible in their own camera views
+            if hasattr(self.model, 'local_player_cube') and self.model.local_player_cube:
+                player_cube = self.model.local_player_cube
+                color = getattr(player_cube, 'color', (0.2, 0.8, 0.2))
+                x, y, z = player_cube.get_render_position()
+                size = getattr(player_cube, 'size', 0.5)
+                vertex_data = _cube_vertices(x, y, z, size)
+                
+                glColor3d(*color)
+                pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))
+                
+        except Exception as e:
+            print(f"⚠️  Player rendering failed for cube {self.cube_id}: {e}")
+    
+    def _get_player_color(self, player_id):
+        """Generate a unique color for a player based on their ID."""
+        import hashlib
+        hash_hex = hashlib.md5(player_id.encode()).hexdigest()
+        
+        r = int(hash_hex[0:2], 16) / 255.0
+        g = int(hash_hex[2:4], 16) / 255.0
+        b = int(hash_hex[4:6], 16) / 255.0
+        
+        # Ensure color is not too dark
+        min_brightness = 0.3
+        if r + g + b < min_brightness * 3:
+            r = max(r, min_brightness)
+            g = max(g, min_brightness)
+            b = max(b, min_brightness)
+        
+        return (r, g, b)
     
     def _render_placeholder_cube(self):
         """Render a simple colored cube as placeholder when model is not available."""
