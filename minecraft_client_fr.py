@@ -572,7 +572,7 @@ def block_texture_data(block_type):
         BlockType.WOOD: tex_coord_4x3(3, 1) * 6,
         BlockType.LEAF: tex_coord_4x3(3, 0) * 6,
         BlockType.WATER: tex_coord_4x3(0, 2) * 6,
-        BlockType.CAMERA: tex_coord_4x3(0, 3) * 6,  # Camera block texture,
+        BlockType.CAMERA: tex_coord_4x3(0, 2) * 6,  # Camera block texture,
         BlockType.CAT: tex_coord_4x3(1, 2) * 6,  # Camera block texture
     }
     return textures.get(block_type, tex_coord_4x3(0, 0) * 6)
