@@ -408,8 +408,6 @@ class CubeWindow:
             # Iterate through all blocks in the world to find cameras
             for position, block_type in self.model.world.items():
                 # Check if this is a camera block
-                # Use the BlockType from protocol.py
-                from protocol import BlockType
                 if block_type == BlockType.CAMERA:
                     x, y, z = position
                     
