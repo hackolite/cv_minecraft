@@ -8,6 +8,7 @@ Corrections apportées :
 - Prévention de la vue à travers les blocs
 - Optimisation du rendu et de la physique
 - Meilleure gestion de la position de la caméra
+- Mode vol avec physique de simulateur d'avion (inertie et apesanteur)
 
 Usage:
     python3 minecraft_client_fr.py [--server HOST:PORT] [--config CONFIG_FILE]
