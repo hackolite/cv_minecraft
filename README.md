@@ -54,10 +54,22 @@ You can start multiple clients to test multiplayer functionality.
 - **Left Click**: Destroy block
 - **Right Click**: Place block
 - **1-4**: Change block type
-- **Tab**: Toggle flying mode
+- **Tab**: Toggle flying mode (with airplane-like physics)
 - **R**: Sprint
 - **Shift**: Crouch
 - **Escape**: Release mouse cursor
+
+### Flying Mode
+
+Flying mode now features **airplane-like flight simulator physics**:
+
+- **Weightlessness**: No gravity is applied while flying
+- **Inertia**: Smooth acceleration when you start moving (like an airplane accelerating)
+- **Momentum**: Player continues to drift after releasing controls (realistic deceleration)
+- **Multi-axis control**: Full 3D flight with smooth transitions
+- **Aerodynamic drag**: Gradual slowdown when no input is given
+
+This creates a more immersive and realistic flying experience, similar to piloting an aircraft in a flight simulator.
 
 ## Testing
 
