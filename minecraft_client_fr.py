@@ -970,6 +970,9 @@ class MinecraftWindow(BaseWindow):
         self.dy = 0
         self.on_ground = False
         self.collision_types = {"top": False, "bottom": False, "right": False, "left": False}
+        
+        # Flight simulator physics - velocity for airplane-like inertia
+        self.flight_velocity = [0.0, 0.0, 0.0]  # [vx, vy, vz] for flying mode
 
         # FOV et vitesses
         self.fov_offset = 0
@@ -1195,7 +1198,37 @@ class MinecraftWindow(BaseWindow):
         on_ground = self.collision_types.get("top", False)
 
         if self.flying:
-            # Flying mode - no physics, just direct movement
+            # Flight simulator mode - airplane-like physics with weightlessness and inertia
+            # Calculate target velocity from input
+            target_vx, target_vy, target_vz = self.get_motion_vector()
+            target_vx *= speed
+            target_vy *= speed
+            target_vz *= speed
+            
+            # Smooth acceleration/deceleration (airplane-like inertia)
+            # Lower values = more sluggish (heavier plane), higher = more responsive
+            acceleration_factor = 3.0  # How quickly we accelerate to target speed
+            deceleration_factor = 2.0  # How quickly we slow down (drag)
+            
+            # Apply acceleration towards target velocity
+            self.flight_velocity[0] += (target_vx - self.flight_velocity[0]) * acceleration_factor * dt
+            self.flight_velocity[1] += (target_vy - self.flight_velocity[1]) * acceleration_factor * dt
+            self.flight_velocity[2] += (target_vz - self.flight_velocity[2]) * acceleration_factor * dt
+            
+            # Apply drag/deceleration when no input
+            if abs(target_vx) < 0.01:
+                self.flight_velocity[0] *= (1.0 - deceleration_factor * dt)
+            if abs(target_vy) < 0.01:
+                self.flight_velocity[1] *= (1.0 - deceleration_factor * dt)
+            if abs(target_vz) < 0.01:
+                self.flight_velocity[2] *= (1.0 - deceleration_factor * dt)
+            
+            # Calculate displacement from velocity
+            dx = self.flight_velocity[0] * dt
+            dy = self.flight_velocity[1] * dt
+            dz = self.flight_velocity[2] * dt
+            
+            # Apply movement with collision detection
             x, y, z = self.position
             x, y, z = self.collide((x + dx, y + dy, z + dz), PLAYER_HEIGHT)
             self.position = (x, y, z)
@@ -1400,6 +1433,9 @@ Statut: {connection_status}"""
                 self.sprinting = True
         elif symbol == key.TAB:
             self.flying = not self.flying
+            # Reset flight velocity when toggling flying mode
+            if not self.flying:
+                self.flight_velocity = [0.0, 0.0, 0.0]
             status = config.get_localized_text("flying") if self.flying else "Vol désactivé"
             self.show_message(status)
         elif symbol == key.F1:
